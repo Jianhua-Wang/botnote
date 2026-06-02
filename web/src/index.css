@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+  ::selection {
+    background: theme("colors.accentSoft");
+  }
+  code,
+  pre,
+  kbd {
+    @apply font-mono;
+  }
+  kbd {
+    @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xxs text-muted border border-line bg-surface rounded;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 px-2.5 h-7 text-sm rounded border border-line bg-surface text-ink hover:bg-sidebar disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+  }
+  .btn-primary {
+    @apply bg-accent text-white border-accent hover:bg-accent/90;
+  }
+  .btn-ghost {
+    @apply border-transparent hover:bg-sidebar;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 px-1.5 h-5 text-xxs uppercase tracking-wider rounded bg-sidebar text-muted border border-line/60;
+  }
+  .row-hover {
+    @apply hover:bg-sidebar/70 transition-colors;
+  }
+  .input {
+    @apply w-full h-7 px-2 text-sm bg-surface border border-line rounded focus:outline-none focus:border-accent focus:ring-1 focus:ring-accentSoft;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.line") transparent;
+  }
+}

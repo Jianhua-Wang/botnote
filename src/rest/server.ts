@@ -1,5 +1,9 @@
+import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import {
   jsonSchemaTransform,
@@ -18,6 +22,23 @@ export interface ServerContext {
 
 export interface BuildServerOpts extends ServerContext {
   logLevel?: string;
+  webDist?: string;
+}
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function resolveWebDist(explicit?: string): string | null {
+  const envPath = process.env.BOTNOTE_WEB_DIST;
+  const candidates = [
+    explicit,
+    envPath,
+    path.resolve(__dirname, "../../web/dist"),
+    path.resolve(__dirname, "../../../web/dist")
+  ].filter(Boolean) as string[];
+  for (const c of candidates) {
+    if (existsSync(path.join(c, "index.html"))) return c;
+  }
+  return null;
 }
 
 export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstance> {
@@ -62,6 +83,31 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   });
 
   await registerRoutes(app, { db: opts.db, embedding: opts.embedding });
+
+  const webDist = resolveWebDist(opts.webDist);
+  if (webDist) {
+    await app.register(fastifyStatic, {
+      root: webDist,
+      prefix: "/",
+      wildcard: false,
+      decorateReply: true
+    });
+    app.setNotFoundHandler(async (req, reply) => {
+      const url = req.url;
+      if (
+        url.startsWith("/v1") ||
+        url.startsWith("/docs") ||
+        url === "/health" ||
+        url.startsWith("/health?")
+      ) {
+        return reply.code(404).send({ error: "not_found", path: url });
+      }
+      return reply.sendFile("index.html");
+    });
+    app.log.info(`web UI served from ${webDist}`);
+  } else {
+    app.log.warn("web/dist not found; UI not served (BOTNOTE_WEB_DIST or build required)");
+  }
 
   return app;
 }
