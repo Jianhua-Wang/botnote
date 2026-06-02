@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "tsx watch src/cli.ts",
     "start": "node dist/cli.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp -R src/db/migrations/. dist/db/migrations/",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
