@@ -17,9 +17,12 @@
     "db:migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.6",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "drizzle-orm": "^0.36.0",
     "fastify": "^5.0.0",
+    "fastify-type-provider-zod": "^4.0.2",
     "openai": "^4.70.0",
     "pg": "^8.13.0",
     "zod": "^3.23.0"
