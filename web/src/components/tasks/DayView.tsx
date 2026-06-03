@@ -1,10 +1,9 @@
 import { format, isToday } from "date-fns";
-import { CheckCircle2, Circle } from "lucide-react";
 import { useMemo } from "react";
 import { useProjects, useTasksRange } from "../../api/hooks";
 import type { Entity } from "../../api/types";
 import { useModals } from "../../state/modals";
-import { TaskCard } from "./TaskCard";
+import { TaskRow } from "./TaskRow";
 import { projectLookup, viewRange } from "./utils";
 
 export function DayView({
@@ -32,19 +31,21 @@ export function DayView({
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
-      <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-4xl mx-auto py-4">
         {isCurrentDay && overdue.length > 0 && (
           <Section
-            title={`Overdue · ${overdue.length}`}
-            color="text-rose-700"
+            title={`Overdue`}
+            count={overdue.length}
+            accent="text-danger"
             tasks={overdue}
             projectMap={projectMap}
           />
         )}
 
         <Section
-          title={isCurrentDay ? `Today · ${format(anchor, "EEE MMM d")}` : format(anchor, "EEEE · MMM d")}
-          color="text-ink"
+          title={isCurrentDay ? "Today" : format(anchor, "EEEE")}
+          count={today.length}
+          accent="text-ink"
           tasks={today}
           projectMap={projectMap}
           emptyAction={
@@ -63,37 +64,34 @@ export function DayView({
 
 function Section({
   title,
-  color,
+  count,
+  accent,
   tasks,
   projectMap,
   emptyAction
 }: {
   title: string;
-  color: string;
+  count: number;
+  accent: string;
   tasks: Entity[];
   projectMap: Map<string, ReturnType<typeof projectLookup> extends Map<string, infer P> ? P : never>;
   emptyAction?: React.ReactNode;
 }) {
   return (
-    <section>
-      <div className={`flex items-center gap-2 mb-2 ${color}`}>
-        {tasks.length === 0 ? (
-          <CheckCircle2 size={14} className="opacity-50" />
-        ) : (
-          <Circle size={14} />
-        )}
-        <h2 className="text-xs uppercase tracking-wider font-semibold">{title}</h2>
+    <section className="mb-6">
+      <div className="px-4 py-1.5 flex items-baseline gap-2 sticky top-0 bg-bg z-10">
+        <h2 className={`text-xs font-semibold ${accent}`}>{title}</h2>
+        <span className="text-xxs text-faint tabular-nums">{count}</span>
       </div>
       {tasks.length === 0 ? (
-        <div className="text-sm text-muted">Nothing here. {emptyAction}</div>
+        <div className="px-4 py-2 text-xs text-muted">{emptyAction ?? "Nothing here."}</div>
       ) : (
-        <div className="space-y-1.5">
+        <div className="bg-surface border-y border-lineSoft">
           {tasks.map((t) => (
-            <TaskCard
+            <TaskRow
               key={t.id}
               task={t}
               project={t.projectId ? projectMap.get(t.projectId) : undefined}
-              showTime
             />
           ))}
         </div>

@@ -67,6 +67,9 @@ export const api = {
       body: JSON.stringify(fields)
     }),
 
+  deleteEntity: (id: string) =>
+    request<void>(`/v1/entities/${id}`, { method: "DELETE" }),
+
   recent: (input: RecentInput = {}) =>
     request<Entity[]>("/v1/recent", { method: "POST", body: JSON.stringify(input) }),
 

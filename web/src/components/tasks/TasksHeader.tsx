@@ -30,52 +30,51 @@ export function TasksHeader({
 
   return (
     <div className="border-b border-line bg-surface">
-      <div className="flex items-center justify-between px-4 py-2">
+      <div className="flex items-center justify-between h-11 px-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-base font-semibold text-ink">Tasks</h1>
-          <div className="flex border border-line rounded overflow-hidden">
+          <h1 className="text-xs font-semibold text-ink">Tasks</h1>
+          <div className="seg">
             {(["day", "week", "month"] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`px-2.5 py-1 text-xs capitalize ${
-                  view === v
-                    ? "bg-ink text-white"
-                    : "bg-surface text-muted hover:bg-sidebar"
-                }`}
+                data-active={view === v}
+                className="capitalize"
               >
                 {v}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-1 ml-2">
+          <div className="flex items-center gap-1 ml-1">
             <button
               onClick={() => setAnchor(moveAnchor(view, anchor, -1))}
-              className="btn btn-ghost !h-7 !w-7 !p-0"
+              className="btn btn-ghost !h-6 !w-6 !p-0"
               title="Previous"
             >
-              <ChevronLeft size={14} />
+              <ChevronLeft size={12} />
             </button>
             <button
               onClick={() => setAnchor(moveAnchor(view, anchor, 0))}
-              className="btn btn-ghost !h-7 px-2 text-xs"
+              className="btn !h-6 px-2 text-xxs"
               title="Today"
             >
               Today
             </button>
             <button
               onClick={() => setAnchor(moveAnchor(view, anchor, 1))}
-              className="btn btn-ghost !h-7 !w-7 !p-0"
+              className="btn btn-ghost !h-6 !w-6 !p-0"
               title="Next"
             >
-              <ChevronRight size={14} />
+              <ChevronRight size={12} />
             </button>
-            <div className="ml-2 text-sm font-medium text-ink">{rangeLabel(view, anchor)}</div>
+            <div className="ml-2 text-xs font-medium text-ink2 tabular-nums">
+              {rangeLabel(view, anchor)}
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <ProjectFilter
             projects={projects ?? []}
             projectIds={projectIds}
@@ -87,9 +86,9 @@ export function TasksHeader({
             onClick={() => open({ kind: "quick-create" })}
             title="New task (c)"
           >
-            <Plus size={13} />
+            <Plus size={11} />
             <span className="text-xs">Task</span>
-            <kbd className="!bg-white/10 !border-white/20 !text-white">c</kbd>
+            <kbd className="!bg-white/15 !border-white/25 !text-white">c</kbd>
           </button>
         </div>
       </div>
@@ -111,28 +110,28 @@ function ProjectFilter({
   return (
     <details className="relative">
       <summary className="btn list-none cursor-pointer">
-        <Filter size={12} />
+        <Filter size={11} />
         <span className="text-xs">{label}</span>
       </summary>
-      <div className="absolute right-0 top-8 z-40 bg-surface border border-line rounded shadow-lg w-56 p-2 space-y-1">
+      <div className="popover top-9 right-0 w-56 px-1 py-1.5">
         <button
-          className={`w-full text-left px-2 py-1 text-xs rounded ${
-            !projectIds ? "bg-accent/10 text-accent" : "text-ink hover:bg-sidebar"
-          }`}
+          className={`popover-item ${!projectIds ? "bg-accentSoft text-accentText" : ""}`}
           onClick={() => setProjectIds(null)}
         >
-          All projects
+          <span>All projects</span>
+          {!projectIds && <span className="ml-auto text-faint">✓</span>}
         </button>
-        <div className="border-t border-line my-1" />
+        <div className="divider my-1" />
         {projects.map((p) => {
           const isOn = projectIds?.includes(p.id) ?? false;
           return (
             <label
               key={p.id}
-              className="flex items-center gap-2 px-2 py-1 text-xs rounded hover:bg-sidebar cursor-pointer"
+              className="popover-item gap-2 cursor-pointer"
             >
               <input
                 type="checkbox"
+                className="cursor-pointer"
                 checked={isOn}
                 onChange={() => {
                   if (!projectIds) {
@@ -145,8 +144,8 @@ function ProjectFilter({
                   }
                 }}
               />
-              <span className="font-mono text-accent">{p.key}</span>
-              <span className="text-muted truncate">{p.name}</span>
+              <span className="font-mono text-xxs text-faint tabular-nums">{p.key}</span>
+              <span className="text-ink2 truncate">{p.name}</span>
             </label>
           );
         })}

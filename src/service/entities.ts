@@ -27,6 +27,7 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
       actorKind: input.actorKind,
       metadata: input.metadata,
       dueAt: input.dueAt ?? null,
+      priority: input.priority,
       idempotencyKey: input.idempotencyKey ?? null
     })
     .returning();
@@ -55,6 +56,11 @@ export async function update(
 export async function get(db: Database["db"], id: string): Promise<Entity | null> {
   const rows = await db.select().from(entities).where(eq(entities.id, id)).limit(1);
   return rows[0] ?? null;
+}
+
+export async function remove(db: Database["db"], id: string): Promise<boolean> {
+  const res = await db.delete(entities).where(eq(entities.id, id)).returning({ id: entities.id });
+  return res.length > 0;
 }
 
 export async function recent(db: Database["db"], input: RecentInput): Promise<Entity[]> {

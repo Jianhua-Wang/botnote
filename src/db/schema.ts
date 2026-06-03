@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   customType,
   index,
+  integer,
   jsonb,
   pgTable,
   primaryKey,
@@ -108,6 +109,8 @@ export const entities = pgTable(
     bodyVec: vector("body_vec"),
     metadata: jsonb("metadata").notNull().default({}),
     dueAt: timestamp("due_at", { withTimezone: true }),
+    priority: text("priority").notNull().default("none"),
+    sequenceId: integer("sequence_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },

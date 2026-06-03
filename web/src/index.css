@@ -5,6 +5,7 @@
 @layer base {
   :root {
     color-scheme: light;
+    --shadow-soft: 0 1px 2px rgba(15, 15, 20, 0.04), 0 0 0 1px rgba(15, 15, 20, 0.04);
   }
   html,
   body,
@@ -12,11 +13,14 @@
     height: 100%;
   }
   body {
-    @apply bg-bg text-ink font-sans antialiased;
-    font-feature-settings: "cv11", "ss01", "ss03";
+    @apply bg-bg text-ink font-sans antialiased text-base;
+    font-feature-settings: "cv11", "ss01", "ss03", "tnum";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   ::selection {
     background: theme("colors.accentSoft");
+    color: theme("colors.accentText");
   }
   code,
   pre,
@@ -24,31 +28,100 @@
     @apply font-mono;
   }
   kbd {
-    @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xxs text-muted border border-line bg-surface rounded;
+    @apply inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 text-xxs text-muted border border-line bg-surface rounded-sm;
+    font-size: 10px;
+    line-height: 1;
+  }
+  button,
+  input,
+  textarea,
+  select {
+    font-family: inherit;
   }
 }
 
 @layer components {
+  /* primary actions */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 px-2.5 h-7 text-sm rounded border border-line bg-surface text-ink hover:bg-sidebar disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+    @apply inline-flex items-center justify-center gap-1.5 px-2 h-7 text-xs rounded-md border border-line bg-surface text-ink hover:bg-sidebar disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
   }
   .btn-primary {
-    @apply bg-accent text-white border-accent hover:bg-accent/90;
+    @apply bg-accent text-white border-accent hover:bg-accentHover;
   }
   .btn-ghost {
-    @apply border-transparent hover:bg-sidebar;
+    @apply border-transparent hover:bg-sidebarHover text-muted hover:text-ink;
   }
+  .btn-danger {
+    @apply border-transparent text-danger hover:bg-danger/10;
+  }
+  .btn-sm {
+    @apply h-6 px-1.5 text-xxs;
+  }
+
+  /* chips */
   .chip {
-    @apply inline-flex items-center gap-1 px-1.5 h-5 text-xxs uppercase tracking-wider rounded bg-sidebar text-muted border border-line/60;
+    @apply inline-flex items-center gap-1 px-1.5 h-[18px] text-xxs rounded bg-sidebar text-muted border border-lineSoft;
   }
-  .row-hover {
-    @apply hover:bg-sidebar/70 transition-colors;
-  }
+
+  /* inputs */
   .input {
-    @apply w-full h-7 px-2 text-sm bg-surface border border-line rounded focus:outline-none focus:border-accent focus:ring-1 focus:ring-accentSoft;
+    @apply w-full h-7 px-2 text-sm bg-surface border border-line rounded-md focus:outline-none focus:border-accent focus:ring-2 focus:ring-accentSoft transition-colors;
   }
+  .input-sm {
+    @apply h-6 text-xs px-1.5;
+  }
+
+  /* row hover */
+  .row-hover {
+    @apply hover:bg-sidebarHover/60 transition-colors;
+  }
+
+  /* task row */
+  .task-row {
+    @apply flex items-center gap-2 px-3 h-8 border-b border-lineSoft text-sm hover:bg-sidebarHover/50 cursor-pointer transition-colors;
+  }
+
+  /* segmented control */
+  .seg {
+    @apply inline-flex border border-line rounded-md overflow-hidden bg-surface text-muted;
+  }
+  .seg button {
+    @apply px-2 h-7 text-xs hover:text-ink hover:bg-sidebar transition-colors;
+  }
+  .seg button[data-active="true"] {
+    @apply bg-ink text-white hover:bg-ink2 hover:text-white;
+  }
+
+  /* divider */
+  .divider {
+    @apply border-t border-lineSoft;
+  }
+
+  /* scrollbar */
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: theme("colors.line") transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: theme("colors.line");
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: theme("colors.muted");
+    background-clip: padding-box;
+  }
+
+  /* popover */
+  .popover {
+    @apply absolute z-40 bg-surface border border-line rounded-md shadow-pop py-1 min-w-[160px];
+  }
+  .popover-item {
+    @apply flex items-center gap-2 px-2 py-1 text-xs text-ink hover:bg-sidebarHover cursor-pointer w-full text-left;
   }
 }

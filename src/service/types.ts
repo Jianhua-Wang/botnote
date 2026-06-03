@@ -5,6 +5,8 @@ export const EntityKindEnum = z.enum(ENTITY_KINDS);
 export const ActorKindEnum = z.enum(ACTOR_KINDS);
 export const EdgeKindEnum = z.enum(EDGE_KINDS);
 
+// PriorityEnum redeclared below to avoid forward-ref
+
 export const Uuid = z.string().uuid();
 
 export const WriteInput = z.object({
@@ -19,6 +21,7 @@ export const WriteInput = z.object({
   actorKind: ActorKindEnum.default("human"),
   metadata: z.record(z.unknown()).default({}),
   dueAt: z.coerce.date().nullish(),
+  priority: z.enum(["urgent", "high", "medium", "low", "none"]).default("none"),
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type WriteInput = z.infer<typeof WriteInput>;
@@ -29,7 +32,8 @@ export const UpdateInput = z.object({
   tags: z.array(z.string()).optional(),
   status: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
-  dueAt: z.coerce.date().nullable().optional()
+  dueAt: z.coerce.date().nullable().optional(),
+  priority: z.enum(["urgent", "high", "medium", "low", "none"]).optional()
 });
 export type UpdateInput = z.infer<typeof UpdateInput>;
 

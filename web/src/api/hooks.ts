@@ -123,6 +123,19 @@ export function useUpdateEntity() {
   });
 }
 
+export function useDeleteEntity() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteEntity(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks-range"] });
+      qc.invalidateQueries({ queryKey: ["recent"] });
+      qc.invalidateQueries({ queryKey: ["entity-list"] });
+      qc.invalidateQueries({ queryKey: ["opening-brief"] });
+    }
+  });
+}
+
 export function useSetAgentsMd() {
   const qc = useQueryClient();
   return useMutation({

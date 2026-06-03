@@ -7,22 +7,22 @@ export function TopBar() {
   const mod = typeof navigator !== "undefined" && navigator.platform.includes("Mac") ? "⌘" : "Ctrl";
 
   return (
-    <header className="h-12 flex items-center justify-between px-4 border-b border-line bg-surface">
-      <Link to="/" className="flex items-center gap-2 text-ink hover:opacity-80">
-        <div className="w-5 h-5 rounded-sm bg-accent flex items-center justify-center text-white text-xxs font-bold">
+    <header className="h-11 flex items-center justify-between px-3 border-b border-line bg-surface">
+      <Link to="/" className="flex items-center gap-1.5 text-ink hover:opacity-90">
+        <div className="w-[18px] h-[18px] rounded-md bg-accent flex items-center justify-center text-white text-xxs font-bold">
           b
         </div>
-        <span className="text-sm font-semibold">botnote</span>
+        <span className="text-xs font-semibold tracking-tight">botnote</span>
       </Link>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <button
-          className="btn btn-ghost gap-2 min-w-[200px] !justify-between !pr-1.5 !pl-2.5"
+          className="btn !pl-2 !pr-1.5 gap-2 min-w-[220px] !justify-between text-muted"
           onClick={() => open({ kind: "search" })}
           title="Search (⌘K)"
         >
-          <div className="flex items-center gap-1.5 text-muted">
-            <Search size={13} />
+          <div className="flex items-center gap-1.5">
+            <Search size={12} />
             <span className="text-xs">Search…</span>
           </div>
           <kbd>{mod}K</kbd>
@@ -32,9 +32,9 @@ export function TopBar() {
           onClick={() => open({ kind: "quick-create" })}
           title="Quick create (c)"
         >
-          <Plus size={13} />
+          <Plus size={12} />
           <span className="text-xs">New</span>
-          <kbd className="!bg-white/10 !border-white/20 !text-white">c</kbd>
+          <kbd className="!bg-white/15 !border-white/25 !text-white">c</kbd>
         </button>
       </div>
     </header>

@@ -1,21 +1,24 @@
 import { markdown } from "@codemirror/lang-markdown";
 import CodeMirror from "@uiw/react-codemirror";
-import { ChevronLeft, Edit3, Eye, Save, X } from "lucide-react";
+import { ChevronLeft, Edit3, Eye, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useEntity, useEntityList, useOpeningBrief, useProjectByKey, useUpdateEntity } from "../api/hooks";
-import type { EntityKind } from "../api/types";
+import { useDeleteEntity, useEntity, useEntityList, useOpeningBrief, useProjectByKey, useUpdateEntity } from "../api/hooks";
+import { PRIORITY_LEVELS, type EntityKind, type Priority } from "../api/types";
 import { KindBadge } from "../components/KindBadge";
+import { PriorityIcon, PRIORITY_LABEL, StatusCircle } from "../components/tasks/icons";
 
 const STATUS_OPTIONS = ["open", "in_progress", "done", "archived", "rejected"];
 
 export function EntityDetailPage() {
   const { key, id } = useParams<{ key: string; id: string }>();
+  const navigate = useNavigate();
   const { data: project } = useProjectByKey(key);
   const { data: entity, isLoading } = useEntity(id);
   const update = useUpdateEntity();
+  const del = useDeleteEntity();
   const { data: openingBrief } = useOpeningBrief(project?.id, { poll: false });
   const { data: siblings } = useEntityList(project?.id, entity ? [entity.kind] : null);
 
@@ -25,6 +28,7 @@ export function EntityDetailPage() {
   const [tagsStr, setTagsStr] = useState("");
   const [status, setStatus] = useState("open");
   const [dueDate, setDueDate] = useState("");
+  const [priority, setPriority] = useState<Priority>("none");
 
   useEffect(() => {
     if (entity) {
@@ -33,6 +37,7 @@ export function EntityDetailPage() {
       setTagsStr(entity.tags.join(", "));
       setStatus(entity.status);
       setDueDate(entity.dueAt ? entity.dueAt.slice(0, 10) : "");
+      setPriority(entity.priority);
       setEditing(false);
     }
   }, [entity?.id]);
@@ -45,9 +50,10 @@ export function EntityDetailPage() {
       body !== entity.body ||
       tagsStr !== entity.tags.join(", ") ||
       status !== entity.status ||
-      dueDate !== currentDue
+      dueDate !== currentDue ||
+      priority !== entity.priority
     );
-  }, [entity, title, body, tagsStr, status, dueDate]);
+  }, [entity, title, body, tagsStr, status, dueDate, priority]);
 
   if (isLoading || !entity) {
     return <div className="p-6 text-sm text-muted">Loading entity…</div>;
@@ -66,10 +72,17 @@ export function EntityDetailPage() {
           .map((t) => t.trim())
           .filter(Boolean),
         status,
-        dueAt: dueDate ? new Date(dueDate).toISOString() : null
+        dueAt: dueDate ? new Date(dueDate).toISOString() : null,
+        priority
       }
     });
     setEditing(false);
+  }
+
+  async function remove() {
+    if (!confirm(`Delete "${entity!.title}"? This cannot be undone.`)) return;
+    await del.mutateAsync(entity!.id);
+    navigate(project ? `/p/${project.key}` : "/");
   }
 
   return (
@@ -82,7 +95,12 @@ export function EntityDetailPage() {
           </Link>
           <span>/</span>
           <KindBadge kind={entity.kind as EntityKind} compact />
-          <span className="font-mono text-faint">{entity.id.slice(0, 8)}</span>
+          {entity.sequenceId && project && (
+            <span className="font-mono text-faint tabular-nums">
+              {project.key}-{entity.sequenceId}
+            </span>
+          )}
+          {entity.kind === "task" && <StatusCircle status={entity.status} size={12} />}
         </div>
 
         <div className="bg-surface border border-line rounded-md">
@@ -98,9 +116,14 @@ export function EntityDetailPage() {
             )}
             <div className="flex gap-1">
               {!editing ? (
-                <button className="btn" onClick={() => setEditing(true)}>
-                  <Edit3 size={12} /> Edit
-                </button>
+                <>
+                  <button className="btn" onClick={() => setEditing(true)}>
+                    <Edit3 size={11} /> Edit
+                  </button>
+                  <button className="btn btn-danger" onClick={remove} title="Delete">
+                    <Trash2 size={11} />
+                  </button>
+                </>
               ) : (
                 <>
                   <button
@@ -111,16 +134,18 @@ export function EntityDetailPage() {
                       setBody(entity.body);
                       setTagsStr(entity.tags.join(", "));
                       setStatus(entity.status);
+                      setDueDate(entity.dueAt ? entity.dueAt.slice(0, 10) : "");
+                      setPriority(entity.priority);
                     }}
                   >
-                    <X size={12} /> Cancel
+                    <X size={11} /> Cancel
                   </button>
                   <button
                     className="btn btn-primary"
                     disabled={!dirty || update.isPending}
                     onClick={save}
                   >
-                    <Save size={12} /> Save
+                    <Save size={11} /> Save
                   </button>
                 </>
               )}
@@ -158,6 +183,26 @@ export function EntityDetailPage() {
                   <span className="chip">{new Date(entity.dueAt).toLocaleDateString()}</span>
                 ) : (
                   <span className="text-faint">no due date · backlog</span>
+                )}
+                <span>·</span>
+                <span>Priority:</span>
+                {editing ? (
+                  <select
+                    className="input !h-6 !w-auto !py-0 text-xxs"
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value as Priority)}
+                  >
+                    {PRIORITY_LEVELS.map((p) => (
+                      <option key={p} value={p}>
+                        {PRIORITY_LABEL[p]}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    <PriorityIcon priority={entity.priority} size={11} />
+                    <span>{PRIORITY_LABEL[entity.priority]}</span>
+                  </span>
                 )}
               </>
             )}

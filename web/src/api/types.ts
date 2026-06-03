@@ -37,6 +37,9 @@ export interface Project {
   updatedAt: string;
 }
 
+export type Priority = "urgent" | "high" | "medium" | "low" | "none";
+export const PRIORITY_LEVELS: Priority[] = ["urgent", "high", "medium", "low", "none"];
+
 export interface Entity {
   id: string;
   projectId: string | null;
@@ -52,6 +55,8 @@ export interface Entity {
   bodyVec: number[] | null;
   metadata: Record<string, unknown>;
   dueAt: string | null;
+  priority: Priority;
+  sequenceId: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -115,6 +120,7 @@ export interface WriteEntityInput {
   actorKind?: ActorKind;
   metadata?: Record<string, unknown>;
   dueAt?: string | null;
+  priority?: Priority;
   idempotencyKey?: string | null;
 }
 
@@ -125,6 +131,7 @@ export interface UpdateEntityInput {
   status?: string;
   metadata?: Record<string, unknown>;
   dueAt?: string | null;
+  priority?: Priority;
 }
 
 export interface CreateProjectInput {

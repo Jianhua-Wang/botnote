@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { ensureActor } from "../service/actors.js";
-import { get, link, recent, update, write } from "../service/entities.js";
+import { get, link, recent, remove, update, write } from "../service/entities.js";
 import { formatOpeningBrief, openingBrief } from "../service/opening_brief.js";
 import {
   createProject,
@@ -150,6 +150,23 @@ export async function registerRoutes(
       const e = await get(ctx.db, id);
       if (!e) return reply.code(404).send({ error: "not_found" });
       return e;
+    }
+  );
+
+  app.delete(
+    "/v1/entities/:id",
+    {
+      schema: {
+        tags: ["entities"],
+        summary: "Delete an entity",
+        params: IdParams
+      }
+    },
+    async (req, reply) => {
+      const { id } = IdParams.parse(req.params);
+      const ok = await remove(ctx.db, id);
+      if (!ok) return reply.code(404).send({ error: "not_found" });
+      return reply.code(204).send();
     }
   );
 

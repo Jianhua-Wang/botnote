@@ -2,7 +2,7 @@ import { format, isToday } from "date-fns";
 import { useMemo } from "react";
 import { useProjects, useTasksRange } from "../../api/hooks";
 import { useModals } from "../../state/modals";
-import { TaskCard } from "./TaskCard";
+import { TaskChip } from "./TaskChip";
 import { dayKey, daysBetween, groupTasksByDay, projectLookup, viewRange } from "./utils";
 
 export function WeekView({
@@ -28,48 +28,49 @@ export function WeekView({
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
-      <div className="grid grid-cols-7 border-t border-line min-w-[840px]">
+      <div className="grid grid-cols-7 min-w-[840px]">
         {days.map((d) => {
           const tasks = byDay.get(dayKey(d)) ?? [];
           const today = isToday(d);
           return (
-            <div key={d.toISOString()} className="border-r border-line bg-surface min-h-[480px]">
+            <div
+              key={d.toISOString()}
+              className={`border-r border-lineSoft last:border-r-0 bg-surface min-h-[calc(100vh-160px)] group/col`}
+            >
               <div
-                className={`px-3 py-2 border-b border-line flex items-baseline gap-2 ${
-                  today ? "bg-accent/5" : ""
+                className={`px-2.5 py-1.5 border-b border-lineSoft flex items-baseline justify-between ${
+                  today ? "bg-accentSoft/40" : ""
                 }`}
               >
-                <div className="text-xxs uppercase tracking-wider text-muted">
-                  {format(d, "EEE")}
-                </div>
-                <div
-                  className={`text-sm font-semibold ${
-                    today ? "text-accent" : "text-ink"
-                  }`}
-                >
-                  {format(d, "d")}
-                </div>
-                {today && (
-                  <span className="text-xxs uppercase tracking-wider text-accent ml-auto">
-                    today
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xxs uppercase tracking-wider text-muted">
+                    {format(d, "EEE")}
                   </span>
-                )}
-              </div>
-              <div className="p-2 space-y-1.5">
-                {tasks.length === 0 ? (
-                  <button
-                    className="text-xxs text-faint hover:text-accent w-full text-left px-1 py-1"
-                    onClick={() => open({ kind: "quick-create" })}
+                  <span
+                    className={`text-xs tabular-nums font-medium ${
+                      today ? "text-accent" : "text-ink2"
+                    }`}
                   >
-                    + add task
-                  </button>
+                    {format(d, "d")}
+                  </span>
+                </div>
+                <button
+                  className="text-faint hover:text-accent text-xxs opacity-0 group-hover/col:opacity-100"
+                  title="Add task"
+                  onClick={() => open({ kind: "quick-create" })}
+                >
+                  +
+                </button>
+              </div>
+              <div className="p-1 space-y-0.5">
+                {tasks.length === 0 ? (
+                  <div className="px-1.5 py-1 text-xxs text-faint">—</div>
                 ) : (
                   tasks.map((t) => (
-                    <TaskCard
+                    <TaskChip
                       key={t.id}
                       task={t}
                       project={t.projectId ? projectMap.get(t.projectId) : undefined}
-                      showTime
                     />
                   ))
                 )}

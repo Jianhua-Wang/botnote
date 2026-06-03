@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProjects, useWriteEntity } from "../../api/hooks";
-import { ENTITY_KINDS, type EntityKind } from "../../api/types";
+import { ENTITY_KINDS, PRIORITY_LEVELS, type EntityKind, type Priority } from "../../api/types";
 import { useModals } from "../../state/modals";
 import { ModalShell } from "../ModalShell";
+import { PriorityIcon, PRIORITY_LABEL } from "../tasks/icons";
 
 export function QuickCreateModal({ initialProjectId }: { initialProjectId?: string }) {
   const { data: projects } = useProjects();
@@ -13,6 +14,7 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
   const [body, setBody] = useState("");
   const [tagsStr, setTagsStr] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [priority, setPriority] = useState<Priority>("none");
   const write = useWriteEntity();
   const { close } = useModals();
   const navigate = useNavigate();
@@ -36,7 +38,8 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
               .map((t) => t.trim())
               .filter(Boolean),
             actorKind: "human",
-            dueAt: kind === "task" && dueDate ? new Date(dueDate).toISOString() : null
+            dueAt: kind === "task" && dueDate ? new Date(dueDate).toISOString() : null,
+            priority: kind === "task" ? priority : "none"
           });
           close();
           if (project) {
@@ -91,15 +94,35 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
             onChange={(e) => setTagsStr(e.target.value)}
           />
           {kind === "task" && (
-            <input
-              type="date"
-              className="input w-40"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              title="Due date"
-            />
+            <>
+              <input
+                type="date"
+                className="input w-36"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                title="Due date"
+              />
+              <select
+                className="input w-36"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as Priority)}
+                title="Priority"
+              >
+                {PRIORITY_LEVELS.map((p) => (
+                  <option key={p} value={p}>
+                    {PRIORITY_LABEL[p]}
+                  </option>
+                ))}
+              </select>
+            </>
           )}
         </div>
+        {kind === "task" && priority !== "none" && (
+          <div className="flex items-center gap-1.5 text-xxs text-muted">
+            <PriorityIcon priority={priority} size={11} />
+            <span>{PRIORITY_LABEL[priority]} priority</span>
+          </div>
+        )}
         <div className="flex justify-between items-center pt-1">
           <div className="text-xxs text-muted">
             <kbd>⌘</kbd>+<kbd>Enter</kbd> to submit · <kbd>Esc</kbd> to close

@@ -136,6 +136,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         parentId: z.string().uuid().optional(),
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
         dueAt: z.string().datetime().optional().describe("ISO datetime (only meaningful for kind=task)."),
+        priority: z.enum(["urgent", "high", "medium", "low", "none"]).default("none"),
         idempotencyKey: z.string().min(1).max(200).optional()
       }
     },
@@ -151,6 +152,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         actorKind: input.actorKind,
         metadata: {},
         dueAt: input.dueAt ? new Date(input.dueAt) : null,
+        priority: input.priority,
         idempotencyKey: input.idempotencyKey ?? null
       });
       if (ctx.embedding.isEnabled()) {
@@ -184,7 +186,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         body: z.string().optional(),
         tags: z.array(z.string()).optional(),
         status: z.string().optional(),
-        dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear.")
+        dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear."),
+        priority: z.enum(["urgent", "high", "medium", "low", "none"]).optional()
       }
     },
     async ({ id, dueAt, ...fields }) => {
