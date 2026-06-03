@@ -1,37 +1,21 @@
-export type EntityKind =
-  | "task"
-  | "note"
-  | "decision"
-  | "doc"
-  | "comment"
-  | "log"
-  | "memory";
+export type EntityKind = "task" | "note";
+export const ENTITY_KINDS: EntityKind[] = ["task", "note"];
 
-export const ENTITY_KINDS: EntityKind[] = [
-  "task",
-  "note",
-  "decision",
-  "doc",
-  "comment",
-  "log",
-  "memory"
-];
+// Kinds the UI offers in QuickCreate. Mirrors the API surface — these are the
+// only kinds the backend now accepts.
+export const CREATABLE_KINDS: EntityKind[] = ["task", "note"];
 
 export type ActorKind = "human" | "agent" | "system";
 export const ACTOR_KINDS: ActorKind[] = ["human", "agent", "system"];
 
-export type EdgeKind =
-  | "blocks"
-  | "references"
-  | "supersedes"
-  | "derives_from"
-  | "replied_to"
-  | "parent_of";
+export type EdgeKind = "blocks" | "references" | "parent_of";
 
 export interface Project {
   id: string;
   key: string;
   name: string;
+  color: string;
+  icon: string;
   agentsMd: string;
   createdAt: string;
   updatedAt: string;
@@ -44,7 +28,7 @@ export interface Entity {
   id: string;
   projectId: string | null;
   kind: EntityKind;
-  title: string;
+  title: string | null;
   body: string;
   tags: string[];
   status: string;
@@ -76,14 +60,6 @@ export interface TasksRangeResult {
   backlog: Entity[];
 }
 
-export interface Actor {
-  id: string;
-  name: string;
-  kind: ActorKind;
-  key: string | null;
-  createdAt: string;
-}
-
 export interface SearchHit {
   entity: Entity;
   score: number;
@@ -110,29 +86,45 @@ export interface OpeningBriefResponse {
   markdown: string;
 }
 
-export interface WriteEntityInput {
-  kind: EntityKind;
+export interface CreateTaskInput {
   projectId?: string | null;
   title: string;
   body?: string;
   tags?: string[];
   status?: string;
   parentId?: string | null;
-  actorId?: string | null;
   actorKind?: ActorKind;
   metadata?: Record<string, unknown>;
   dueAt?: string | null;
   priority?: Priority;
+  idempotencyKey?: string | null;
+}
+
+export interface CreateNoteInput {
+  projectId?: string | null;
+  title?: string | null;
+  body?: string;
+  tags?: string[];
+  parentId?: string | null;
+  actorKind?: ActorKind;
+  metadata?: Record<string, unknown>;
   pinned?: boolean;
   idempotencyKey?: string | null;
 }
 
+/** Convenience: the union the QuickCreate modal builds, with `kind` to route
+ *  to /v1/tasks or /v1/notes. The client helper splits it for you. */
+export type WriteEntityInput =
+  | ({ kind: "task" } & CreateTaskInput)
+  | ({ kind: "note" } & CreateNoteInput);
+
 export interface UpdateEntityInput {
-  title?: string;
+  title?: string | null;
   body?: string;
   tags?: string[];
   status?: string;
   metadata?: Record<string, unknown>;
+  parentId?: string | null;
   dueAt?: string | null;
   priority?: Priority;
   pinned?: boolean;
@@ -141,7 +133,29 @@ export interface UpdateEntityInput {
 export interface CreateProjectInput {
   key: string;
   name: string;
+  color?: string;
+  icon?: string;
   agentsMd?: string;
+}
+
+export interface UpdateProjectInput {
+  name?: string;
+  color?: string;
+  icon?: string;
+  agentsMd?: string;
+}
+
+export interface Token {
+  id: string;
+  name: string;
+  prefix: string;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreatedToken extends Token {
+  /** Plaintext token. Only present in the create-response; the client must persist it. */
+  plaintext: string;
 }
 
 export interface RecentInput {

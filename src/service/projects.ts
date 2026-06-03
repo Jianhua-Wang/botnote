@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { projects, type Project } from "../db/schema.js";
-import type { CreateProjectInput, SetAgentsMdInput } from "./types.js";
+import type { CreateProjectInput, UpdateProjectInput } from "./types.js";
 
 export async function createProject(
   db: Database["db"],
@@ -9,9 +9,26 @@ export async function createProject(
 ): Promise<Project> {
   const [row] = await db
     .insert(projects)
-    .values({ key: input.key, name: input.name, agentsMd: input.agentsMd })
+    .values({
+      key: input.key,
+      name: input.name,
+      color: input.color,
+      icon: input.icon,
+      agentsMd: input.agentsMd
+    })
     .returning();
   if (!row) throw new Error("project insert returned no row");
+  return row;
+}
+
+export async function updateProject(
+  db: Database["db"],
+  id: string,
+  input: UpdateProjectInput
+): Promise<Project> {
+  const set: Record<string, unknown> = { ...input, updatedAt: new Date() };
+  const [row] = await db.update(projects).set(set).where(eq(projects.id, id)).returning();
+  if (!row) throw new Error(`project ${id} not found`);
   return row;
 }
 
@@ -32,20 +49,3 @@ export async function listProjects(db: Database["db"]): Promise<Project[]> {
   return db.select().from(projects).orderBy(projects.key);
 }
 
-export async function getAgentsMd(db: Database["db"], projectId: string): Promise<string> {
-  const project = await getProject(db, projectId);
-  return project?.agentsMd ?? "";
-}
-
-export async function setAgentsMd(
-  db: Database["db"],
-  input: SetAgentsMdInput
-): Promise<Project> {
-  const [row] = await db
-    .update(projects)
-    .set({ agentsMd: input.agentsMd })
-    .where(eq(projects.id, input.projectId))
-    .returning();
-  if (!row) throw new Error(`project ${input.projectId} not found`);
-  return row;
-}

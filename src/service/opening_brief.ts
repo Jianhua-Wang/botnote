@@ -62,6 +62,13 @@ export async function openingBrief(
   };
 }
 
+function titleFor(e: Entity): string {
+  if (e.title && e.title.trim()) return e.title;
+  const firstLine = e.body.split("\n").find((l) => l.trim())?.trim() ?? "";
+  if (firstLine) return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine;
+  return "(untitled)";
+}
+
 export function formatOpeningBrief(brief: OpeningBrief): string {
   const lines: string[] = [];
   if (brief.project) {
@@ -82,7 +89,7 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     lines.push("_These are pinned by the user as always-relevant context for this project. Read them before acting._");
     lines.push("");
     for (const n of brief.pinnedNotes) {
-      lines.push(`### 📌 ${n.title}`);
+      lines.push(`### 📌 ${titleFor(n)}`);
       if (n.body.trim()) {
         lines.push(n.body.trim());
       }
@@ -93,7 +100,7 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
   if (brief.openTasks.length) {
     lines.push(`## Open Tasks (${brief.openTasks.length})`);
     for (const t of brief.openTasks) {
-      lines.push(`- [${t.id.slice(0, 8)}] ${t.title}${t.tags.length ? ` [${t.tags.join(", ")}]` : ""}`);
+      lines.push(`- [${t.id.slice(0, 8)}] ${titleFor(t)}${t.tags.length ? ` [${t.tags.join(", ")}]` : ""}`);
     }
     lines.push("");
   }
@@ -101,7 +108,7 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
   if (brief.pendingDecisions.length) {
     lines.push(`## Pending Decisions (${brief.pendingDecisions.length})`);
     for (const d of brief.pendingDecisions) {
-      lines.push(`- [${d.id.slice(0, 8)}] ${d.title}`);
+      lines.push(`- [${d.id.slice(0, 8)}] ${titleFor(d)}`);
     }
     lines.push("");
   }
@@ -110,7 +117,7 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     lines.push(`## Recent Activity (${brief.recent.length})`);
     for (const r of brief.recent) {
       const when = r.createdAt.toISOString().slice(0, 16).replace("T", " ");
-      lines.push(`- ${when} · ${r.kind} · ${r.title}`);
+      lines.push(`- ${when} · ${r.kind} · ${titleFor(r)}`);
     }
     lines.push("");
   }

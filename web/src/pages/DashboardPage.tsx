@@ -2,10 +2,14 @@ import { Activity, FolderKanban } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useProjects, useRecent } from "../api/hooks";
 import { KindBadge } from "../components/KindBadge";
+import { ProjectIcon } from "../components/ProjectIcon";
+import { useDrawer } from "../hooks/useDrawer";
+import { displayTitle, isUntitled } from "../lib/entityTitle";
 
 export function DashboardPage() {
   const { data: projects } = useProjects();
   const { data: recent } = useRecent({ limit: 20 });
+  const drawer = useDrawer();
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
@@ -37,7 +41,12 @@ export function DashboardPage() {
                   className="border border-line rounded-md p-3 bg-surface hover:border-accent/50 transition-colors block"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs text-accent">{p.key}</span>
+                    <div className="flex items-center gap-1.5">
+                      <ProjectIcon color={p.color} icon={p.icon} size={12} />
+                      <span className="font-mono text-xs" style={{ color: p.color }}>
+                        {p.key}
+                      </span>
+                    </div>
                     <span className="text-xxs text-faint">
                       {new Date(p.updatedAt).toLocaleDateString()}
                     </span>
@@ -66,20 +75,27 @@ export function DashboardPage() {
               {recent?.map((e) => {
                 const project = projects?.find((p) => p.id === e.projectId);
                 return (
-                  <Link
+                  <button
                     key={e.id}
-                    to={project ? `/p/${project.key}/e/${e.id}` : "#"}
-                    className="flex items-center gap-3 px-3 py-2 row-hover"
+                    type="button"
+                    onClick={() => drawer.open(e.id)}
+                    className="w-full text-left flex items-center gap-3 px-3 py-2 row-hover"
                   >
                     <KindBadge kind={e.kind} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-ink truncate">{e.title}</div>
+                      <div
+                        className={`text-sm truncate ${
+                          isUntitled(e) ? "text-muted italic" : "text-ink"
+                        }`}
+                      >
+                        {displayTitle(e)}
+                      </div>
                       <div className="text-xxs text-muted mt-0.5">
                         {project ? project.key : "—"} · {timeAgo(e.createdAt)} ·{" "}
                         <span className="opacity-70">{e.actorKind}</span>
                       </div>
                     </div>
-                  </Link>
+                  </button>
                 );
               })}
             </div>

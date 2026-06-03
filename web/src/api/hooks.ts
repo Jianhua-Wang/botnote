@@ -7,6 +7,7 @@ import type {
   SearchInput,
   TasksRangeInput,
   UpdateEntityInput,
+  UpdateProjectInput,
   WriteEntityInput
 } from "./types";
 
@@ -40,6 +41,14 @@ export function useEntity(id: string | undefined) {
   return useQuery({
     queryKey: ["entity", id],
     queryFn: () => api.getEntity(id!),
+    enabled: Boolean(id)
+  });
+}
+
+export function useRelatedEntities(id: string | undefined) {
+  return useQuery({
+    queryKey: ["related", id],
+    queryFn: () => api.relatedEntities(id!),
     enabled: Boolean(id)
   });
 }
@@ -96,6 +105,19 @@ export function useCreateProject() {
   });
 }
 
+export function useUpdateProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, fields }: { id: string; fields: UpdateProjectInput }) =>
+      api.updateProject(id, fields),
+    onSuccess: (project) => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project", "by-key", project.key] });
+      qc.invalidateQueries({ queryKey: ["opening-brief", project.id] });
+    }
+  });
+}
+
 export function useWriteEntity() {
   const qc = useQueryClient();
   return useMutation({
@@ -105,6 +127,9 @@ export function useWriteEntity() {
       qc.invalidateQueries({ queryKey: ["opening-brief", entity.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["recent"] });
       qc.invalidateQueries({ queryKey: ["tasks-range"] });
+      if (entity.parentId) {
+        qc.invalidateQueries({ queryKey: ["related", entity.parentId] });
+      }
     }
   });
 }
@@ -119,6 +144,7 @@ export function useUpdateEntity() {
       qc.invalidateQueries({ queryKey: ["entity-list", entity.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["opening-brief", entity.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["tasks-range"] });
+      qc.invalidateQueries({ queryKey: ["related"] });
     }
   });
 }
@@ -132,19 +158,48 @@ export function useDeleteEntity() {
       qc.invalidateQueries({ queryKey: ["recent"] });
       qc.invalidateQueries({ queryKey: ["entity-list"] });
       qc.invalidateQueries({ queryKey: ["opening-brief"] });
+      qc.invalidateQueries({ queryKey: ["related"] });
     }
   });
 }
 
+/** Convenience wrapper around useUpdateProject for the AGENTS.md editor. */
 export function useSetAgentsMd() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, agentsMd }: { id: string; agentsMd: string }) =>
-      api.setAgentsMd(id, agentsMd),
+      api.updateProject(id, { agentsMd }),
     onSuccess: (project) => {
       qc.invalidateQueries({ queryKey: ["project", "by-key", project.key] });
       qc.invalidateQueries({ queryKey: ["opening-brief", project.id] });
       qc.invalidateQueries({ queryKey: ["projects"] });
+    }
+  });
+}
+
+export function useTokens() {
+  return useQuery({
+    queryKey: ["tokens"],
+    queryFn: api.listTokens
+  });
+}
+
+export function useCreateToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => api.createToken(name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tokens"] });
+    }
+  });
+}
+
+export function useRevokeToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.revokeToken(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tokens"] });
     }
   });
 }

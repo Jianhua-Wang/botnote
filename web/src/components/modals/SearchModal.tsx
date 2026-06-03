@@ -1,26 +1,22 @@
 import { ArrowRight, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useProjects, useSearch } from "../../api/hooks";
 import type { EntityKind } from "../../api/types";
+import { useDrawer } from "../../hooks/useDrawer";
+import { displayTitle } from "../../lib/entityTitle";
 import { useModals } from "../../state/modals";
 import { ModalShell } from "../ModalShell";
 
 const KIND_LABELS: Record<EntityKind, string> = {
   task: "task",
-  note: "note",
-  decision: "decision",
-  doc: "doc",
-  comment: "comment",
-  log: "log",
-  memory: "memory"
+  note: "note"
 };
 
 export function SearchModal() {
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   const { close } = useModals();
-  const navigate = useNavigate();
+  const { open: openDrawer } = useDrawer();
   const { data: projects } = useProjects();
 
   useEffect(() => {
@@ -64,13 +60,13 @@ export function SearchModal() {
               key={h.entity.id}
               onClick={() => {
                 close();
-                if (projectKey) navigate(`/p/${projectKey}/e/${h.entity.id}`);
+                openDrawer(h.entity.id);
               }}
               className="w-full px-3 py-2 row-hover text-left flex items-start gap-3 border-t border-line/60"
             >
               <span className="chip mt-0.5">{KIND_LABELS[h.entity.kind]}</span>
               <div className="flex-1 min-w-0">
-                <div className="text-sm text-ink truncate">{h.entity.title}</div>
+                <div className="text-sm text-ink truncate">{displayTitle(h.entity)}</div>
                 <div className="text-xs text-muted truncate mt-0.5">
                   {h.entity.body.replace(/\n/g, " ").slice(0, 140) || "—"}
                 </div>

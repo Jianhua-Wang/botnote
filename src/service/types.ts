@@ -5,36 +5,84 @@ export const EntityKindEnum = z.enum(ENTITY_KINDS);
 export const ActorKindEnum = z.enum(ACTOR_KINDS);
 export const EdgeKindEnum = z.enum(EDGE_KINDS);
 
-// PriorityEnum redeclared below to avoid forward-ref
+export const PriorityEnum = z.enum(["urgent", "high", "medium", "low", "none"]);
+export const TaskStatusEnum = z.enum([
+  "open",
+  "in_progress",
+  "delayed",
+  "done",
+  "archived",
+  "rejected"
+]);
 
 export const Uuid = z.string().uuid();
 
+/** Internal write input — used by entities.write(). REST/MCP entry points
+ *  validate against the kind-specific schemas below first. */
 export const WriteInput = z.object({
   kind: EntityKindEnum,
   projectId: Uuid.nullish(),
-  title: z.string().min(1).max(500),
+  title: z.string().max(500).nullish(),
   body: z.string().default(""),
   tags: z.array(z.string()).default([]),
   status: z.string().default("open"),
   parentId: Uuid.nullish(),
-  actorId: Uuid.nullish(),
   actorKind: ActorKindEnum.default("human"),
   metadata: z.record(z.unknown()).default({}),
   dueAt: z.coerce.date().nullish(),
-  priority: z.enum(["urgent", "high", "medium", "low", "none"]).default("none"),
+  priority: PriorityEnum.default("none"),
   pinned: z.boolean().default(false),
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type WriteInput = z.infer<typeof WriteInput>;
 
+/** Create a task. Title required, body optional, dueAt + priority + status
+ *  apply natively. */
+export const CreateTaskInput = z.object({
+  projectId: Uuid.nullish(),
+  title: z.string().min(1).max(500),
+  body: z.string().default(""),
+  tags: z.array(z.string()).default([]),
+  status: TaskStatusEnum.default("open"),
+  parentId: Uuid.nullish(),
+  actorKind: ActorKindEnum.default("human"),
+  metadata: z.record(z.unknown()).default({}),
+  dueAt: z.coerce.date().nullish(),
+  priority: PriorityEnum.default("none"),
+  idempotencyKey: z.string().min(1).max(200).nullish()
+});
+export type CreateTaskInput = z.infer<typeof CreateTaskInput>;
+
+/** Capture a note. Title is optional (body's first line acts as label).
+ *  Status / due / priority don't apply. parentId links a note to a task. */
+export const CreateNoteInput = z.object({
+  projectId: Uuid.nullish(),
+  title: z.string().max(500).nullish(),
+  body: z.string().default(""),
+  tags: z.array(z.string()).default([]),
+  parentId: Uuid.nullish(),
+  actorKind: ActorKindEnum.default("human"),
+  metadata: z.record(z.unknown()).default({}),
+  pinned: z.boolean().default(false),
+  idempotencyKey: z.string().min(1).max(200).nullish()
+});
+export type CreateNoteInput = z.infer<typeof CreateNoteInput>;
+
+export const GetByKeyInput = z.object({
+  projectKey: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+  sequenceId: z.number().int().positive()
+});
+export type GetByKeyInput = z.infer<typeof GetByKeyInput>;
+
 export const UpdateInput = z.object({
-  title: z.string().min(1).max(500).optional(),
+  title: z.string().max(500).nullable().optional(),
   body: z.string().optional(),
   tags: z.array(z.string()).optional(),
   status: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
+  parentId: Uuid.nullable().optional(),
   dueAt: z.coerce.date().nullable().optional(),
-  priority: z.enum(["urgent", "high", "medium", "low", "none"]).optional(),
+  priority: PriorityEnum.optional(),
   pinned: z.boolean().optional()
 });
 export type UpdateInput = z.infer<typeof UpdateInput>;
@@ -77,6 +125,16 @@ export const OpeningBriefInput = z.object({
 });
 export type OpeningBriefInput = z.infer<typeof OpeningBriefInput>;
 
+const HexColor = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, "color must be a 6-digit hex color, e.g. #5e6ad2");
+
+const IconName = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z0-9_-]+$/, "icon must be a lowercase identifier");
+
 export const CreateProjectInput = z.object({
   key: z
     .string()
@@ -84,19 +142,21 @@ export const CreateProjectInput = z.object({
     .max(20)
     .regex(/^[A-Z][A-Z0-9_]*$/),
   name: z.string().min(1).max(200),
+  color: HexColor.default("#5e6ad2"),
+  icon: IconName.default("circle"),
   agentsMd: z.string().default("")
 });
 export type CreateProjectInput = z.infer<typeof CreateProjectInput>;
 
-export const SetAgentsMdInput = z.object({
-  projectId: Uuid,
-  agentsMd: z.string()
+export const UpdateProjectInput = z.object({
+  name: z.string().min(1).max(200).optional(),
+  color: HexColor.optional(),
+  icon: IconName.optional(),
+  agentsMd: z.string().optional()
 });
-export type SetAgentsMdInput = z.infer<typeof SetAgentsMdInput>;
+export type UpdateProjectInput = z.infer<typeof UpdateProjectInput>;
 
-export const EnsureActorInput = z.object({
-  name: z.string().min(1).max(200),
-  kind: ActorKindEnum,
-  key: z.string().min(1).max(100).nullish()
+export const CreateTokenInput = z.object({
+  name: z.string().min(1).max(200)
 });
-export type EnsureActorInput = z.infer<typeof EnsureActorInput>;
+export type CreateTokenInput = z.infer<typeof CreateTokenInput>;

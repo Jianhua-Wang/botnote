@@ -35,28 +35,13 @@ const tsvector = customType<{ data: string }>({
   }
 });
 
-export const ENTITY_KINDS = [
-  "task",
-  "note",
-  "decision",
-  "doc",
-  "comment",
-  "log",
-  "memory"
-] as const;
+export const ENTITY_KINDS = ["task", "note"] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 
 export const ACTOR_KINDS = ["human", "agent", "system"] as const;
 export type ActorKind = (typeof ACTOR_KINDS)[number];
 
-export const EDGE_KINDS = [
-  "blocks",
-  "references",
-  "supersedes",
-  "derives_from",
-  "replied_to",
-  "parent_of"
-] as const;
+export const EDGE_KINDS = ["blocks", "references", "parent_of"] as const;
 export type EdgeKind = (typeof EDGE_KINDS)[number];
 
 export const projects = pgTable(
@@ -65,6 +50,8 @@ export const projects = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     key: text("key").notNull(),
     name: text("name").notNull(),
+    color: text("color").notNull().default("#5e6ad2"),
+    icon: text("icon").notNull().default("circle"),
     agentsMd: text("agents_md").notNull().default(""),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
@@ -74,35 +61,19 @@ export const projects = pgTable(
   })
 );
 
-export const actors = pgTable(
-  "actors",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    name: text("name").notNull(),
-    kind: text("kind").notNull(),
-    key: text("key"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-  },
-  (t) => ({
-    nameIdx: uniqueIndex("actors_name_idx").on(t.name),
-    keyIdx: uniqueIndex("actors_key_idx").on(t.key)
-  })
-);
-
 export const entities = pgTable(
   "entities",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     kind: text("kind").notNull(),
-    title: text("title").notNull(),
+    title: text("title"),
     body: text("body").notNull().default(""),
     tags: text("tags")
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
     status: text("status").notNull().default("open"),
-    actorId: uuid("actor_id").references(() => actors.id),
     actorKind: text("actor_kind").notNull().default("human"),
     idempotencyKey: text("idempotency_key"),
     parentId: uuid("parent_id"),
@@ -123,7 +94,7 @@ export const entities = pgTable(
       t.kind,
       t.createdAt
     ),
-    actorCreatedIdx: index("entities_actor_created_idx").on(t.actorId, t.createdAt),
+    parentIdx: index("entities_parent_idx").on(t.parentId),
     idempotencyIdx: uniqueIndex("entities_idempotency_idx").on(t.idempotencyKey)
   })
 );
@@ -147,7 +118,43 @@ export const edges = pgTable(
   })
 );
 
+export const tokens = pgTable(
+  "tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    prefix: text("prefix").notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => ({
+    tokenHashIdx: uniqueIndex("tokens_token_hash_idx").on(t.tokenHash),
+    createdIdx: index("tokens_created_idx").on(t.createdAt)
+  })
+);
+
+// Browser-facing session cookies. The plaintext is stored in an httpOnly
+// cookie; the row stores sha256(plaintext). On login the user posts the master
+// password (env BOTNOTE_PASSWORD) and we mint a row + set the cookie.
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    userAgent: text("user_agent"),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => ({
+    tokenHashIdx: uniqueIndex("sessions_token_hash_idx").on(t.tokenHash),
+    expiresIdx: index("sessions_expires_at_idx").on(t.expiresAt)
+  })
+);
+
 export type Project = typeof projects.$inferSelect;
-export type Actor = typeof actors.$inferSelect;
 export type Entity = typeof entities.$inferSelect;
 export type Edge = typeof edges.$inferSelect;
+export type Token = typeof tokens.$inferSelect;
+export type Session = typeof sessions.$inferSelect;

@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import { Link, useParams } from "react-router-dom";
 import remarkGfm from "remark-gfm";
 import { useProjectByKey, useSetAgentsMd } from "../api/hooks";
+import { ProjectIcon } from "../components/ProjectIcon";
 
 const STARTER = `## Critical
 - NEVER commit credentials.
@@ -37,9 +38,12 @@ export function AgentsMdPage() {
     <div className="h-full flex flex-col">
       <div className="px-6 pt-4 pb-2 flex items-center justify-between border-b border-line bg-surface">
         <div className="flex items-center gap-2 text-sm">
-          <Link to={`/p/${project.key}`} className="text-muted hover:text-ink flex items-center gap-1">
+          <Link to={`/p/${project.key}`} className="text-muted hover:text-ink flex items-center gap-1.5">
             <ChevronLeft size={14} />
-            <span className="font-mono text-xs">{project.key}</span>
+            <ProjectIcon color={project.color} icon={project.icon} size={12} />
+            <span className="font-mono text-xs" style={{ color: project.color }}>
+              {project.key}
+            </span>
           </Link>
           <span className="text-muted">/</span>
           <div className="flex items-center gap-1.5 text-ink">

@@ -1,12 +1,14 @@
 import { format } from "date-fns";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useUpdateEntity } from "../../api/hooks";
 import type { Entity, Project } from "../../api/types";
+import { useDrawer } from "../../hooks/useDrawer";
+import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { PriorityIcon, StatusCircle } from "../tasks/icons";
 import { useModals } from "../../state/modals";
 
 const COLUMNS: Array<{ status: string; label: string; intent: string }> = [
+  { status: "delayed", label: "Delay", intent: "text-statusDelayed" },
   { status: "open", label: "Todo", intent: "text-statusOpen" },
   { status: "in_progress", label: "In Progress", intent: "text-statusInProgress" },
   { status: "done", label: "Done", intent: "text-statusDone" }
@@ -109,7 +111,7 @@ function KanbanColumn({
 }
 
 function KanbanCard({ task, project }: { task: Entity; project: Project }) {
-  const navigate = useNavigate();
+  const drawer = useDrawer();
   const update = useUpdateEntity();
   const overdue =
     task.dueAt &&
@@ -125,7 +127,7 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
         e.dataTransfer.setData("text/task-id", task.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      onClick={() => navigate(`/p/${project.key}/e/${task.id}`)}
+      onClick={() => drawer.open(task.id)}
       className="group bg-surface border border-line rounded p-2 cursor-grab active:cursor-grabbing hover:border-accent transition-colors"
     >
       <div className="flex items-start gap-1.5">
@@ -144,10 +146,14 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
         </button>
         <span
           className={`flex-1 min-w-0 text-sm leading-snug ${
-            task.status === "done" ? "text-muted line-through" : "text-ink"
+            task.status === "done"
+              ? "text-muted line-through"
+              : isUntitled(task)
+                ? "italic text-muted"
+                : "text-ink"
           }`}
         >
-          {task.title}
+          {displayTitle(task)}
         </span>
         <PriorityIcon priority={task.priority} size={11} />
       </div>

@@ -4,19 +4,25 @@
   "private": true,
   "description": "Notion for bots. Lightweight project + notes + memory store, agent-first.",
   "type": "module",
+  "bin": {
+    "botnote": "./dist/bin.js"
+  },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "dev": "tsx watch src/cli.ts",
     "start": "node dist/cli.js",
-    "build": "tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp -R src/db/migrations/. dist/db/migrations/",
+    "build": "tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp -R src/db/migrations/. dist/db/migrations/ && chmod +x dist/bin.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.2.0",
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/static": "^9.1.3",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",

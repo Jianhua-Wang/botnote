@@ -1,13 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCreateProject } from "../../api/hooks";
+import { DEFAULT_PROJECT_COLOR, DEFAULT_PROJECT_ICON } from "../../lib/projectTheme";
 import { useModals } from "../../state/modals";
+import { IconColorPicker } from "../IconColorPicker";
 import { ModalShell } from "../ModalShell";
 
 export function NewProjectModal() {
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
   const [agentsMd, setAgentsMd] = useState("");
+  const [color, setColor] = useState(DEFAULT_PROJECT_COLOR);
+  const [icon, setIcon] = useState(DEFAULT_PROJECT_ICON);
   const create = useCreateProject();
   const { close } = useModals();
   const navigate = useNavigate();
@@ -23,6 +27,8 @@ export function NewProjectModal() {
           const p = await create.mutateAsync({
             key: key.trim(),
             name: name.trim(),
+            color,
+            icon,
             agentsMd: agentsMd.trim()
           });
           close();
@@ -52,6 +58,12 @@ export function NewProjectModal() {
             placeholder="botnote"
           />
         </div>
+        <IconColorPicker
+          icon={icon}
+          color={color}
+          onIconChange={setIcon}
+          onColorChange={setColor}
+        />
         <div>
           <label className="block text-xxs text-muted uppercase tracking-wider mb-1">
             AGENTS.md (optional)

@@ -1,0 +1,23 @@
+{
+  "name": "botnote",
+  "displayName": "botnote",
+  "version": "0.1.0",
+  "description": "Notion for bots — capture + recall + project context for AI agents. Plugin bundles the botnote MCP server with /today, /remember, /recall, /start-work, /done slash commands and a curator subagent.",
+  "homepage": "https://botnote.net",
+  "repository": "https://github.com/jianhuawang/botnote",
+  "license": "MIT",
+  "userConfig": {
+    "botnote_url": {
+      "type": "string",
+      "title": "botnote daemon URL",
+      "description": "tailnet/localhost: http://100.68.185.53:4280 or http://127.0.0.1:4280 (no token needed). Public: https://botnote.net (requires bearer + CF Access service token).",
+      "default": "http://127.0.0.1:4280"
+    },
+    "botnote_token": {
+      "type": "string",
+      "title": "API bearer token",
+      "description": "Required only when going through https://botnote.net. Mint via `botnote tokens create` on the daemon host.",
+      "sensitive": true
+    }
+  }
+}

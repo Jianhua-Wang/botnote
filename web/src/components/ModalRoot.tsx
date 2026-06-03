@@ -1,3 +1,4 @@
+import { EditProjectModal } from "./modals/EditProjectModal";
 import { NewProjectModal } from "./modals/NewProjectModal";
 import { QuickCreateModal } from "./modals/QuickCreateModal";
 import { SearchModal } from "./modals/SearchModal";
@@ -10,8 +11,16 @@ export function ModalRoot() {
     case "search":
       return <SearchModal />;
     case "quick-create":
-      return <QuickCreateModal initialProjectId={active.projectId} />;
+      return (
+        <QuickCreateModal
+          initialProjectId={active.projectId}
+          initialKind={active.initialKind}
+          initialParentId={active.parentId}
+        />
+      );
     case "new-project":
       return <NewProjectModal />;
+    case "edit-project":
+      return <EditProjectModal projectId={active.projectId} />;
   }
 }

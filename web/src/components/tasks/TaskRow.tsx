@@ -1,11 +1,12 @@
 import { format } from "date-fns";
-import { useNavigate } from "react-router-dom";
 import { useDeleteEntity, useUpdateEntity } from "../../api/hooks";
 import type { Entity, Priority, Project } from "../../api/types";
-import { PriorityIcon, PRIORITY_LABEL, StatusCircle, STATUS_LABEL } from "./icons";
+import { useDrawer } from "../../hooks/useDrawer";
+import { displayTitle, isUntitled } from "../../lib/entityTitle";
+import { PriorityIcon, PRIORITY_LABEL, StatusCircle, STATUS_LABEL, TASK_STATUS_OPTIONS } from "./icons";
 import { PopoverMenu } from "./PopoverMenu";
 
-const STATUS_OPTIONS = ["open", "in_progress", "done", "archived", "rejected"];
+const STATUS_OPTIONS = TASK_STATUS_OPTIONS;
 const PRIORITY_OPTIONS: Priority[] = ["urgent", "high", "medium", "low", "none"];
 
 export function TaskRow({
@@ -19,7 +20,7 @@ export function TaskRow({
   showProject?: boolean;
   compact?: boolean;
 }) {
-  const navigate = useNavigate();
+  const drawer = useDrawer();
   const update = useUpdateEntity();
   const del = useDeleteEntity();
 
@@ -30,14 +31,10 @@ export function TaskRow({
     task.status !== "done" &&
     task.status !== "archived";
 
-  function navigateToDetail() {
-    if (project) navigate(`/p/${project.key}/e/${task.id}`);
-  }
-
   return (
     <div
       className={`task-row group ${compact ? "!h-7 text-xs" : ""}`}
-      onClick={navigateToDetail}
+      onClick={() => drawer.open(task.id)}
     >
       <PopoverMenu
         trigger={
@@ -78,10 +75,10 @@ export function TaskRow({
 
       <span
         className={`flex-1 min-w-0 truncate ${
-          task.status === "done" ? "text-muted line-through" : "text-ink"
+          task.status === "done" ? "text-muted line-through" : isUntitled(task) ? "text-muted italic" : "text-ink"
         }`}
       >
-        {task.title}
+        {displayTitle(task)}
       </span>
 
       {task.tags.slice(0, 2).map((t) => (
@@ -139,7 +136,7 @@ export function TaskRow({
         className="shrink-0 p-1 -m-1 rounded text-faint opacity-0 group-hover:opacity-100 hover:bg-danger/10 hover:text-danger transition-opacity"
         onClick={(e) => {
           e.stopPropagation();
-          if (confirm(`Delete task "${task.title}"?`)) {
+          if (confirm(`Delete task "${displayTitle(task)}"?`)) {
             del.mutate(task.id);
           }
         }}

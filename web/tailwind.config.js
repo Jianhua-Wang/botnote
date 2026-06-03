@@ -34,7 +34,8 @@ export default {
         statusInProgress: "#f2994a",
         statusDone: "#4cb782",
         statusArchived: "#c8c8cc",
-        statusRejected: "#eb5757"
+        statusRejected: "#eb5757",
+        statusDelayed: "#d97706"
       },
       fontFamily: {
         sans: [
@@ -54,11 +55,12 @@ export default {
         ]
       },
       fontSize: {
-        xxs: ["10px", "14px"],
-        xs: ["11px", "15px"],
-        sm: ["12.5px", "17px"],
-        base: ["13px", "18px"],
-        md: ["14px", "20px"]
+        xxs: ["11px", "15px"],
+        xs: ["12px", "16px"],
+        sm: ["13.5px", "18.5px"],
+        base: ["14.5px", "20px"],
+        md: ["15.5px", "22px"],
+        lg: ["17px", "24px"]
       },
       borderRadius: {
         DEFAULT: "5px",

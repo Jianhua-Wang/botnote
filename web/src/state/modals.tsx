@@ -1,9 +1,12 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
+import type { EntityKind } from "../api/types";
+
 export type ModalKind =
   | { kind: "search" }
-  | { kind: "quick-create"; projectId?: string }
+  | { kind: "quick-create"; projectId?: string; initialKind?: EntityKind; parentId?: string }
   | { kind: "new-project" }
+  | { kind: "edit-project"; projectId: string }
   | null;
 
 interface ModalsContextValue {

@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { edges, entities, type Entity } from "../db/schema.js";
+import { edges, entities, projects, type Entity } from "../db/schema.js";
 import type { LinkInput, RecentInput, UpdateInput, WriteInput } from "./types.js";
 
 export async function write(db: Database["db"], input: WriteInput): Promise<Entity> {
@@ -18,12 +18,11 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
     .values({
       kind: input.kind,
       projectId: input.projectId ?? null,
-      title: input.title,
+      title: input.title ?? null,
       body: input.body,
       tags: input.tags,
       status: input.status,
       parentId: input.parentId ?? null,
-      actorId: input.actorId ?? null,
       actorKind: input.actorKind,
       metadata: input.metadata,
       dueAt: input.dueAt ?? null,
@@ -49,14 +48,50 @@ export async function update(
   id: string,
   fields: UpdateInput
 ): Promise<Entity> {
-  const [row] = await db.update(entities).set(fields).where(eq(entities.id, id)).returning();
+  const set: Record<string, unknown> = { ...fields, updatedAt: new Date() };
+  const [row] = await db.update(entities).set(set).where(eq(entities.id, id)).returning();
   if (!row) throw new Error(`entity ${id} not found`);
+  if (fields.parentId !== undefined && fields.parentId !== null) {
+    await db
+      .insert(edges)
+      .values({ fromId: fields.parentId, toId: row.id, kind: "parent_of" })
+      .onConflictDoNothing();
+  }
   return row;
+}
+
+export async function listRelated(
+  db: Database["db"],
+  parentId: string
+): Promise<Entity[]> {
+  return db
+    .select()
+    .from(entities)
+    .where(eq(entities.parentId, parentId))
+    .orderBy(desc(entities.createdAt));
 }
 
 export async function get(db: Database["db"], id: string): Promise<Entity | null> {
   const rows = await db.select().from(entities).where(eq(entities.id, id)).limit(1);
   return rows[0] ?? null;
+}
+
+/**
+ * Look up an entity by its human-readable identifier — e.g. project key `BOT`
+ * + sequence id `12` resolves to the entity displayed as `BOT-12`.
+ */
+export async function getByKey(
+  db: Database["db"],
+  projectKey: string,
+  sequenceId: number
+): Promise<Entity | null> {
+  const rows = await db
+    .select({ e: entities })
+    .from(entities)
+    .innerJoin(projects, eq(entities.projectId, projects.id))
+    .where(and(eq(projects.key, projectKey), eq(entities.sequenceId, sequenceId)))
+    .limit(1);
+  return rows[0]?.e ?? null;
 }
 
 export async function remove(db: Database["db"], id: string): Promise<boolean> {

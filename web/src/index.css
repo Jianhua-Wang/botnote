@@ -28,8 +28,8 @@
     @apply font-mono;
   }
   kbd {
-    @apply inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 text-xxs text-muted border border-line bg-surface rounded-sm;
-    font-size: 10px;
+    @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xxs text-muted border border-line bg-surface rounded-sm;
+    font-size: 11px;
     line-height: 1;
   }
   button,
@@ -43,7 +43,7 @@
 @layer components {
   /* primary actions */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 px-2 h-7 text-xs rounded-md border border-line bg-surface text-ink hover:bg-sidebar disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+    @apply inline-flex items-center justify-center gap-1.5 px-2.5 h-8 text-xs rounded-md border border-line bg-surface text-ink hover:bg-sidebar disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
   }
   .btn-primary {
     @apply bg-accent text-white border-accent hover:bg-accentHover;
@@ -55,20 +55,20 @@
     @apply border-transparent text-danger hover:bg-danger/10;
   }
   .btn-sm {
-    @apply h-6 px-1.5 text-xxs;
+    @apply h-7 px-2 text-xxs;
   }
 
   /* chips */
   .chip {
-    @apply inline-flex items-center gap-1 px-1.5 h-[18px] text-xxs rounded bg-sidebar text-muted border border-lineSoft;
+    @apply inline-flex items-center gap-1 px-1.5 h-[20px] text-xxs rounded bg-sidebar text-muted border border-lineSoft;
   }
 
   /* inputs */
   .input {
-    @apply w-full h-7 px-2 text-sm bg-surface border border-line rounded-md focus:outline-none focus:border-accent focus:ring-2 focus:ring-accentSoft transition-colors;
+    @apply w-full h-8 px-2 text-sm bg-surface border border-line rounded-md focus:outline-none focus:border-accent focus:ring-2 focus:ring-accentSoft transition-colors;
   }
   .input-sm {
-    @apply h-6 text-xs px-1.5;
+    @apply h-7 text-xs px-1.5;
   }
 
   /* row hover */
@@ -78,7 +78,7 @@
 
   /* task row */
   .task-row {
-    @apply flex items-center gap-2 px-3 h-8 border-b border-lineSoft text-sm hover:bg-sidebarHover/50 cursor-pointer transition-colors;
+    @apply flex items-center gap-2 px-3 h-9 border-b border-lineSoft text-sm hover:bg-sidebarHover/50 cursor-pointer transition-colors;
   }
 
   /* segmented control */
@@ -86,7 +86,7 @@
     @apply inline-flex border border-line rounded-md overflow-hidden bg-surface text-muted;
   }
   .seg button {
-    @apply px-2 h-7 text-xs hover:text-ink hover:bg-sidebar transition-colors;
+    @apply px-2.5 h-8 text-xs hover:text-ink hover:bg-sidebar transition-colors;
   }
   .seg button[data-active="true"] {
     @apply bg-ink text-white hover:bg-ink2 hover:text-white;

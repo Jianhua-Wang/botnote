@@ -1,6 +1,8 @@
 import type {
-  Actor,
+  CreateNoteInput,
   CreateProjectInput,
+  CreateTaskInput,
+  CreatedToken,
   Entity,
   OpeningBriefResponse,
   Project,
@@ -9,20 +11,52 @@ import type {
   SearchResponse,
   TasksRangeInput,
   TasksRangeResult,
+  Token,
   UpdateEntityInput,
+  UpdateProjectInput,
   WriteEntityInput
 } from "./types";
 
 const BASE_URL = "";
+const LOGIN_PATH = "/login";
+
+/** Paths the global 401 interceptor must NOT redirect from, because they're
+ *  part of the login surface itself or expected to return 401 as a status,
+ *  not as a "you should log in" signal. */
+const NO_REDIRECT_PATHS = new Set<string>([
+  "/v1/auth/login",
+  "/v1/auth/logout",
+  "/v1/auth/whoami",
+  "/health"
+]);
+
+function shouldRedirectOn401(path: string): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.location.pathname === LOGIN_PATH) return false;
+  for (const p of NO_REDIRECT_PATHS) {
+    if (path.startsWith(p)) return false;
+  }
+  return true;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
+    // credentials: "include" so the browser attaches the botnote_session
+    // cookie on every API call, regardless of same-origin vs cross-origin
+    // (in case the SPA is ever loaded from a different host than the API).
+    credentials: "include",
     headers: {
       "content-type": "application/json",
       ...(init?.headers ?? {})
     }
   });
+  if (res.status === 401 && shouldRedirectOn401(path)) {
+    // Stash the current URL so we can land back here after login.
+    const here = window.location.pathname + window.location.search;
+    window.location.href = `${LOGIN_PATH}?next=${encodeURIComponent(here)}`;
+    throw new Error("unauthenticated");
+  }
   if (!res.ok) {
     let detail = "";
     try {
@@ -45,13 +79,8 @@ export const api = {
     request<Project>(`/v1/projects/by-key/${encodeURIComponent(key)}`),
   createProject: (input: CreateProjectInput) =>
     request<Project>("/v1/projects", { method: "POST", body: JSON.stringify(input) }),
-  getAgentsMd: (id: string) =>
-    request<{ agentsMd: string }>(`/v1/projects/${id}/agents-md`),
-  setAgentsMd: (id: string, agentsMd: string) =>
-    request<Project>(`/v1/projects/${id}/agents-md`, {
-      method: "PUT",
-      body: JSON.stringify({ agentsMd })
-    }),
+  updateProject: (id: string, input: UpdateProjectInput) =>
+    request<Project>(`/v1/projects/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   openingBrief: (id: string, recentLimit = 10) =>
     request<OpeningBriefResponse>(`/v1/projects/${id}/opening-brief`, {
       method: "POST",
@@ -59,8 +88,24 @@ export const api = {
     }),
 
   getEntity: (id: string) => request<Entity>(`/v1/entities/${id}`),
-  writeEntity: (input: WriteEntityInput) =>
-    request<Entity>("/v1/entities", { method: "POST", body: JSON.stringify(input) }),
+  getEntityByKey: (projectKey: string, seq: number) =>
+    request<Entity>(
+      `/v1/projects/by-key/${encodeURIComponent(projectKey)}/entities/by-seq/${seq}`
+    ),
+  createTask: (input: CreateTaskInput) =>
+    request<Entity>("/v1/tasks", { method: "POST", body: JSON.stringify(input) }),
+  createNote: (input: CreateNoteInput) =>
+    request<Entity>("/v1/notes", { method: "POST", body: JSON.stringify(input) }),
+  /** Routes to /v1/tasks or /v1/notes based on `kind`. Callers can keep using
+   *  a single helper; the wire format is split. */
+  writeEntity: (input: WriteEntityInput) => {
+    if (input.kind === "task") {
+      const { kind: _kind, ...rest } = input;
+      return request<Entity>("/v1/tasks", { method: "POST", body: JSON.stringify(rest) });
+    }
+    const { kind: _kind, ...rest } = input;
+    return request<Entity>("/v1/notes", { method: "POST", body: JSON.stringify(rest) });
+  },
   updateEntity: (id: string, fields: UpdateEntityInput) =>
     request<Entity>(`/v1/entities/${id}`, {
       method: "PATCH",
@@ -70,18 +115,35 @@ export const api = {
   deleteEntity: (id: string) =>
     request<void>(`/v1/entities/${id}`, { method: "DELETE" }),
 
+  relatedEntities: (id: string) => request<Entity[]>(`/v1/entities/${id}/related`),
+
   recent: (input: RecentInput = {}) =>
     request<Entity[]>("/v1/recent", { method: "POST", body: JSON.stringify(input) }),
 
   search: (input: SearchInput) =>
     request<SearchResponse>("/v1/search", { method: "POST", body: JSON.stringify(input) }),
 
-  ensureActor: (input: { name: string; kind: "human" | "agent" | "system"; key?: string }) =>
-    request<Actor>("/v1/actors", { method: "POST", body: JSON.stringify(input) }),
-
   tasksRange: (input: TasksRangeInput) =>
     request<TasksRangeResult>("/v1/tasks/range", {
       method: "POST",
       body: JSON.stringify(input)
-    })
+    }),
+
+  listTokens: () => request<Token[]>("/v1/tokens"),
+  createToken: (name: string) =>
+    request<CreatedToken>("/v1/tokens", { method: "POST", body: JSON.stringify({ name }) }),
+  revokeToken: (id: string) => request<void>(`/v1/tokens/${id}`, { method: "DELETE" }),
+
+  // ----- auth -----
+  login: (password: string) =>
+    request<{ ok: boolean; expiresAt: string }>("/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password })
+    }),
+  logout: () =>
+    request<{ ok: boolean }>("/v1/auth/logout", { method: "POST" }),
+  whoami: () =>
+    request<{ authenticated: boolean; via: "cookie" | "bearer" | "trusted_origin" | "unknown" }>(
+      "/v1/auth/whoami"
+    )
 };

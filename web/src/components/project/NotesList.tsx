@@ -1,18 +1,23 @@
 import { Pin, PinOff } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { useEntityList, useUpdateEntity } from "../../api/hooks";
 import type { Project } from "../../api/types";
+import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { useModals } from "../../state/modals";
 
 export function NotesList({ project }: { project: Project }) {
-  const navigate = useNavigate();
+  const [search, setSearch] = useSearchParams();
   const update = useUpdateEntity();
   const { open } = useModals();
-  // Merge note + memory kinds for display.
-  const { data: notes } = useEntityList(project.id, ["note", "memory"]);
+  const { data: notes } = useEntityList(project.id, ["note"]);
   const [filter, setFilter] = useState<"all" | "pinned">("all");
+
+  function openDetail(id: string) {
+    search.set("d", id);
+    setSearch(search, { replace: true });
+  }
 
   const filtered = (notes ?? []).filter((n) => (filter === "pinned" ? n.pinned : true));
 
@@ -48,7 +53,7 @@ export function NotesList({ project }: { project: Project }) {
             <div
               key={n.id}
               className="px-4 py-2.5 border-b border-lineSoft row-hover cursor-pointer group"
-              onClick={() => navigate(`/p/${project.key}/e/${n.id}`)}
+              onClick={() => openDetail(n.id)}
             >
               <div className="flex items-start gap-2">
                 <button
@@ -68,8 +73,14 @@ export function NotesList({ project }: { project: Project }) {
                   )}
                 </button>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-ink truncate">{n.title}</div>
-                  {n.body && (
+                  <div
+                    className={`text-sm truncate ${
+                      isUntitled(n) ? "text-muted italic" : "text-ink"
+                    }`}
+                  >
+                    {displayTitle(n)}
+                  </div>
+                  {!isUntitled(n) && n.body && (
                     <div className="text-xs text-muted truncate mt-0.5">
                       {n.body.replace(/\n/g, " ").slice(0, 200)}
                     </div>

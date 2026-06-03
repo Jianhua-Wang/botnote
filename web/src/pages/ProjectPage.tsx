@@ -1,10 +1,11 @@
-import { FileText, KanbanSquare, Settings2 } from "lucide-react";
+import { FileText, KanbanSquare, Settings2, SlidersHorizontal } from "lucide-react";
 import { useMemo } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { useEntityList, useOpeningBrief, useProjectByKey } from "../api/hooks";
+import { useEntityList, useProjectByKey } from "../api/hooks";
 import { KanbanBoard } from "../components/project/KanbanBoard";
 import { NotesList } from "../components/project/NotesList";
-import { PinnedNotesBanner } from "../components/project/PinnedNotesBanner";
+import { ProjectIcon } from "../components/ProjectIcon";
+import { useModals } from "../state/modals";
 
 type Tab = "tasks" | "notes" | "agents-md";
 
@@ -14,8 +15,8 @@ export function ProjectPage() {
   const tab = (search.get("tab") as Tab) || "tasks";
 
   const { data: project } = useProjectByKey(key);
-  const { data: brief } = useOpeningBrief(project?.id, { poll: true });
   const { data: tasks } = useEntityList(project?.id, ["task"], { poll: true });
+  const { open: openModal } = useModals();
 
   const counts = useMemo(() => {
     const t = tasks ?? [];
@@ -43,9 +44,19 @@ export function ProjectPage() {
   return (
     <div className="h-full flex flex-col">
       <div className="h-11 px-4 border-b border-line bg-surface flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="font-mono text-xs text-accent tabular-nums">{project.key}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <ProjectIcon color={project.color} icon={project.icon} size={14} />
+          <span className="font-mono text-xs tabular-nums" style={{ color: project.color }}>
+            {project.key}
+          </span>
           <span className="text-sm font-semibold text-ink truncate">{project.name}</span>
+          <button
+            className="ml-1 p-1 -m-1 text-faint hover:text-ink rounded hover:bg-sidebar"
+            onClick={() => openModal({ kind: "edit-project", projectId: project.id })}
+            title="Project settings"
+          >
+            <SlidersHorizontal size={11} />
+          </button>
         </div>
         <div className="flex items-center gap-1">
           <div className="seg">
@@ -67,10 +78,6 @@ export function ProjectPage() {
           </div>
         </div>
       </div>
-
-      {brief && brief.pinnedNotes.length > 0 && (
-        <PinnedNotesBanner notes={brief.pinnedNotes} project={project} />
-      )}
 
       <div className="flex-1 min-h-0 overflow-hidden">
         {tab === "tasks" && <KanbanBoard tasks={tasks ?? []} project={project} />}

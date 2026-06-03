@@ -1,11 +1,14 @@
 import { useSearchParams } from "react-router-dom";
 import { useSearch } from "../api/hooks";
 import { KindBadge } from "../components/KindBadge";
+import { useDrawer } from "../hooks/useDrawer";
+import { displayTitle, isUntitled } from "../lib/entityTitle";
 
 export function SearchPage() {
   const [params] = useSearchParams();
   const q = params.get("q") ?? "";
   const { data } = useSearch(q ? { query: q, limit: 50 } : null);
+  const drawer = useDrawer();
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
@@ -16,16 +19,23 @@ export function SearchPage() {
         </div>
         <div className="mt-4 bg-surface border border-line rounded divide-y divide-line/60">
           {data?.hits.map((h) => (
-            <div key={h.entity.id} className="p-3 flex items-start gap-3 row-hover">
+            <button
+              key={h.entity.id}
+              type="button"
+              onClick={() => drawer.open(h.entity.id)}
+              className="w-full text-left p-3 flex items-start gap-3 row-hover"
+            >
               <KindBadge kind={h.entity.kind} />
-              <div className="flex-1">
-                <div className="text-sm">{h.entity.title}</div>
+              <div className="flex-1 min-w-0">
+                <div className={`text-sm ${isUntitled(h.entity) ? "italic text-muted" : ""}`}>
+                  {displayTitle(h.entity)}
+                </div>
                 <div className="text-xs text-muted mt-1">
                   {h.entity.body.slice(0, 200).replace(/\n/g, " ")}
                 </div>
                 <div className="text-xxs text-faint mt-1">score {h.score.toFixed(3)}</div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>

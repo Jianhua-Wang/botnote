@@ -31,6 +31,15 @@ export function StatusCircle({
       </svg>
     );
   }
+  if (status === "delayed") {
+    return (
+      <svg width={size} height={size} viewBox="0 0 14 14" className="text-statusDelayed shrink-0">
+        <circle cx="7" cy="7" r="6" stroke={stroke} strokeWidth="1.4" fill="none" />
+        <rect x="4.5" y="4.4" width="1.4" height="5.2" rx="0.4" fill="currentColor" />
+        <rect x="8.1" y="4.4" width="1.4" height="5.2" rx="0.4" fill="currentColor" />
+      </svg>
+    );
+  }
   if (status === "archived") {
     return (
       <svg width={size} height={size} viewBox="0 0 14 14" className="text-statusArchived shrink-0">
@@ -107,7 +116,17 @@ export const PRIORITY_LABEL: Record<Priority, string> = {
 export const STATUS_LABEL: Record<string, string> = {
   open: "Todo",
   in_progress: "In progress",
+  delayed: "Delayed",
   done: "Done",
   archived: "Archived",
   rejected: "Cancelled"
 };
+
+export const TASK_STATUS_OPTIONS = [
+  "open",
+  "in_progress",
+  "delayed",
+  "done",
+  "archived",
+  "rejected"
+] as const;

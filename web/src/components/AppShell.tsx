@@ -1,5 +1,6 @@
 import { Outlet } from "react-router-dom";
 import { useGlobalKeys } from "../hooks/useGlobalKeys";
+import { EntityDrawer } from "./EntityDrawer";
 import { ProjectsSidebar } from "./ProjectsSidebar";
 import { TopBar } from "./TopBar";
 
@@ -14,6 +15,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      <EntityDrawer />
     </div>
   );
 }

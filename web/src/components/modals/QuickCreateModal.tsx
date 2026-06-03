@@ -1,14 +1,23 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useProjects, useWriteEntity } from "../../api/hooks";
-import { ENTITY_KINDS, PRIORITY_LEVELS, type EntityKind, type Priority } from "../../api/types";
+import { useEntityList, useProjects, useWriteEntity } from "../../api/hooks";
+import { CREATABLE_KINDS, PRIORITY_LEVELS, type EntityKind, type Priority } from "../../api/types";
+import { useDrawer } from "../../hooks/useDrawer";
+import { displayTitle } from "../../lib/entityTitle";
 import { useModals } from "../../state/modals";
 import { ModalShell } from "../ModalShell";
 import { PriorityIcon, PRIORITY_LABEL } from "../tasks/icons";
 
-export function QuickCreateModal({ initialProjectId }: { initialProjectId?: string }) {
+export function QuickCreateModal({
+  initialProjectId,
+  initialKind,
+  initialParentId
+}: {
+  initialProjectId?: string;
+  initialKind?: EntityKind;
+  initialParentId?: string;
+}) {
   const { data: projects } = useProjects();
-  const [kind, setKind] = useState<EntityKind>("task");
+  const [kind, setKind] = useState<EntityKind>(initialKind ?? "task");
   const [projectId, setProjectId] = useState(initialProjectId ?? "");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -16,12 +25,23 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Priority>("none");
   const [pinned, setPinned] = useState(false);
+  const [parentId, setParentId] = useState<string>(initialParentId ?? "");
   const write = useWriteEntity();
   const { close } = useModals();
-  const navigate = useNavigate();
+  const { open: openDrawer } = useDrawer();
 
   const project = projects?.find((p) => p.id === projectId);
-  const valid = title.trim().length > 0 && projectId.length > 0;
+  const isNote = kind === "note";
+  const { data: projectTasks } = useEntityList(
+    isNote && projectId ? projectId : undefined,
+    ["task"]
+  );
+
+  const valid =
+    projectId.length > 0 &&
+    (isNote
+      ? title.trim().length > 0 || body.trim().length > 0
+      : title.trim().length > 0);
 
   return (
     <ModalShell title="Quick create" width="max-w-xl">
@@ -29,39 +49,49 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
         onSubmit={async (e) => {
           e.preventDefault();
           if (!valid) return;
-          const entity = await write.mutateAsync({
-            kind,
-            projectId,
-            title: title.trim(),
-            body: body.trim(),
-            tags: tagsStr
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean),
-            actorKind: "human",
-            dueAt: kind === "task" && dueDate ? new Date(dueDate).toISOString() : null,
-            priority: kind === "task" ? priority : "none",
-            pinned: (kind === "note" || kind === "memory") && pinned
-          });
+          const trimmedTitle = title.trim();
+          const tags = tagsStr.split(",").map((t) => t.trim()).filter(Boolean);
+          const entity =
+            kind === "task"
+              ? await write.mutateAsync({
+                  kind: "task",
+                  projectId,
+                  title: trimmedTitle,
+                  body: body.trim(),
+                  tags,
+                  actorKind: "human",
+                  dueAt: dueDate ? new Date(dueDate).toISOString() : null,
+                  priority
+                })
+              : await write.mutateAsync({
+                  kind: "note",
+                  projectId,
+                  title: trimmedTitle || null,
+                  body: body.trim(),
+                  tags,
+                  actorKind: "human",
+                  pinned,
+                  parentId: parentId || null
+                });
           close();
-          if (project) {
-            navigate(`/p/${project.key}/e/${entity.id}`);
-          }
+          openDrawer(entity.id);
         }}
         className="p-3 space-y-3"
       >
         <div className="flex gap-2">
-          <select
-            className="input w-32"
-            value={kind}
-            onChange={(e) => setKind(e.target.value as EntityKind)}
-          >
-            {ENTITY_KINDS.map((k) => (
-              <option key={k} value={k}>
+          <div className="seg w-32">
+            {CREATABLE_KINDS.map((k) => (
+              <button
+                key={k}
+                type="button"
+                data-active={kind === k}
+                onClick={() => setKind(k)}
+                className="flex-1 justify-center capitalize"
+              >
                 {k}
-              </option>
+              </button>
             ))}
-          </select>
+          </div>
           <select
             className="input flex-1"
             value={projectId}
@@ -78,7 +108,7 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
         <input
           autoFocus
           className="input"
-          placeholder="Title"
+          placeholder={isNote ? "Title (optional)" : "Title"}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
@@ -125,15 +155,35 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
             <span>{PRIORITY_LABEL[priority]} priority</span>
           </div>
         )}
-        {(kind === "note" || kind === "memory") && (
-          <label className="flex items-center gap-2 text-xs text-muted cursor-pointer">
-            <input
-              type="checkbox"
-              checked={pinned}
-              onChange={(e) => setPinned(e.target.checked)}
-            />
-            <span>📌 Pin to project — auto-include in agent opening brief</span>
-          </label>
+        {isNote && (
+          <>
+            <label className="flex items-center gap-2 text-xs text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={pinned}
+                onChange={(e) => setPinned(e.target.checked)}
+              />
+              <span>📌 Pin to project — auto-include in agent opening brief</span>
+            </label>
+            {projectTasks && projectTasks.length > 0 && (
+              <div className="flex items-center gap-2 text-xs text-muted">
+                <span className="shrink-0">Link to task:</span>
+                <select
+                  className="input flex-1 !h-7 text-xs"
+                  value={parentId}
+                  onChange={(e) => setParentId(e.target.value)}
+                >
+                  <option value="">— none —</option>
+                  {projectTasks.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {project?.key && t.sequenceId ? `${project.key}-${t.sequenceId} · ` : ""}
+                      {displayTitle(t)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </>
         )}
         <div className="flex justify-between items-center pt-1">
           <div className="text-xxs text-muted">
