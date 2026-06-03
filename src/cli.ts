@@ -7,7 +7,10 @@ import { EmbeddingService } from "./service/embedding.js";
 import { buildServer } from "./rest/server.js";
 
 const VERSION = "0.0.1";
-const DEFAULT_MCP_BASE_URL = "http://127.0.0.1:4280";
+// Public botnote.net is the default so fresh remote installs (the common
+// plugin-install case) work without extra config. The daemon host overrides
+// via BOTNOTE_URL in its Codex / Claude Code config to skip the tunnel.
+const DEFAULT_MCP_BASE_URL = "https://botnote.net";
 
 async function runRest(): Promise<void> {
   const port = Number(process.env.BOTNOTE_PORT ?? 4280);

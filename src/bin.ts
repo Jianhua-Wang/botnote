@@ -5,7 +5,10 @@ import path from "node:path";
 import readline from "node:readline/promises";
 
 const VERSION = "0.0.1";
-const DEFAULT_BASE_URL = "http://127.0.0.1:4280";
+// Public botnote.net is the right default for fresh remote installs (the most
+// common npm-install case). On the daemon host itself, `botnote login` writes
+// a config that pins http://127.0.0.1:4280 so loopback stays loopback.
+const DEFAULT_BASE_URL = "https://botnote.net";
 
 interface BotnoteConfig {
   baseUrl: string;

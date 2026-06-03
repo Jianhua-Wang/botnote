@@ -10,13 +10,13 @@
     "botnote_url": {
       "type": "string",
       "title": "botnote daemon URL",
-      "description": "tailnet/localhost: http://100.68.185.53:4280 or http://127.0.0.1:4280 (no token needed). Public: https://botnote.net (requires bearer + CF Access service token).",
-      "default": "http://127.0.0.1:4280"
+      "description": "Default: https://botnote.net (public, requires bearer token). On the daemon host or its tailnet, use http://127.0.0.1:4280 or http://100.68.185.53:4280 (no token required, loopback / tailnet is trusted).",
+      "default": "https://botnote.net"
     },
     "botnote_token": {
       "type": "string",
       "title": "API bearer token",
-      "description": "Required only when going through https://botnote.net. Mint via `botnote tokens create` on the daemon host.",
+      "description": "Required for https://botnote.net. Generate via Settings -> API tokens in the web UI, or `botnote tokens create` on the daemon host. Not needed when botnote_url is loopback or tailnet.",
       "sensitive": true
     }
   }
