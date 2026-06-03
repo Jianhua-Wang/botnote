@@ -51,8 +51,23 @@ export interface Entity {
   parentId: string | null;
   bodyVec: number[] | null;
   metadata: Record<string, unknown>;
+  dueAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TasksRangeInput {
+  from?: string | null;
+  to?: string | null;
+  projectIds?: string[] | null;
+  includeBacklog?: boolean;
+  includeDone?: boolean;
+}
+
+export interface TasksRangeResult {
+  scheduled: Entity[];
+  overdue: Entity[];
+  backlog: Entity[];
 }
 
 export interface Actor {
@@ -99,6 +114,7 @@ export interface WriteEntityInput {
   actorId?: string | null;
   actorKind?: ActorKind;
   metadata?: Record<string, unknown>;
+  dueAt?: string | null;
   idempotencyKey?: string | null;
 }
 
@@ -108,6 +124,7 @@ export interface UpdateEntityInput {
   tags?: string[];
   status?: string;
   metadata?: Record<string, unknown>;
+  dueAt?: string | null;
 }
 
 export interface CreateProjectInput {

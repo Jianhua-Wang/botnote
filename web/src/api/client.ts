@@ -7,6 +7,8 @@ import type {
   RecentInput,
   SearchInput,
   SearchResponse,
+  TasksRangeInput,
+  TasksRangeResult,
   UpdateEntityInput,
   WriteEntityInput
 } from "./types";
@@ -72,5 +74,11 @@ export const api = {
     request<SearchResponse>("/v1/search", { method: "POST", body: JSON.stringify(input) }),
 
   ensureActor: (input: { name: string; kind: "human" | "agent" | "system"; key?: string }) =>
-    request<Actor>("/v1/actors", { method: "POST", body: JSON.stringify(input) })
+    request<Actor>("/v1/actors", { method: "POST", body: JSON.stringify(input) }),
+
+  tasksRange: (input: TasksRangeInput) =>
+    request<TasksRangeResult>("/v1/tasks/range", {
+      method: "POST",
+      body: JSON.stringify(input)
+    })
 };

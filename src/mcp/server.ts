@@ -135,6 +135,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         status: z.string().default("open"),
         parentId: z.string().uuid().optional(),
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
+        dueAt: z.string().datetime().optional().describe("ISO datetime (only meaningful for kind=task)."),
         idempotencyKey: z.string().min(1).max(200).optional()
       }
     },
@@ -149,6 +150,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         parentId: input.parentId ?? null,
         actorKind: input.actorKind,
         metadata: {},
+        dueAt: input.dueAt ? new Date(input.dueAt) : null,
         idempotencyKey: input.idempotencyKey ?? null
       });
       if (ctx.embedding.isEnabled()) {
@@ -181,13 +183,17 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         title: z.string().min(1).max(500).optional(),
         body: z.string().optional(),
         tags: z.array(z.string()).optional(),
-        status: z.string().optional()
+        status: z.string().optional(),
+        dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear.")
       }
     },
-    async ({ id, ...fields }) => {
-      const definedFields = Object.fromEntries(
+    async ({ id, dueAt, ...fields }) => {
+      const definedFields: Record<string, unknown> = Object.fromEntries(
         Object.entries(fields).filter(([, v]) => v !== undefined)
       );
+      if (dueAt !== undefined) {
+        definedFields.dueAt = dueAt === null ? null : new Date(dueAt);
+      }
       const updated = await update(ctx.db, id, definedFields);
       if (
         ctx.embedding.isEnabled() &&

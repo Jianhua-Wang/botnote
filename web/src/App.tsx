@@ -6,6 +6,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { EntityDetailPage } from "./pages/EntityDetailPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { SearchPage } from "./pages/SearchPage";
+import { TasksPage } from "./pages/TasksPage";
 import { ModalsProvider } from "./state/modals";
 
 export default function App() {
@@ -13,7 +14,8 @@ export default function App() {
     <ModalsProvider>
       <Routes>
         <Route element={<AppShell />}>
-          <Route path="/" element={<DashboardPage />} />
+          <Route path="/" element={<TasksPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/p/:key" element={<ProjectPage />} />
           <Route path="/p/:key/e/:id" element={<EntityDetailPage />} />
           <Route path="/p/:key/agents-md" element={<AgentsMdPage />} />

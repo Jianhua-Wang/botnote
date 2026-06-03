@@ -66,6 +66,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
       tags: [
         { name: "projects", description: "Project lifecycle and AGENTS.md." },
         { name: "entities", description: "Notes, tasks, decisions, comments, etc." },
+        { name: "tasks", description: "Task calendar queries (range + backlog)." },
         { name: "search", description: "Hybrid retrieval." },
         { name: "brief", description: "Opening brief — agent context bundle." },
         { name: "actors", description: "Human / agent / system identities." }

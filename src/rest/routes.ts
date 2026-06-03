@@ -13,6 +13,7 @@ import {
   setAgentsMd
 } from "../service/projects.js";
 import { search } from "../service/search.js";
+import { tasksRange } from "../service/tasks.js";
 import {
   CreateProjectInput,
   EnsureActorInput,
@@ -20,6 +21,7 @@ import {
   OpeningBriefInput,
   RecentInput,
   SearchInput,
+  TasksRangeInput,
   UpdateInput,
   Uuid,
   WriteInput
@@ -227,5 +229,19 @@ export async function registerRoutes(
     "/v1/actors",
     { schema: { tags: ["actors"], summary: "Get or create an actor", body: EnsureActorInput } },
     async (req) => ensureActor(ctx.db, EnsureActorInput.parse(req.body))
+  );
+
+  app.post(
+    "/v1/tasks/range",
+    {
+      schema: {
+        tags: ["tasks"],
+        summary: "Tasks in a date range + overdue + backlog (no due_at)",
+        description:
+          "Returns three buckets: scheduled (due_at in [from, to)), overdue (due_at before now, only when not includeDone), backlog (no due_at, only when includeBacklog).",
+        body: TasksRangeInput
+      }
+    },
+    async (req) => tasksRange(ctx.db, TasksRangeInput.parse(req.body))
   );
 }

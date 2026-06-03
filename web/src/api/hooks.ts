@@ -5,6 +5,7 @@ import type {
   EntityKind,
   RecentInput,
   SearchInput,
+  TasksRangeInput,
   UpdateEntityInput,
   WriteEntityInput
 } from "./types";
@@ -77,6 +78,14 @@ export function useSearch(input: SearchInput | null) {
   });
 }
 
+export function useTasksRange(input: TasksRangeInput, opts: { poll?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["tasks-range", input],
+    queryFn: () => api.tasksRange(input),
+    refetchInterval: opts.poll === false ? false : POLL_INTERVAL
+  });
+}
+
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
@@ -95,6 +104,7 @@ export function useWriteEntity() {
       qc.invalidateQueries({ queryKey: ["entity-list", entity.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["opening-brief", entity.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["recent"] });
+      qc.invalidateQueries({ queryKey: ["tasks-range"] });
     }
   });
 }
@@ -108,6 +118,7 @@ export function useUpdateEntity() {
       qc.invalidateQueries({ queryKey: ["entity", entity.id] });
       qc.invalidateQueries({ queryKey: ["entity-list", entity.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["opening-brief", entity.projectId ?? undefined] });
+      qc.invalidateQueries({ queryKey: ["tasks-range"] });
     }
   });
 }

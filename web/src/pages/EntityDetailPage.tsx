@@ -24,6 +24,7 @@ export function EntityDetailPage() {
   const [body, setBody] = useState("");
   const [tagsStr, setTagsStr] = useState("");
   const [status, setStatus] = useState("open");
+  const [dueDate, setDueDate] = useState("");
 
   useEffect(() => {
     if (entity) {
@@ -31,20 +32,22 @@ export function EntityDetailPage() {
       setBody(entity.body);
       setTagsStr(entity.tags.join(", "));
       setStatus(entity.status);
+      setDueDate(entity.dueAt ? entity.dueAt.slice(0, 10) : "");
       setEditing(false);
     }
   }, [entity?.id]);
 
   const dirty = useMemo(() => {
     if (!entity) return false;
+    const currentDue = entity.dueAt ? entity.dueAt.slice(0, 10) : "";
     return (
       title !== entity.title ||
       body !== entity.body ||
-      tagsStr !==
-        entity.tags.join(", ") ||
-      status !== entity.status
+      tagsStr !== entity.tags.join(", ") ||
+      status !== entity.status ||
+      dueDate !== currentDue
     );
-  }, [entity, title, body, tagsStr, status]);
+  }, [entity, title, body, tagsStr, status, dueDate]);
 
   if (isLoading || !entity) {
     return <div className="p-6 text-sm text-muted">Loading entity…</div>;
@@ -62,7 +65,8 @@ export function EntityDetailPage() {
           .split(",")
           .map((t) => t.trim())
           .filter(Boolean),
-        status
+        status,
+        dueAt: dueDate ? new Date(dueDate).toISOString() : null
       }
     });
     setEditing(false);
@@ -138,6 +142,24 @@ export function EntityDetailPage() {
               </select>
             ) : (
               <span className="chip">{entity.status}</span>
+            )}
+            {entity.kind === "task" && (
+              <>
+                <span>·</span>
+                <span>Due:</span>
+                {editing ? (
+                  <input
+                    type="date"
+                    className="input !h-6 !w-36 text-xxs"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                  />
+                ) : entity.dueAt ? (
+                  <span className="chip">{new Date(entity.dueAt).toLocaleDateString()}</span>
+                ) : (
+                  <span className="text-faint">no due date · backlog</span>
+                )}
+              </>
             )}
             <span>·</span>
             <span>Tags:</span>

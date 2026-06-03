@@ -107,6 +107,7 @@ export const entities = pgTable(
     bodyTsv: tsvector("body_tsv"),
     bodyVec: vector("body_vec"),
     metadata: jsonb("metadata").notNull().default({}),
+    dueAt: timestamp("due_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },

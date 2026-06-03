@@ -7,11 +7,12 @@ import { ModalShell } from "../ModalShell";
 
 export function QuickCreateModal({ initialProjectId }: { initialProjectId?: string }) {
   const { data: projects } = useProjects();
-  const [kind, setKind] = useState<EntityKind>("note");
+  const [kind, setKind] = useState<EntityKind>("task");
   const [projectId, setProjectId] = useState(initialProjectId ?? "");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [tagsStr, setTagsStr] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const write = useWriteEntity();
   const { close } = useModals();
   const navigate = useNavigate();
@@ -34,7 +35,8 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
               .split(",")
               .map((t) => t.trim())
               .filter(Boolean),
-            actorKind: "human"
+            actorKind: "human",
+            dueAt: kind === "task" && dueDate ? new Date(dueDate).toISOString() : null
           });
           close();
           if (project) {
@@ -81,12 +83,23 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
           value={body}
           onChange={(e) => setBody(e.target.value)}
         />
-        <input
-          className="input"
-          placeholder="Tags (comma-separated, optional)"
-          value={tagsStr}
-          onChange={(e) => setTagsStr(e.target.value)}
-        />
+        <div className="flex gap-2">
+          <input
+            className="input flex-1"
+            placeholder="Tags (comma-separated, optional)"
+            value={tagsStr}
+            onChange={(e) => setTagsStr(e.target.value)}
+          />
+          {kind === "task" && (
+            <input
+              type="date"
+              className="input w-40"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              title="Due date"
+            />
+          )}
+        </div>
         <div className="flex justify-between items-center pt-1">
           <div className="text-xxs text-muted">
             <kbd>⌘</kbd>+<kbd>Enter</kbd> to submit · <kbd>Esc</kbd> to close

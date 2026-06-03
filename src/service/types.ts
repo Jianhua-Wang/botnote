@@ -18,6 +18,7 @@ export const WriteInput = z.object({
   actorId: Uuid.nullish(),
   actorKind: ActorKindEnum.default("human"),
   metadata: z.record(z.unknown()).default({}),
+  dueAt: z.coerce.date().nullish(),
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type WriteInput = z.infer<typeof WriteInput>;
@@ -27,7 +28,8 @@ export const UpdateInput = z.object({
   body: z.string().optional(),
   tags: z.array(z.string()).optional(),
   status: z.string().optional(),
-  metadata: z.record(z.unknown()).optional()
+  metadata: z.record(z.unknown()).optional(),
+  dueAt: z.coerce.date().nullable().optional()
 });
 export type UpdateInput = z.infer<typeof UpdateInput>;
 
@@ -46,6 +48,15 @@ export const RecentInput = z.object({
   limit: z.number().int().min(1).max(100).default(20)
 });
 export type RecentInput = z.infer<typeof RecentInput>;
+
+export const TasksRangeInput = z.object({
+  from: z.coerce.date().nullish(),
+  to: z.coerce.date().nullish(),
+  projectIds: z.array(Uuid).nullish(),
+  includeBacklog: z.boolean().default(true),
+  includeDone: z.boolean().default(false)
+});
+export type TasksRangeInput = z.infer<typeof TasksRangeInput>;
 
 export const LinkInput = z.object({
   fromId: Uuid,
