@@ -22,6 +22,7 @@ export const WriteInput = z.object({
   metadata: z.record(z.unknown()).default({}),
   dueAt: z.coerce.date().nullish(),
   priority: z.enum(["urgent", "high", "medium", "low", "none"]).default("none"),
+  pinned: z.boolean().default(false),
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type WriteInput = z.infer<typeof WriteInput>;
@@ -33,7 +34,8 @@ export const UpdateInput = z.object({
   status: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
   dueAt: z.coerce.date().nullable().optional(),
-  priority: z.enum(["urgent", "high", "medium", "low", "none"]).optional()
+  priority: z.enum(["urgent", "high", "medium", "low", "none"]).optional(),
+  pinned: z.boolean().optional()
 });
 export type UpdateInput = z.infer<typeof UpdateInput>;
 

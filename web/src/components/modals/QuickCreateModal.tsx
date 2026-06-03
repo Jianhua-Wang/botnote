@@ -15,6 +15,7 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
   const [tagsStr, setTagsStr] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Priority>("none");
+  const [pinned, setPinned] = useState(false);
   const write = useWriteEntity();
   const { close } = useModals();
   const navigate = useNavigate();
@@ -39,7 +40,8 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
               .filter(Boolean),
             actorKind: "human",
             dueAt: kind === "task" && dueDate ? new Date(dueDate).toISOString() : null,
-            priority: kind === "task" ? priority : "none"
+            priority: kind === "task" ? priority : "none",
+            pinned: (kind === "note" || kind === "memory") && pinned
           });
           close();
           if (project) {
@@ -122,6 +124,16 @@ export function QuickCreateModal({ initialProjectId }: { initialProjectId?: stri
             <PriorityIcon priority={priority} size={11} />
             <span>{PRIORITY_LABEL[priority]} priority</span>
           </div>
+        )}
+        {(kind === "note" || kind === "memory") && (
+          <label className="flex items-center gap-2 text-xs text-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={pinned}
+              onChange={(e) => setPinned(e.target.checked)}
+            />
+            <span>📌 Pin to project — auto-include in agent opening brief</span>
+          </label>
         )}
         <div className="flex justify-between items-center pt-1">
           <div className="text-xxs text-muted">

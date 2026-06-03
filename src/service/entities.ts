@@ -28,6 +28,7 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
       metadata: input.metadata,
       dueAt: input.dueAt ?? null,
       priority: input.priority,
+      pinned: input.pinned,
       idempotencyKey: input.idempotencyKey ?? null
     })
     .returning();

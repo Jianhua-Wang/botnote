@@ -1,6 +1,6 @@
 import { markdown } from "@codemirror/lang-markdown";
 import CodeMirror from "@uiw/react-codemirror";
-import { ChevronLeft, Edit3, Eye, Save, Trash2, X } from "lucide-react";
+import { ChevronLeft, Edit3, Eye, Pin, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
@@ -117,6 +117,18 @@ export function EntityDetailPage() {
             <div className="flex gap-1">
               {!editing ? (
                 <>
+                  {(entity.kind === "note" || entity.kind === "memory") && (
+                    <button
+                      className={`btn ${entity.pinned ? "btn-primary" : ""}`}
+                      onClick={() =>
+                        update.mutate({ id: entity.id, fields: { pinned: !entity.pinned } })
+                      }
+                      title={entity.pinned ? "Unpin from opening brief" : "Pin to opening brief"}
+                    >
+                      <Pin size={11} fill={entity.pinned ? "currentColor" : "none"} />
+                      <span>{entity.pinned ? "Pinned" : "Pin"}</span>
+                    </button>
+                  )}
                   <button className="btn" onClick={() => setEditing(true)}>
                     <Edit3 size={11} /> Edit
                   </button>

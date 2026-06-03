@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type Project } from "../db/schema.js";
 import { getProject } from "./projects.js";
@@ -7,6 +7,7 @@ import type { OpeningBriefInput } from "./types.js";
 export interface OpeningBrief {
   project: Project | null;
   agentsMd: string;
+  pinnedNotes: Entity[];
   openTasks: Entity[];
   pendingDecisions: Entity[];
   recent: Entity[];
@@ -23,7 +24,13 @@ export async function openingBrief(
     ? eq(entities.projectId, input.projectId)
     : isNull(entities.projectId);
 
-  const [openTasks, pendingDecisions, recentRows] = await Promise.all([
+  const [pinnedNotes, openTasks, pendingDecisions, recentRows] = await Promise.all([
+    db
+      .select()
+      .from(entities)
+      .where(and(projectFilter, eq(entities.pinned, true)))
+      .orderBy(desc(entities.updatedAt))
+      .limit(20),
     db
       .select()
       .from(entities)
@@ -47,6 +54,7 @@ export async function openingBrief(
   return {
     project,
     agentsMd: project?.agentsMd ?? "",
+    pinnedNotes,
     openTasks,
     pendingDecisions,
     recent: recentRows,
@@ -67,6 +75,19 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     lines.push("## AGENTS.md");
     lines.push(brief.agentsMd.trim());
     lines.push("");
+  }
+
+  if (brief.pinnedNotes.length) {
+    lines.push(`## Pinned Notes (${brief.pinnedNotes.length})`);
+    lines.push("_These are pinned by the user as always-relevant context for this project. Read them before acting._");
+    lines.push("");
+    for (const n of brief.pinnedNotes) {
+      lines.push(`### 📌 ${n.title}`);
+      if (n.body.trim()) {
+        lines.push(n.body.trim());
+      }
+      lines.push("");
+    }
   }
 
   if (brief.openTasks.length) {

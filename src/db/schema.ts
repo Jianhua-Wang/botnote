@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   customType,
   index,
   integer,
@@ -111,6 +112,7 @@ export const entities = pgTable(
     dueAt: timestamp("due_at", { withTimezone: true }),
     priority: text("priority").notNull().default("none"),
     sequenceId: integer("sequence_id"),
+    pinned: boolean("pinned").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },

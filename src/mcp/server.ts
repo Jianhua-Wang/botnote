@@ -44,7 +44,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Opening Brief",
       description:
-        "Fetch the agent context bundle for a project: AGENTS.md + open tasks + pending decisions + recent activity. Call this first when starting work on a project. Returns markdown.",
+        "Fetch the agent context bundle for a project: AGENTS.md + PINNED NOTES (full text, user-curated must-read context like deployment steps, important conventions) + open tasks + pending decisions + recent activity. CALL THIS FIRST when starting work on a project. Returns markdown.",
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       inputSchema: {
         projectId: z.string().uuid().optional().describe("Optional project UUID; omit for workspace-wide brief.")
@@ -137,6 +137,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
         dueAt: z.string().datetime().optional().describe("ISO datetime (only meaningful for kind=task)."),
         priority: z.enum(["urgent", "high", "medium", "low", "none"]).default("none"),
+        pinned: z.boolean().default(false).describe("Pin to project opening brief (kind=note recommended)."),
         idempotencyKey: z.string().min(1).max(200).optional()
       }
     },
@@ -153,6 +154,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         metadata: {},
         dueAt: input.dueAt ? new Date(input.dueAt) : null,
         priority: input.priority,
+        pinned: input.pinned,
         idempotencyKey: input.idempotencyKey ?? null
       });
       if (ctx.embedding.isEnabled()) {
@@ -187,7 +189,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         tags: z.array(z.string()).optional(),
         status: z.string().optional(),
         dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear."),
-        priority: z.enum(["urgent", "high", "medium", "low", "none"]).optional()
+        priority: z.enum(["urgent", "high", "medium", "low", "none"]).optional(),
+        pinned: z.boolean().optional().describe("Pin or unpin from project opening brief.")
       }
     },
     async ({ id, dueAt, ...fields }) => {

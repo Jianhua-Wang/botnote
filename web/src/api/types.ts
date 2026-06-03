@@ -57,6 +57,7 @@ export interface Entity {
   dueAt: string | null;
   priority: Priority;
   sequenceId: number | null;
+  pinned: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -101,6 +102,7 @@ export interface SearchResponse {
 export interface OpeningBriefResponse {
   project: Project | null;
   agentsMd: string;
+  pinnedNotes: Entity[];
   openTasks: Entity[];
   pendingDecisions: Entity[];
   recent: Entity[];
@@ -121,6 +123,7 @@ export interface WriteEntityInput {
   metadata?: Record<string, unknown>;
   dueAt?: string | null;
   priority?: Priority;
+  pinned?: boolean;
   idempotencyKey?: string | null;
 }
 
@@ -132,6 +135,7 @@ export interface UpdateEntityInput {
   metadata?: Record<string, unknown>;
   dueAt?: string | null;
   priority?: Priority;
+  pinned?: boolean;
 }
 
 export interface CreateProjectInput {
