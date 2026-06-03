@@ -84,6 +84,11 @@ export const entities = pgTable(
     priority: text("priority").notNull().default("none"),
     sequenceId: integer("sequence_id"),
     pinned: boolean("pinned").notNull().default(false),
+    // Set automatically on a status transition into 'done', cleared on exit.
+    // Drives the calendar's display-date logic: done tasks render on
+    // completedAt rather than dueAt so the timeline reflects what actually
+    // happened.
+    completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
@@ -95,6 +100,7 @@ export const entities = pgTable(
       t.createdAt
     ),
     parentIdx: index("entities_parent_idx").on(t.parentId),
+    completedAtIdx: index("entities_completed_at_idx").on(t.completedAt),
     idempotencyIdx: uniqueIndex("entities_idempotency_idx").on(t.idempotencyKey)
   })
 );

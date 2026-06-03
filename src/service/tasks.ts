@@ -9,6 +9,20 @@ export interface TasksRangeResult {
   backlog: Entity[];
 }
 
+/**
+ * Tasks in a date range, split into scheduled / overdue / backlog buckets.
+ *
+ * Each task has a "display date" that decides where it lands on the calendar:
+ *   - status='done'         → completedAt (when actually finished)
+ *   - status='in_progress'  → today        (rolling — surfaces active work)
+ *   - everything else       → dueAt        (when it's supposed to happen)
+ *
+ * `scheduled` returns any task whose display date falls inside [from, to).
+ * Done tasks without a completedAt (legacy / weird state) fall back to dueAt.
+ * `overdue` keeps the original meaning — past-due open work — and explicitly
+ * excludes done + in_progress so they don't double-surface (done shows on its
+ * completion day; in_progress already shows on today).
+ */
 export async function tasksRange(
   db: Database["db"],
   input: TasksRangeInput
@@ -18,6 +32,9 @@ export async function tasksRange(
     ? inArray(entities.projectId, input.projectIds)
     : undefined;
 
+  // Base filter applied to every bucket: only tasks, optional project filter,
+  // and the includeDone toggle (which gates done + archived together — both
+  // are terminal states that the day cell would otherwise mix into open work).
   const baseConds = [eq(entities.kind, "task")];
   if (!input.includeDone) {
     baseConds.push(or(ne(entities.status, "done"), isNull(entities.status))!);
@@ -25,21 +42,84 @@ export async function tasksRange(
   }
   if (projectFilter) baseConds.push(projectFilter);
 
-  const scheduledConds = [...baseConds, isNotNull(entities.dueAt)];
-  if (input.from) scheduledConds.push(gte(entities.dueAt, input.from));
-  if (input.to) scheduledConds.push(lt(entities.dueAt, input.to));
+  // Three independent passes, unioned in JS. Drizzle's `or` keeps the SQL
+  // clear and the partial completed_at index keeps the done-pass cheap.
+  const inRange = <T>(col: T) => {
+    const conds: ReturnType<typeof gte>[] = [];
+    if (input.from) conds.push(gte(col as never, input.from));
+    if (input.to) conds.push(lt(col as never, input.to));
+    return conds;
+  };
 
-  const scheduled = await db
-    .select()
-    .from(entities)
-    .where(and(...scheduledConds))
-    .orderBy(asc(entities.dueAt));
-
-  const overdueConds = [
+  // (a) Non-done, non-in_progress tasks scheduled by dueAt.
+  const dueByDueConds = [
     ...baseConds,
     isNotNull(entities.dueAt),
-    lt(entities.dueAt, now)
+    or(ne(entities.status, "done"), isNull(entities.status))!,
+    or(ne(entities.status, "in_progress"), isNull(entities.status))!,
+    ...inRange(entities.dueAt)
   ];
+  const dueByDue = await db
+    .select()
+    .from(entities)
+    .where(and(...dueByDueConds))
+    .orderBy(asc(entities.dueAt));
+
+  // (b) Done tasks rendered on completedAt. Only runs when the caller wants
+  // done items included — otherwise it returns nothing and the partial index
+  // is never touched.
+  let doneByCompleted: Entity[] = [];
+  if (input.includeDone) {
+    const doneConds = [
+      eq(entities.kind, "task"),
+      eq(entities.status, "done"),
+      isNotNull(entities.completedAt),
+      ...inRange(entities.completedAt)
+    ];
+    if (projectFilter) doneConds.push(projectFilter);
+    doneByCompleted = await db
+      .select()
+      .from(entities)
+      .where(and(...doneConds))
+      .orderBy(asc(entities.completedAt));
+  }
+
+  // (c) in_progress tasks → today. Only relevant when "now" falls inside the
+  // requested window; otherwise the day cell would never render them anyway.
+  let inProgressToday: Entity[] = [];
+  const todayInRange =
+    (!input.from || now >= new Date(input.from)) &&
+    (!input.to || now < new Date(input.to));
+  if (todayInRange) {
+    const ipConds = [eq(entities.kind, "task"), eq(entities.status, "in_progress")];
+    if (projectFilter) ipConds.push(projectFilter);
+    inProgressToday = await db
+      .select()
+      .from(entities)
+      .where(and(...ipConds))
+      .orderBy(asc(entities.dueAt));
+  }
+
+  // Dedup by id — a status='done' task with a completedAt also matched (a) if
+  // its dueAt landed in range; (b) wins because it's the canonical display.
+  const scheduledMap = new Map<string, Entity>();
+  for (const e of dueByDue) scheduledMap.set(e.id, e);
+  for (const e of doneByCompleted) scheduledMap.set(e.id, e);
+  for (const e of inProgressToday) scheduledMap.set(e.id, e);
+  const scheduled = Array.from(scheduledMap.values());
+
+  // Overdue = past-due work that still needs attention. Done + in_progress
+  // tasks are intentionally excluded: done is shown on its completion day,
+  // in_progress is shown on today, neither belongs in an "overdue" alert.
+  const overdueConds = [
+    eq(entities.kind, "task"),
+    isNotNull(entities.dueAt),
+    lt(entities.dueAt, now),
+    or(ne(entities.status, "done"), isNull(entities.status))!,
+    or(ne(entities.status, "in_progress"), isNull(entities.status))!,
+    or(ne(entities.status, "archived"), isNull(entities.status))!
+  ];
+  if (projectFilter) overdueConds.push(projectFilter);
   const overdue = !input.includeDone
     ? await db
         .select()

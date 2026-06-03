@@ -19,7 +19,9 @@ export function DayView({
     to: range.to.toISOString(),
     projectIds: projectIds ?? null,
     includeBacklog: false,
-    includeDone: false
+    // includeDone=true so the day's completed work shows up on its
+    // completion day — Boss's primary review surface.
+    includeDone: true
   });
   const { data: projects } = useProjects();
   const projectMap = useMemo(() => projectLookup(projects), [projects]);

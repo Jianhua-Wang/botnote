@@ -42,6 +42,7 @@ export interface Entity {
   priority: Priority;
   sequenceId: number | null;
   pinned: boolean;
+  completedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

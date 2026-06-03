@@ -28,6 +28,9 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
       dueAt: input.dueAt ?? null,
       priority: input.priority,
       pinned: input.pinned,
+      // Mirror the PATCH path: a task created already-done gets a
+      // completedAt stamp so the calendar renders it on the right day.
+      completedAt: input.status === "done" ? new Date() : null,
       idempotencyKey: input.idempotencyKey ?? null
     })
     .returning();
@@ -49,6 +52,22 @@ export async function update(
   fields: UpdateInput
 ): Promise<Entity> {
   const set: Record<string, unknown> = { ...fields, updatedAt: new Date() };
+  // Maintain completedAt as a side effect of status transitions. We need the
+  // prior status to know whether this is an entry into or exit from 'done',
+  // so do a tiny read first — cheaper than a CASE expression on UPDATE and
+  // keeps the SQL the same shape as other writes.
+  if (fields.status !== undefined) {
+    const prior = await db
+      .select({ status: entities.status })
+      .from(entities)
+      .where(eq(entities.id, id))
+      .limit(1);
+    if (!prior[0]) throw new Error(`entity ${id} not found`);
+    const wasDone = prior[0].status === "done";
+    const isDone = fields.status === "done";
+    if (isDone && !wasDone) set.completedAt = new Date();
+    else if (!isDone && wasDone) set.completedAt = null;
+  }
   const [row] = await db.update(entities).set(set).where(eq(entities.id, id)).returning();
   if (!row) throw new Error(`entity ${id} not found`);
   if (fields.parentId !== undefined && fields.parentId !== null) {

@@ -55,13 +55,35 @@ export function rangeLabel(view: CalendarView, anchor: Date): string {
   return format(anchor, "MMMM yyyy");
 }
 
+/**
+ * Decide which calendar day a task should render on.
+ *   - done            → its actual completion day (completedAt), so the
+ *                       timeline reflects when work shipped, not when it was
+ *                       originally planned for.
+ *   - in_progress     → today, rolling — surfaces active work even when the
+ *                       due date is in the past or far future.
+ *   - everything else → the due date (the planned day).
+ *
+ * Done tasks missing completedAt (pre-migration rows or other oddities) fall
+ * back to updatedAt; if even that's missing they fall through to dueAt.
+ */
+export function displayDate(t: Entity): Date | null {
+  if (t.status === "in_progress") return new Date();
+  if (t.status === "done") {
+    if (t.completedAt) return new Date(t.completedAt);
+    if (t.updatedAt) return new Date(t.updatedAt);
+  }
+  return t.dueAt ? new Date(t.dueAt) : null;
+}
+
 export function groupTasksByDay(
   tasks: Entity[]
 ): Map<string, Entity[]> {
   const m = new Map<string, Entity[]>();
   for (const t of tasks) {
-    if (!t.dueAt) continue;
-    const key = format(new Date(t.dueAt), "yyyy-MM-dd");
+    const d = displayDate(t);
+    if (!d) continue;
+    const key = format(d, "yyyy-MM-dd");
     if (!m.has(key)) m.set(key, []);
     m.get(key)!.push(t);
   }
