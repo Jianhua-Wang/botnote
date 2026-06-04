@@ -3,6 +3,28 @@ import type { Database } from "../db/client.js";
 import { edges, entities, projects, type Entity } from "../db/schema.js";
 import type { LinkInput, RecentInput, UpdateInput, WriteInput } from "./types.js";
 
+/**
+ * Snap an exact-midnight-UTC due date to noon UTC. Date-only intents (e.g.
+ * "due 2026-06-03") arriving as `2026-06-03T00:00:00Z` would render as the
+ * previous calendar day in any UTC-negative timezone. Noon UTC stays on the
+ * intended day across UTC-12..UTC+11. Anything with a non-zero time
+ * component is left alone — that's a real datetime, not a calendar date.
+ */
+function normalizeDueAt(value: Date | null | undefined): Date | null {
+  if (value == null) return null;
+  if (
+    value.getUTCHours() === 0 &&
+    value.getUTCMinutes() === 0 &&
+    value.getUTCSeconds() === 0 &&
+    value.getUTCMilliseconds() === 0
+  ) {
+    const noon = new Date(value);
+    noon.setUTCHours(12);
+    return noon;
+  }
+  return value;
+}
+
 export async function write(db: Database["db"], input: WriteInput): Promise<Entity> {
   if (input.idempotencyKey) {
     const existing = await db
@@ -25,7 +47,7 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
       parentId: input.parentId ?? null,
       actorKind: input.actorKind,
       metadata: input.metadata,
-      dueAt: input.dueAt ?? null,
+      dueAt: normalizeDueAt(input.dueAt),
       priority: input.priority,
       pinned: input.pinned,
       // Mirror the PATCH path: a task created already-done gets a
@@ -52,6 +74,9 @@ export async function update(
   fields: UpdateInput
 ): Promise<Entity> {
   const set: Record<string, unknown> = { ...fields, updatedAt: new Date() };
+  if (fields.dueAt !== undefined) {
+    set.dueAt = normalizeDueAt(fields.dueAt);
+  }
   // Maintain completedAt as a side effect of status transitions. We need the
   // prior status to know whether this is an entry into or exit from 'done',
   // so do a tiny read first — cheaper than a CASE expression on UPDATE and
