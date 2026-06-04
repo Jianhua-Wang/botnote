@@ -356,6 +356,16 @@ function TokensSection() {
   const revoke = useRevokeToken();
   const [name, setName] = useState("");
   const [fresh, setFresh] = useState<CreatedToken | null>(null);
+  // Single state for "which row just flashed Copied" — only one feedback at
+  // a time, auto-clears after a brief moment.
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  function copyPrefix(t: { id: string; prefix: string }) {
+    navigator.clipboard.writeText(t.prefix).then(() => {
+      setCopiedId(t.id);
+      setTimeout(() => setCopiedId((cur) => (cur === t.id ? null : cur)), 1400);
+    });
+  }
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -369,7 +379,7 @@ function TokensSection() {
     <>
       <SectionHeader
         title="API tokens"
-        blurb="Bearer tokens for the CLI, MCP server, and any direct REST call. Stored as sha256 hashes — plaintext is shown once at creation."
+        blurb="Bearer tokens for the CLI, MCP server, and any direct REST call. Stored as sha256 hashes — full plaintext is shown once at creation. After that only the prefix is visible (enough to identify which client holds which token). Lost the plaintext? Revoke and generate a new one."
       />
 
       {fresh && (
@@ -416,35 +426,50 @@ function TokensSection() {
         {!isLoading && (!tokens || tokens.length === 0) && (
           <div className="p-4 text-xs text-faint text-center">No tokens yet.</div>
         )}
-        {tokens?.map((t) => (
-          <div key={t.id} className="flex items-center gap-3 px-3 py-2">
-            <div className="flex-1 min-w-0">
-              <div className="text-sm text-ink truncate">{t.name}</div>
-              <div className="text-xxs text-muted flex items-center gap-3 mt-0.5">
-                <code className="font-mono text-faint">{t.prefix}…</code>
-                <span>
-                  created {formatDistanceToNow(new Date(t.createdAt), { addSuffix: true })}
-                </span>
-                <span>
-                  {t.lastUsedAt
-                    ? `used ${formatDistanceToNow(new Date(t.lastUsedAt), { addSuffix: true })}`
-                    : "never used"}
-                </span>
+        {tokens?.map((t) => {
+          const justCopied = copiedId === t.id;
+          return (
+            <div key={t.id} className="flex items-center gap-3 px-3 py-2">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-ink truncate">{t.name}</div>
+                <div className="text-xxs text-muted flex items-center gap-3 mt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => copyPrefix(t)}
+                    className={`group inline-flex items-center gap-1 font-mono rounded px-1.5 py-0.5 -mx-1 transition-colors ${
+                      justCopied
+                        ? "bg-emerald-500/15 text-emerald-600"
+                        : "text-faint hover:bg-sidebar hover:text-ink"
+                    }`}
+                    title="Copy prefix"
+                  >
+                    <code>{t.prefix}…</code>
+                    {justCopied ? <Check size={10} /> : <Copy size={10} className="opacity-0 group-hover:opacity-100" />}
+                  </button>
+                  <span>
+                    created {formatDistanceToNow(new Date(t.createdAt), { addSuffix: true })}
+                  </span>
+                  <span>
+                    {t.lastUsedAt
+                      ? `used ${formatDistanceToNow(new Date(t.lastUsedAt), { addSuffix: true })}`
+                      : "never used"}
+                  </span>
+                </div>
               </div>
+              <button
+                className="text-faint hover:text-danger p-1 -m-1"
+                onClick={() => {
+                  if (confirm(`Revoke token "${t.name}"? Any client using it stops working.`)) {
+                    revoke.mutate(t.id);
+                  }
+                }}
+                title="Revoke"
+              >
+                <Trash2 size={12} />
+              </button>
             </div>
-            <button
-              className="text-faint hover:text-danger p-1 -m-1"
-              onClick={() => {
-                if (confirm(`Revoke token "${t.name}"? Any client using it stops working.`)) {
-                  revoke.mutate(t.id);
-                }
-              }}
-              title="Revoke"
-            >
-              <Trash2 size={12} />
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );
