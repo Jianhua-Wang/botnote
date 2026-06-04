@@ -123,4 +123,20 @@ export function taskStyle(status: string): string {
   return TASK_COLORS[status] ?? TASK_COLORS.open!;
 }
 
+// Default sort order inside a calendar day cell: active work first
+// (in_progress), then unstarted (open / "todo"), then completed (done),
+// then everything else. Stable so any secondary order the backend chose
+// (asc dueAt / asc completedAt) is preserved within a status group.
+const STATUS_ORDER: Record<string, number> = {
+  in_progress: 0,
+  open: 1,
+  done: 2
+};
+
+export function compareByStatus(a: Entity, b: Entity): number {
+  const ra = STATUS_ORDER[a.status] ?? 3;
+  const rb = STATUS_ORDER[b.status] ?? 3;
+  return ra - rb;
+}
+
 export { format, isSameDay, isToday };

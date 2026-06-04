@@ -4,7 +4,7 @@ import { useProjects, useTasksRange } from "../../api/hooks";
 import type { Entity } from "../../api/types";
 import { useModals } from "../../state/modals";
 import { TaskRow } from "./TaskRow";
-import { projectLookup, viewRange } from "./utils";
+import { compareByStatus, projectLookup, viewRange } from "./utils";
 
 export function DayView({
   anchor,
@@ -28,7 +28,9 @@ export function DayView({
   const { open } = useModals();
 
   const overdue = tasksData?.overdue ?? [];
-  const today = tasksData?.scheduled ?? [];
+  // Same in_progress -> open -> done order as the week/month cells, so the
+  // day's Today section reads consistently.
+  const today = (tasksData?.scheduled ?? []).slice().sort(compareByStatus);
   const isCurrentDay = isToday(anchor);
 
   return (

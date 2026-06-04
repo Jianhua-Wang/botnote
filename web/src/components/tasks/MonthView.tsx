@@ -4,7 +4,7 @@ import { useProjects, useTasksRange, useUpdateEntity } from "../../api/hooks";
 import type { Entity, Project } from "../../api/types";
 import { useModals } from "../../state/modals";
 import { TaskChip } from "./TaskChip";
-import { dayKey, daysBetween, groupTasksByDay, projectLookup, viewRange } from "./utils";
+import { compareByStatus, dayKey, daysBetween, groupTasksByDay, projectLookup, viewRange } from "./utils";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -79,8 +79,13 @@ function DayCell({
   const update = useUpdateEntity();
   const [hovered, setHovered] = useState(false);
 
-  // Drop archived/rejected — they shouldn't clutter the calendar.
-  const active = tasks.filter((t) => t.status !== "archived" && t.status !== "rejected");
+  // Drop archived/rejected — they shouldn't clutter the calendar. Sort
+  // in_progress -> open ("todo") -> done so the cell's top chips are the
+  // most actionable.
+  const active = tasks
+    .filter((t) => t.status !== "archived" && t.status !== "rejected")
+    .slice()
+    .sort(compareByStatus);
   const doneCount = active.filter((t) => t.status === "done").length;
   const totalCount = active.length;
   const allDone = totalCount > 0 && doneCount === totalCount;

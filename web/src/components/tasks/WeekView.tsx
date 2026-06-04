@@ -4,7 +4,7 @@ import { useProjects, useTasksRange, useUpdateEntity } from "../../api/hooks";
 import type { Entity, Project } from "../../api/types";
 import { useModals } from "../../state/modals";
 import { TaskChip } from "./TaskChip";
-import { dayKey, daysBetween, groupTasksByDay, projectLookup, viewRange } from "./utils";
+import { compareByStatus, dayKey, daysBetween, groupTasksByDay, projectLookup, viewRange } from "./utils";
 
 export function WeekView({
   anchor,
@@ -94,8 +94,12 @@ function DayCell({
   const update = useUpdateEntity();
 
   // Exclude archived/rejected from both the chip list and the count — they're
-  // soft-deleted and shouldn't clutter the day view.
-  const active = tasks.filter((t) => t.status !== "archived" && t.status !== "rejected");
+  // soft-deleted and shouldn't clutter the day view. Sort in_progress -> open
+  // ("todo") -> done so the most actionable rows surface first.
+  const active = tasks
+    .filter((t) => t.status !== "archived" && t.status !== "rejected")
+    .slice()
+    .sort(compareByStatus);
   const doneCount = active.filter((t) => t.status === "done").length;
   const totalCount = active.length;
   const allDone = totalCount > 0 && doneCount === totalCount;
