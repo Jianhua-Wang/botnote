@@ -62,7 +62,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       title: "Opening Brief",
       description:
         "CALL THIS FIRST when starting work on a project. Fetch the agent context bundle: AGENTS.md + PINNED NOTES (full text, user-curated must-read context like deployment steps, important conventions) + open tasks + recent activity. Returns markdown.",
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
       inputSchema: {
         projectId: z
           .string()
@@ -85,7 +90,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       title: "Hybrid Search",
       description:
         "Find tasks and notes by free-text query. Uses BM25 + vector cosine + time decay merged via RRF. Pass kind='note' or kind='task' to narrow; omit to search both.",
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
       inputSchema: {
         query: z.string().min(1),
         projectId: z.string().uuid().optional(),
@@ -125,7 +135,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       title: "Recent Entities",
       description:
         "List entities ordered by most recent. Filter by project, kinds, and since (ISO date).",
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
       inputSchema: {
         projectId: z.string().uuid().optional(),
         since: z.string().datetime().optional(),
@@ -166,7 +181,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       title: "List Projects",
       description:
         "List every project in the workspace with its key, name, color and icon. Call this FIRST before creating tasks/notes if you don't already know the target project's UUID. Use `OTHE` (Others) as the fallback bucket for one-off / 杂项 work that doesn't deserve its own project.",
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
       inputSchema: {}
     },
     async () => {
@@ -188,7 +208,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       title: "Get Project",
       description:
         "Fetch a single project, including its AGENTS.md. Accepts either the UUID or the human-readable key (e.g. 'BOT').",
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
       inputSchema: {
         projectId: z.string().uuid().optional(),
         key: ProjectKey.optional()
@@ -291,7 +316,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Get Entity",
       description: "Fetch a single task or note by its UUID.",
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
       inputSchema: { id: z.string().uuid() }
     },
     async ({ id }) => {
@@ -312,7 +342,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       title: "Get Entity by Identifier",
       description:
         "Fetch a task or note by its human-readable identifier (e.g. BOT-12). Pass the project key and sequence number separately.",
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
       inputSchema: {
         projectKey: ProjectKey,
         sequenceId: z.number().int().positive()
@@ -488,7 +523,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       title: "Related Entities",
       description:
         "List entities whose parent_id is the given id — typically notes linked under a task. Use this after opening a task to surface the relevant notes/context.",
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
       inputSchema: { id: z.string().uuid() }
     },
     async ({ id }) => {
