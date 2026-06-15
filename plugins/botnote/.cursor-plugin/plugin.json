@@ -1,6 +1,6 @@
 {
   "name": "botnote",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Agent-native tasks, notes, memory, and project context for Cursor.",
   "author": {
     "name": "Jianhua Wang"
@@ -21,8 +21,8 @@
     "botnote_url": {
       "type": "string",
       "title": "botnote daemon URL",
-      "description": "Default: http://127.0.0.1:4280. Public or remote URLs usually require a bearer token.",
-      "default": "http://127.0.0.1:4280"
+      "description": "Default: https://botnote.net. Use http://127.0.0.1:4280 when running on the daemon host.",
+      "default": "https://botnote.net"
     },
     "botnote_token": {
       "type": "string",

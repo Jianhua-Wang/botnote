@@ -188,7 +188,7 @@ botnote login`;
 /plugin install botnote@botnote
 
 # Claude Code will prompt for:
-#   botnote_url    -> default https://botnote.net (or http://127.0.0.1:4280 on daemon host)
+#   botnote_url    -> default https://botnote.net (use http://127.0.0.1:4280 on daemon host)
 #   botnote_token  -> bearer from Settings → API tokens (skip on loopback)`;
 
   const codexMarketplaceBlock = `// Add this to .agents/plugins/marketplace.json in your repo.

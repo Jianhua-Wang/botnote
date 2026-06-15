@@ -149,8 +149,8 @@ setup is required.
 /plugin install botnote@botnote
 
 # Claude Code will prompt for:
-#   botnote_url    -> default http://127.0.0.1:4280 on daemon host
-#                     or https://botnote.net on remote machines
+#   botnote_url    -> default https://botnote.net
+#                     use http://127.0.0.1:4280 on the daemon host
 #   botnote_token  -> bearer from Settings -> API tokens; skip on loopback
 ```
 

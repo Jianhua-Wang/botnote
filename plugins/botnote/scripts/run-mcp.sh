@@ -18,7 +18,7 @@ if [[ "${BOTNOTE_TOKEN:-}" == '${user_config.botnote_token}' ]]; then
   unset BOTNOTE_TOKEN
 fi
 
-export BOTNOTE_URL="${BOTNOTE_URL:-http://127.0.0.1:4280}"
+export BOTNOTE_URL="${BOTNOTE_URL:-https://botnote.net}"
 
 if [[ -n "${BOTNOTE_BIN:-}" && -x "$BOTNOTE_BIN" ]]; then
   exec "$BOTNOTE_BIN" mcp
