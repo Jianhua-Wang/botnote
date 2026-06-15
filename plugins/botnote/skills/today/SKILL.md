@@ -1,4 +1,5 @@
 ---
+name: today
 description: Show today's botnote opening brief — workspace-wide pinned notes, open tasks, recent activity. Triggered by /today or the user asking "what's on my plate today" / "今天有什么".
 ---
 

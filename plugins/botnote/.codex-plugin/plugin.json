@@ -1,0 +1,40 @@
+{
+  "name": "botnote",
+  "version": "0.1.1",
+  "description": "Agent-native tasks, notes, memory, and project context for Codex.",
+  "author": {
+    "name": "Jianhua Wang"
+  },
+  "homepage": "https://botnote.net",
+  "repository": "https://github.com/jianhuawang/botnote",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "tasks",
+    "notes",
+    "mcp",
+    "agents"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "botnote",
+    "shortDescription": "Tasks, notes, memory, and project context",
+    "longDescription": "Use botnote as the agent-native source of truth for projects, tasks, notes, and durable memory. The plugin bundles botnote MCP tools plus workflow skills for starting work, capturing tasks, remembering context, recalling notes, and marking work done.",
+    "developerName": "Jianhua Wang",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://botnote.net",
+    "defaultPrompt": [
+      "Show today's botnote brief",
+      "Remember this in botnote",
+      "Start work on BOT"
+    ],
+    "brandColor": "#5e6ad2",
+    "screenshots": []
+  }
+}

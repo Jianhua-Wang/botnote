@@ -20,6 +20,7 @@ import type { Database } from "../db/client.js";
 import type { EmbeddingService } from "../service/embedding.js";
 import { consumeSession } from "../service/sessions.js";
 import { consumeToken } from "../service/tokens.js";
+import { VERSION } from "../version.js";
 import { registerRoutes } from "./routes.js";
 
 export interface ServerContext {
@@ -132,7 +133,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
       openapi: {
         info: {
           title: "botnote",
-          version: "0.0.1",
+          version: VERSION,
           description:
             "Notion for bots. A lightweight, agent-first project + notes + memory store."
         },

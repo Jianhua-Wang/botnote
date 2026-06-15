@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
+import { VERSION } from "./version.js";
 
-const VERSION = "0.0.1";
 // Public botnote.net is the right default for fresh remote installs (the most
 // common npm-install case). On the daemon host itself, `botnote login` writes
 // a config that pins http://127.0.0.1:4280 so loopback stays loopback.
@@ -331,12 +331,12 @@ async function cmdSearch(args: Args): Promise<void> {
 function cmdServe(): void {
   // Re-exec into the existing daemon entry. dist/cli.js is sibling of dist/bin.js.
   const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), "cli.js");
-  execSync(`node ${cli}`, { stdio: "inherit" });
+  execFileSync(process.execPath, [cli], { stdio: "inherit" });
 }
 
 function cmdMcp(): void {
   const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), "cli.js");
-  execSync(`node ${cli} mcp`, { stdio: "inherit" });
+  execFileSync(process.execPath, [cli, "mcp"], { stdio: "inherit" });
 }
 
 async function main(): Promise<void> {

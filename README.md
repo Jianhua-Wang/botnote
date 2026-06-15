@@ -26,6 +26,26 @@ Three things only:
 
 Requires: Node 20+, pnpm, Docker.
 
+### CLI install
+
+On client machines, install the portable CLI from npm:
+
+```bash
+npm i -g botnote
+botnote login
+```
+
+`botnote login` stores the daemon URL and bearer token in
+`~/.config/botnote/config.json`. Use `https://botnote.net` plus a token from
+Settings -> API tokens on remote machines; use `http://127.0.0.1:4280` without
+a token on the daemon host.
+
+The Claude Code and Codex plugins call `botnote mcp`, so installing the npm
+package is enough for plugin runtime on machines that do not have a botnote
+source checkout.
+
+### Local daemon development
+
 ```bash
 # 1. Spin up postgres (port 55434, pgvector extension)
 docker compose up -d
@@ -89,9 +109,100 @@ curl -s -X POST $A/v1/search \
   -d "{\"query\":\"ship\",\"projectId\":\"$PID\"}"
 ```
 
-## MCP client setup
+## Plugin
 
-botnote exposes 11 tools + 1 resource over stdio.
+The plugin bundles the MCP server, workflow skills/commands, and a curator
+subagent. All workflows route through MCP — no extra direct Letheia or Plane
+MCP installs are required.
+
+### Claude Code
+
+```text
+# In Claude Code
+/plugin marketplace add jianhuawang/botnote
+/plugin install botnote@botnote
+
+# Claude Code will prompt for:
+#   botnote_url    -> default http://127.0.0.1:4280 on daemon host
+#                     or https://botnote.net on remote machines
+#   botnote_token  -> bearer from Settings -> API tokens; skip on loopback
+```
+
+Slash commands:
+
+```text
+/botnote:today              # today + overdue
+/botnote:remember "..."     # capture a note via MCP
+/botnote:recall "..."       # hybrid search
+/botnote:start-work BOT     # pickup workflow on a project
+/botnote:done               # mark current focus done
+/botnote:add-task "..."     # capture a task without starting it
+/botnote:show-todo          # workspace task/context summary
+```
+
+Plugin distribution lives at
+[jianhuawang/botnote](https://github.com/jianhuawang/botnote). The MCP server
+inside the plugin uses the URL + token from the install prompt and calls the
+`botnote` CLI from PATH. Install the npm package first on non-dev machines.
+
+### Codex
+
+Add the plugin through `/settings -> plugin` in Codex, or add this marketplace
+from Git without a full source checkout:
+
+```bash
+codex plugin marketplace add git@github.com:Jianhua-Wang/botnote.git \
+  --sparse .agents/plugins \
+  --sparse plugins/botnote
+
+codex plugin add botnote@botnote-plugins
+```
+
+For local plugin development, add this marketplace entry to
+`.agents/plugins/marketplace.json` in the repo:
+
+```json
+{
+  "name": "botnote-plugins",
+  "interface": { "displayName": "botnote Plugins" },
+  "plugins": [
+    {
+      "name": "botnote",
+      "source": { "source": "local", "path": "./plugins/botnote" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}
+```
+
+Then install/enable from the Codex plugin UI, or use:
+
+```bash
+codex plugin marketplace add .
+codex plugin add botnote@botnote-plugins
+```
+
+For synced Codex settings, include this in `~/.codex/config.toml` or the
+rendered config template:
+
+```toml
+[plugins."botnote@botnote-plugins"]
+enabled = true
+
+[marketplaces.botnote-plugins]
+source_type = "local"
+source = "/absolute/path/to/botnote"
+```
+
+The Codex plugin starts `./scripts/run-mcp.sh`. It defaults to
+`BOTNOTE_URL=http://127.0.0.1:4280`, calls `botnote mcp` from PATH, and falls
+back to `npx -y botnote mcp`. Set `BOTNOTE_URL` and `BOTNOTE_TOKEN` only when
+using a remote daemon.
+
+## MCP tools
+
+botnote exposes the following tools + resources over stdio.
 
 ### Tools
 
@@ -113,28 +224,24 @@ botnote exposes 11 tools + 1 resource over stdio.
 
 - `botnote://workspace` — workspace overview: project index + most recent activity (text/markdown).
 
-### Claude Code
+### Direct MCP fallback
 
-Add to `~/.claude/mcp_settings.json`:
+Plugin install is preferred. For a raw MCP client, build/install the CLI and
+run:
 
 ```json
 {
   "mcpServers": {
     "botnote": {
-      "command": "node",
-      "args": ["--import", "tsx", "/absolute/path/to/botnote/src/mcp/cli.ts"],
+      "command": "botnote",
+      "args": ["mcp"],
       "env": {
-        "DATABASE_URL": "postgres://botnote:botnote@127.0.0.1:55434/botnote",
-        "OPENAI_API_KEY": "sk-..."
+        "BOTNOTE_URL": "http://127.0.0.1:4280"
       }
     }
   }
 }
 ```
-
-### Codex / Cursor / other MCP clients
-
-Same shape — pick the client's MCP config file, point `command` at the cli.ts (or build it and point at `dist/mcp/cli.js`), supply `DATABASE_URL`.
 
 ## Per-project AGENTS.md
 
@@ -163,7 +270,7 @@ Each MCP tool call inside a project should be preceded by `opening_brief({ proje
 
 ## Status
 
-v0 / M1 — complete. See `AGENTS.md` for codebase conventions and `OTHE-168..175` in Plane for milestone breakdown.
+v0 / M1 — complete. See `AGENTS.md` for codebase conventions and the `BOT` project in botnote for ongoing work.
 
 ## License
 

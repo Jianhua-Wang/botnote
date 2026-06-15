@@ -13,6 +13,14 @@ import type {
 
 export const POLL_INTERVAL = 30_000;
 
+export function useHealth() {
+  return useQuery({
+    queryKey: ["health"],
+    queryFn: api.health,
+    staleTime: 5 * 60_000
+  });
+}
+
 export function useProjects() {
   return useQuery({
     queryKey: ["projects"],

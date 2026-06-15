@@ -1,19 +1,47 @@
 {
   "name": "botnote",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.1",
   "description": "Notion for bots. Lightweight project + notes + memory store, agent-first.",
   "type": "module",
-  "bin": {
-    "botnote": "./dist/bin.js"
+  "license": "MIT",
+  "homepage": "https://botnote.net",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jianhua-Wang/botnote.git"
   },
+  "bugs": {
+    "url": "https://github.com/Jianhua-Wang/botnote/issues"
+  },
+  "keywords": [
+    "agents",
+    "mcp",
+    "memory",
+    "notes",
+    "tasks"
+  ],
+  "bin": {
+    "botnote": "dist/bin.js"
+  },
+  "main": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
+  "files": [
+    "dist/",
+    "web/dist/",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "dev": "tsx watch src/cli.ts",
     "start": "node dist/cli.js",
-    "build": "tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp -R src/db/migrations/. dist/db/migrations/ && chmod +x dist/bin.js",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true}); require('node:fs').rmSync('web/dist',{recursive:true,force:true})\"",
+    "build": "pnpm clean && pnpm --dir web build && pnpm build:server",
+    "build:server": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp -R src/db/migrations/. dist/db/migrations/ && chmod +x dist/bin.js",
+    "prepack": "pnpm build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",

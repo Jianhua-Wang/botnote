@@ -1,4 +1,5 @@
 ---
+name: recall
 description: Search botnote for stored notes and tasks. Use when the user says "find", "search", "recall", "翻一下", "我之前说过", "what did I store about X".
 ---
 

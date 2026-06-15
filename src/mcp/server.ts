@@ -5,6 +5,7 @@ import {
   type EntityDTO,
   type LinkKind
 } from "./http-client.js";
+import { VERSION } from "../version.js";
 
 export interface McpServerContext {
   client: BotnoteHttpClient;
@@ -25,8 +26,6 @@ const TASK_STATUSES = [
 ] as const;
 const PRIORITIES = ["urgent", "high", "medium", "low", "none"] as const;
 const EDGE_KINDS = ["blocks", "references", "parent_of"] as const;
-
-const VERSION = "0.0.1";
 
 function displayTitle(e: { title: string | null; body: string }): string {
   if (e.title && e.title.trim()) return e.title;

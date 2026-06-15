@@ -16,7 +16,7 @@ import {
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { useCreateToken, useRevokeToken, useTokens } from "../api/hooks";
+import { useCreateToken, useHealth, useRevokeToken, useTokens } from "../api/hooks";
 import type { CreatedToken } from "../api/types";
 
 const BOTNOTE_HOST =
@@ -176,7 +176,14 @@ BOTNOTE_URL=http://127.0.0.1:4280 botnote today
 // ----------------------------------------------------------------------------
 
 function PluginSection() {
-  const installBlock = `# In Claude Code
+  const cliInstallBlock = `# Runtime used by both Claude Code and Codex plugins.
+npm i -g botnote
+
+# Remote clients should save https://botnote.net + a bearer token.
+# On the daemon host, use http://127.0.0.1:4280 and skip the token.
+botnote login`;
+
+  const claudeInstallBlock = `# In Claude Code
 /plugin marketplace add jianhuawang/botnote
 /plugin install botnote@botnote
 
@@ -184,20 +191,56 @@ function PluginSection() {
 #   botnote_url    -> default https://botnote.net (or http://127.0.0.1:4280 on daemon host)
 #   botnote_token  -> bearer from Settings → API tokens (skip on loopback)`;
 
-  const useBlock = `/botnote:today              # today + overdue (calls the daemon)
-/botnote:remember "..."     # capture a note via MCP
+  const codexMarketplaceBlock = `// Add this to .agents/plugins/marketplace.json in your repo.
+// Then install botnote@botnote-plugins from Codex Settings → Plugin.
+{
+  "name": "botnote-plugins",
+  "interface": { "displayName": "botnote Plugins" },
+  "plugins": [
+    {
+      "name": "botnote",
+      "source": { "source": "local", "path": "./plugins/botnote" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}`;
+
+  const codexGitBlock = `# No full source checkout required.
+codex plugin marketplace add git@github.com:Jianhua-Wang/botnote.git \\
+  --sparse .agents/plugins \\
+  --sparse plugins/botnote
+
+codex plugin add botnote@botnote-plugins`;
+
+  const codexSettingsBlock = `# ~/.codex/config.toml
+[plugins."botnote@botnote-plugins"]
+enabled = true
+
+[marketplaces.botnote-plugins]
+source_type = "local"
+source = "/absolute/path/to/botnote"`;
+
+  const useBlock = `/botnote:today              # today + overdue
+/botnote:show-todo          # open work across projects
+/botnote:add-task "..."     # create a task
+/botnote:start-work BOT     # pick up project work
+/botnote:remember "..."     # capture a note
 /botnote:recall "..."       # hybrid search
-/botnote:start-work BOT     # pickup workflow on a project
 /botnote:done               # mark current focus done`;
 
   return (
     <>
       <SectionHeader
-        title="Plugin (Claude Code)"
-        blurb="The Claude Code plugin bundles the MCP server, five slash commands, and a curator subagent. Slash commands route through MCP — no extra installs required."
+        title="Plugin"
+        blurb="The botnote plugin bundles slash commands and a curator subagent for Claude Code and Codex. The plugin calls the npm CLI for MCP, so no separate Letheia or Plane MCP setup is required."
       />
 
-      <CodeBlock title="Install" code={installBlock} />
+      <CodeBlock title="Install CLI runtime" code={cliInstallBlock} />
+      <CodeBlock title="Claude Code install" code={claudeInstallBlock} />
+      <CodeBlock title="Codex marketplace entry" code={codexMarketplaceBlock} />
+      <CodeBlock title="Codex Git marketplace" code={codexGitBlock} />
+      <CodeBlock title="Codex settings" code={codexSettingsBlock} />
       <CodeBlock title="Slash commands" code={useBlock} />
 
       <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted leading-relaxed">
@@ -211,8 +254,9 @@ function PluginSection() {
           jianhuawang/botnote
         </a>
         {". "}
-        The MCP server inside the plugin uses the URL + token from the install
-        prompt — no edits to <code className="text-ink">~/.claude.json</code> needed.
+        The MCP server inside the plugin uses the URL + token from the install prompt.
+        On the daemon host, <code className="text-ink">http://127.0.0.1:4280</code> can run
+        without a token; remote clients should use a bearer token from API tokens.
       </div>
     </>
   );
@@ -292,12 +336,15 @@ curl -X POST '${BOTNOTE_HOST}/v1/search' \\
 // ----------------------------------------------------------------------------
 
 function AboutSection() {
+  const { data: health, isLoading } = useHealth();
+  const versionLabel = health?.version ? `v${health.version}` : isLoading ? "loading..." : "unknown";
+
   return (
     <>
       <SectionHeader title="About" blurb="Build + runtime info for this daemon." />
       <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted space-y-2">
         <div>
-          <span className="text-ink">botnote v0.0.1</span> — Postgres 16 + pgvector + Fastify 5 +
+          <span className="text-ink">botnote {versionLabel}</span> — Postgres 16 + pgvector + Fastify 5 +
           MCP SDK
         </div>
         <div>

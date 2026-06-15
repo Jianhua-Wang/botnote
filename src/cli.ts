@@ -5,8 +5,8 @@ import { BotnoteHttpClient } from "./mcp/http-client.js";
 import { buildMcpServer } from "./mcp/server.js";
 import { EmbeddingService } from "./service/embedding.js";
 import { buildServer } from "./rest/server.js";
+import { VERSION } from "./version.js";
 
-const VERSION = "0.0.1";
 // Public botnote.net is the default so fresh remote installs (the common
 // plugin-install case) work without extra config. The daemon host overrides
 // via BOTNOTE_URL in its Codex / Claude Code config to skip the tunnel.

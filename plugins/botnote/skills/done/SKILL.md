@@ -1,11 +1,12 @@
 ---
+name: done
 description: Mark a botnote task as done and optionally capture closing notes. Use when the user says "done", "完成了", "搞定了", "xxx 做好了", or signals a piece of work is finished.
 ---
 
 When the user signals something is finished:
 
 1. **Find the task**. If they referenced an id (like `BOT-12`), call `mcp__botnote__get_entity_by_key`. Otherwise call `mcp__botnote__search` with `kind: "task"` and a query made from the topic they described.
-   - 0 hits: ask "Plane 里搜不到对应的 task — 是新工作吗？要新建并标完成吗？" (then `mcp__botnote__create_task` with `status: "done"`).
+   - 0 hits: ask "botnote 里搜不到对应的 task — 是新工作吗？要新建并标完成吗？" (then `mcp__botnote__create_task` with `status: "done"`).
    - 1 clear hit: proceed.
    - Multiple plausible hits: list them and ask which.
 

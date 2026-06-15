@@ -42,6 +42,7 @@ import {
   UpdateProjectInput,
   Uuid
 } from "../service/types.js";
+import { VERSION } from "../version.js";
 import type { ServerContext } from "./server.js";
 
 const IdParams = z.object({ id: Uuid });
@@ -69,7 +70,7 @@ export async function registerRoutes(
 ): Promise<void> {
   const app = rawApp.withTypeProvider<ZodTypeProvider>();
 
-  app.get("/health", async () => ({ ok: true, version: "0.0.1" }));
+  app.get("/health", async () => ({ ok: true, version: VERSION }));
 
   // ----- projects -----
 

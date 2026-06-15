@@ -1,4 +1,5 @@
 ---
+name: remember
 description: Capture a free-form note into botnote. Use whenever the user says "remember X", "记下 X", "store this", "save this for later", or otherwise indicates something should be persisted.
 ---
 

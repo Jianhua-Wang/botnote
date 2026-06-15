@@ -1,4 +1,5 @@
 ---
+name: start-work
 description: Load full context for a specific botnote project before working on it. Triggered by /start-work <KEY> or the user saying "let's work on <project>" / "切到 X 项目".
 argument-hint: <project-key>
 ---

@@ -1,8 +1,11 @@
 {
   "name": "botnote",
   "displayName": "botnote",
-  "version": "0.1.0",
-  "description": "Notion for bots — capture + recall + project context for AI agents. Plugin bundles the botnote MCP server with /today, /remember, /recall, /start-work, /done slash commands and a curator subagent.",
+  "version": "0.1.1",
+  "description": "Notion for bots — capture + recall + project context for AI agents. Plugin bundles the botnote MCP server with /today, /show-todo, /remember, /recall, /add-task, /start-work, /done slash commands and a curator subagent.",
+  "author": {
+    "name": "Jianhua Wang"
+  },
   "homepage": "https://botnote.net",
   "repository": "https://github.com/jianhuawang/botnote",
   "license": "MIT",
@@ -10,13 +13,13 @@
     "botnote_url": {
       "type": "string",
       "title": "botnote daemon URL",
-      "description": "Default: https://botnote.net (public, requires bearer token). On the daemon host or its tailnet, use http://127.0.0.1:4280 or http://100.68.185.53:4280 (no token required, loopback / tailnet is trusted).",
-      "default": "https://botnote.net"
+      "description": "Default: http://127.0.0.1:4280. On tailnet use http://100.68.185.53:4280. Public https://botnote.net requires a bearer token.",
+      "default": "http://127.0.0.1:4280"
     },
     "botnote_token": {
       "type": "string",
       "title": "API bearer token",
-      "description": "Required for https://botnote.net. Generate via Settings -> API tokens in the web UI, or `botnote tokens create` on the daemon host. Not needed when botnote_url is loopback or tailnet.",
+      "description": "Required only for https://botnote.net. Generate via Settings -> API tokens in the web UI, or `botnote tokens create` on the daemon host. Not needed when botnote_url is loopback or tailnet.",
       "sensitive": true
     }
   }
