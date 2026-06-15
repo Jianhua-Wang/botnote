@@ -18,6 +18,22 @@ if [[ "${BOTNOTE_TOKEN:-}" == '${user_config.botnote_token}' ]]; then
   unset BOTNOTE_TOKEN
 fi
 
+config_path="${XDG_CONFIG_HOME:-$HOME/.config}/botnote/config.json"
+if [[ -f "$config_path" ]]; then
+  if [[ -z "${BOTNOTE_URL:-}" ]]; then
+    cfg_url="$(node -e "const fs=require('fs'); try { const c=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (typeof c.baseUrl === 'string') process.stdout.write(c.baseUrl); } catch {}" "$config_path" 2>/dev/null || true)"
+    if [[ -n "$cfg_url" ]]; then
+      export BOTNOTE_URL="$cfg_url"
+    fi
+  fi
+  if [[ -z "${BOTNOTE_TOKEN:-}" ]]; then
+    cfg_token="$(node -e "const fs=require('fs'); try { const c=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (typeof c.token === 'string') process.stdout.write(c.token); } catch {}" "$config_path" 2>/dev/null || true)"
+    if [[ -n "$cfg_token" ]]; then
+      export BOTNOTE_TOKEN="$cfg_token"
+    fi
+  fi
+fi
+
 export BOTNOTE_URL="${BOTNOTE_URL:-https://botnote.net}"
 
 if [[ -n "${BOTNOTE_BIN:-}" && -x "$BOTNOTE_BIN" ]]; then
