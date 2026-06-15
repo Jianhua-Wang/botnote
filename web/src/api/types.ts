@@ -81,7 +81,6 @@ export interface OpeningBriefResponse {
   agentsMd: string;
   pinnedNotes: Entity[];
   openTasks: Entity[];
-  pendingDecisions: Entity[];
   recent: Entity[];
   generatedAt: string;
   markdown: string;
@@ -150,12 +149,13 @@ export interface Token {
   id: string;
   name: string;
   prefix: string;
+  plaintext: string | null;
   lastUsedAt: string | null;
   createdAt: string;
 }
 
 export interface CreatedToken extends Token {
-  /** Plaintext token. Only present in the create-response; the client must persist it. */
+  /** Plaintext token. New tokens keep this available in Settings for copying. */
   plaintext: string;
 }
 

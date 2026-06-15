@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type Project } from "../db/schema.js";
 import { getProject } from "./projects.js";
@@ -9,7 +9,6 @@ export interface OpeningBrief {
   agentsMd: string;
   pinnedNotes: Entity[];
   openTasks: Entity[];
-  pendingDecisions: Entity[];
   recent: Entity[];
   generatedAt: Date;
 }
@@ -24,7 +23,7 @@ export async function openingBrief(
     ? eq(entities.projectId, input.projectId)
     : isNull(entities.projectId);
 
-  const [pinnedNotes, openTasks, pendingDecisions, recentRows] = await Promise.all([
+  const [pinnedNotes, openTasks, recentRows] = await Promise.all([
     db
       .select()
       .from(entities)
@@ -40,13 +39,7 @@ export async function openingBrief(
     db
       .select()
       .from(entities)
-      .where(and(projectFilter, eq(entities.kind, "decision"), eq(entities.status, "open")))
-      .orderBy(desc(entities.createdAt))
-      .limit(10),
-    db
-      .select()
-      .from(entities)
-      .where(and(projectFilter, ne(entities.kind, "log")))
+      .where(projectFilter)
       .orderBy(desc(entities.createdAt))
       .limit(input.recentLimit)
   ]);
@@ -56,7 +49,6 @@ export async function openingBrief(
     agentsMd: project?.agentsMd ?? "",
     pinnedNotes,
     openTasks,
-    pendingDecisions,
     recent: recentRows,
     generatedAt: new Date()
   };
@@ -101,14 +93,6 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     lines.push(`## Open Tasks (${brief.openTasks.length})`);
     for (const t of brief.openTasks) {
       lines.push(`- [${t.id.slice(0, 8)}] ${titleFor(t)}${t.tags.length ? ` [${t.tags.join(", ")}]` : ""}`);
-    }
-    lines.push("");
-  }
-
-  if (brief.pendingDecisions.length) {
-    lines.push(`## Pending Decisions (${brief.pendingDecisions.length})`);
-    for (const d of brief.pendingDecisions) {
-      lines.push(`- [${d.id.slice(0, 8)}] ${titleFor(d)}`);
     }
     lines.push("");
   }

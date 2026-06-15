@@ -121,8 +121,8 @@ export async function get(db: Database["db"], id: string): Promise<Entity | null
 }
 
 /**
- * Look up an entity by its human-readable identifier — e.g. project key `BOT`
- * + sequence id `12` resolves to the entity displayed as `BOT-12`.
+ * Look up an entity by its human-readable identifier — e.g. project key `DEMO`
+ * + sequence id `12` resolves to the entity displayed as `DEMO-12`.
  */
 export async function getByKey(
   db: Database["db"],

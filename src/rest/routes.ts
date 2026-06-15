@@ -59,6 +59,7 @@ function publicToken(t: Token) {
     id: t.id,
     name: t.name,
     prefix: t.prefix,
+    plaintext: t.plaintext,
     lastUsedAt: t.lastUsedAt,
     createdAt: t.createdAt
   };
@@ -132,7 +133,7 @@ export async function registerRoutes(
         tags: ["brief"],
         summary: "Opening brief for a project",
         description:
-          "Returns the agent context bundle: AGENTS.md, pinned notes, open tasks, pending decisions, recent activity. Also returns a markdown-formatted version.",
+          "Returns the agent context bundle: AGENTS.md, pinned notes, open tasks, and recent activity. Also returns a markdown-formatted version.",
         params: IdParams,
         body: OpeningBriefBody
       }
@@ -184,7 +185,7 @@ export async function registerRoutes(
     {
       schema: {
         tags: ["entities"],
-        summary: "Fetch an entity by its human-readable identifier (e.g. BOT-12)",
+        summary: "Fetch an entity by its human-readable identifier (e.g. DEMO-12)",
         params: KeySeqParams
       }
     },
@@ -425,7 +426,7 @@ export async function registerRoutes(
     },
     async (req) => {
       // If the request reached this handler, the auth gate already passed —
-      // either via cookie, bearer, or trusted tailnet origin.
+      // either via cookie, bearer, or trusted direct origin.
       const hasCookie = !!req.cookies?.botnote_session;
       const hasBearer = !!req.headers.authorization;
       const viaProxy =
@@ -447,7 +448,7 @@ export async function registerRoutes(
 
   app.get(
     "/v1/tokens",
-    { schema: { tags: ["tokens"], summary: "List API tokens (no hash, no plaintext)" } },
+    { schema: { tags: ["tokens"], summary: "List API tokens (no hash; includes recoverable plaintext when available)" } },
     async () => (await listTokens(ctx.db)).map(publicToken)
   );
 
@@ -460,7 +461,7 @@ export async function registerRoutes(
       config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
       schema: {
         tags: ["tokens"],
-        summary: "Create a new API token (plaintext returned once)",
+        summary: "Create a new API token (plaintext remains available for copying)",
         body: CreateTokenInput
       }
     },

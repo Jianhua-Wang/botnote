@@ -1,7 +1,7 @@
 -- API tokens. token_hash stores sha256 of the plaintext token; prefix is the first
 -- 8 chars of the plaintext (for display). Auth middleware enforcement is off by
--- default (botnote currently expects tailnet-only access); these endpoints exist
--- so the UI can grant/revoke tokens and Boss can enable enforcement later.
+-- default for local deployments; these endpoints let the UI grant/revoke tokens
+-- when public or proxy-gated access is enabled.
 CREATE TABLE IF NOT EXISTS tokens (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,

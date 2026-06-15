@@ -4,14 +4,13 @@ import { sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb } from "../src/db/client.js";
 import { buildServer } from "../src/rest/server.js";
 import { EmbeddingService } from "../src/service/embedding.js";
+import { createTestDb } from "./test_db.js";
 
-const DB_URL = process.env.DATABASE_URL ?? "postgres://botnote:botnote@127.0.0.1:55434/botnote";
 const ROOT = path.resolve(import.meta.dirname, "..");
 
-const { db, pool } = createDb(undefined);
+const { db, pool } = createTestDb();
 const embedding = new EmbeddingService(db);
 
 let server: FastifyInstance;
@@ -20,7 +19,7 @@ let mcpClient: Client;
 let mcpTransport: StdioClientTransport;
 
 beforeAll(async () => {
-  await db.execute(sql`TRUNCATE entities, edges, actors, projects RESTART IDENTITY CASCADE`);
+  await db.execute(sql`TRUNCATE entities, edges, projects, tokens, sessions RESTART IDENTITY CASCADE`);
 
   server = await buildServer({ db, embedding, logLevel: "warn" });
   await server.listen({ port: 0, host: "127.0.0.1" });
@@ -33,8 +32,8 @@ beforeAll(async () => {
 
   mcpTransport = new StdioClientTransport({
     command: "node",
-    args: ["--import", "tsx", path.join(ROOT, "src/mcp/cli.ts")],
-    env: { ...process.env, DATABASE_URL: DB_URL, NODE_OPTIONS: "--no-warnings" }
+    args: ["--import", "tsx", path.join(ROOT, "src/cli.ts"), "mcp"],
+    env: { ...process.env, BOTNOTE_URL: baseUrl, NODE_OPTIONS: "--no-warnings" }
   });
   mcpClient = new Client({ name: "e2e-test", version: "0.0.1" });
   await mcpClient.connect(mcpTransport);
@@ -60,11 +59,10 @@ describe("botnote E2E cross-transport", () => {
     expect(projectResp.ok).toBe(true);
     const project = (await projectResp.json()) as { id: string };
 
-    await fetch(`${baseUrl}/v1/entities`, {
+    await fetch(`${baseUrl}/v1/notes`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        kind: "decision",
         projectId: project.id,
         title: "Use Reciprocal Rank Fusion for hybrid retrieval",
         body: "RRF with k=60 chosen to merge BM25 + cosine + time decay",
@@ -99,9 +97,8 @@ describe("botnote E2E cross-transport", () => {
     const project = (await projectResp.json()) as { id: string };
 
     const writeResp = await mcpClient.callTool({
-      name: "write",
+      name: "remember",
       arguments: {
-        kind: "note",
         projectId: project.id,
         title: "MCP-side note about AGENTS.md",
         body: "AGENTS.md is the universal agent conventions standard.",
@@ -133,7 +130,7 @@ describe("botnote E2E cross-transport", () => {
     expect(searchData.hits[0]?.entity.title).toBe("MCP-side note about AGENTS.md");
   });
 
-  it("AGENTS.md is reachable from MCP agents_md tool", async () => {
+  it("AGENTS.md is reachable from MCP get_project tool", async () => {
     const projectResp = await fetch(`${baseUrl}/v1/projects`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -146,7 +143,7 @@ describe("botnote E2E cross-transport", () => {
     const project = (await projectResp.json()) as { id: string };
 
     const mdResp = await mcpClient.callTool({
-      name: "agents_md",
+      name: "get_project",
       arguments: { projectId: project.id }
     });
     const mdText = (mdResp.content as Array<{ text: string }>)[0]?.text ?? "";
@@ -162,5 +159,33 @@ describe("botnote E2E cross-transport", () => {
     expect(text).toContain("E2E");
     expect(text).toContain("MCP2");
     expect(text).toContain("DOC");
+  });
+
+  it("token lifecycle creates, lists, and revokes recoverable tokens", async () => {
+    const createResp = await fetch(`${baseUrl}/v1/tokens`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "e2e-client" })
+    });
+    expect(createResp.ok).toBe(true);
+    const created = (await createResp.json()) as {
+      id: string;
+      name: string;
+      prefix: string;
+      plaintext: string;
+    };
+    expect(created.plaintext).toMatch(/^bn_[0-9a-f]{48}$/);
+    expect(created.prefix).toBe(created.plaintext.slice(0, 11));
+
+    const listResp = await fetch(`${baseUrl}/v1/tokens`);
+    const tokens = (await listResp.json()) as Array<{ id: string; plaintext: string | null }>;
+    expect(tokens.find((t) => t.id === created.id)?.plaintext).toBe(created.plaintext);
+
+    const deleteResp = await fetch(`${baseUrl}/v1/tokens/${created.id}`, { method: "DELETE" });
+    expect(deleteResp.status).toBe(204);
+
+    const afterResp = await fetch(`${baseUrl}/v1/tokens`);
+    const after = (await afterResp.json()) as Array<{ id: string }>;
+    expect(after.some((t) => t.id === created.id)).toBe(false);
   });
 });

@@ -6,6 +6,7 @@ import type {
   RecentInput,
   SearchInput,
   TasksRangeInput,
+  Token,
   UpdateEntityInput,
   UpdateProjectInput,
   WriteEntityInput
@@ -206,8 +207,9 @@ export function useRevokeToken() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.revokeToken(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tokens"] });
+    onSuccess: (_data, id) => {
+      qc.setQueryData<Token[]>(["tokens"], (rows) => rows?.filter((t) => t.id !== id) ?? rows);
+      qc.invalidateQueries({ queryKey: ["tokens"], refetchType: "active" });
     }
   });
 }

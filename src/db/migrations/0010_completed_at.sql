@@ -1,8 +1,8 @@
 -- Add completed_at column to entities. Set automatically on a status
 -- transition into 'done' (and cleared when leaving). Backfill existing done
--- rows from updated_at as the best available approximation — Plane-migrated
--- tasks lost their original timestamp, so this clusters them on the migration
--- day rather than guessing. New transitions are exact.
+-- rows from updated_at as the best available approximation. Legacy-imported
+-- tasks may have lost their original timestamp, so this clusters them on the
+-- migration day rather than guessing. New transitions are exact.
 ALTER TABLE entities ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 
 UPDATE entities

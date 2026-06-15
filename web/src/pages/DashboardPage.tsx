@@ -17,7 +17,7 @@ export function DashboardPage() {
         <header>
           <h1 className="text-xl font-semibold text-ink">Workspace</h1>
           <p className="text-sm text-muted mt-1">
-            Projects, tasks, notes, decisions, and memory — written by you or by your agents.
+            Projects, tasks, notes, and memory — written by you or by your agents.
           </p>
         </header>
 

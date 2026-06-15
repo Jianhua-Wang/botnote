@@ -1,4 +1,4 @@
--- botnote 0003 — priority + per-project sequence id (BOT-12 style).
+-- botnote 0003 — priority + per-project sequence id (DEMO-12 style).
 -- Idempotent.
 
 ALTER TABLE entities ADD COLUMN IF NOT EXISTS priority text NOT NULL DEFAULT 'none';

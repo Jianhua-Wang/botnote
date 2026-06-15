@@ -3,6 +3,7 @@
   "version": "0.1.1",
   "description": "Notion for bots. Lightweight project + notes + memory store, agent-first.",
   "type": "module",
+  "packageManager": "pnpm@10.33.0",
   "license": "MIT",
   "homepage": "https://botnote.net",
   "repository": {
@@ -43,7 +44,7 @@
     "build:server": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp -R src/db/migrations/. dist/db/migrations/ && chmod +x dist/bin.js",
     "prepack": "pnpm build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts"
   },

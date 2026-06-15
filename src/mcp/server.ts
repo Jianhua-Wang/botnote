@@ -180,7 +180,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "List Projects",
       description:
-        "List every project in the workspace with its key, name, color and icon. Call this FIRST before creating tasks/notes if you don't already know the target project's UUID. Use `OTHE` (Others) as the fallback bucket for one-off / 杂项 work that doesn't deserve its own project.",
+        "List every project in the workspace with its key, name, color and icon. Call this before creating tasks or notes if you don't already know the target project's UUID.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -242,10 +242,10 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Create Project",
       description:
-        "Create a new project. Boss already has 13 projects (call `list_projects` first to verify the project doesn't exist or fit an existing bucket — typically `OTHE` is the right home for one-off / 杂项 work). Only create a new project when the work is large enough to deserve its own backlog.\n" +
+        "Create a new project. Call `list_projects` first to verify the project does not already exist or fit an existing bucket. Only create a new project when the work is large enough to deserve its own backlog.\n" +
         "\n" +
         "Conventions:\n" +
-        "- `key`: short uppercase (3-4 chars), e.g. 'BOT', 'NOED', 'OTHE'. Unique across the workspace.\n" +
+        "- `key`: short uppercase identifier, e.g. 'BOT', 'DOCS', 'OPS'. Unique across the workspace.\n" +
         "- `name`: human-readable.\n" +
         "- `color`: hex like '#5e6ad2' (Linear blue) by default. Pick a color that contrasts with the existing palette.\n" +
         "- `icon`: lowercase kebab name from lucide-react (e.g. 'rocket', 'brain', 'package', 'archive').\n" +
@@ -341,7 +341,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Get Entity by Identifier",
       description:
-        "Fetch a task or note by its human-readable identifier (e.g. BOT-12). Pass the project key and sequence number separately.",
+        "Fetch a task or note by its human-readable identifier (e.g. DEMO-12). Pass the project key and sequence number separately.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -377,10 +377,10 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "\n" +
         "Conventions (follow strictly):\n" +
         "- `projectId`: required. Call `list_projects` first if you don't already know the project's UUID. If user-supplied context doesn't pin a project, ask before creating.\n" +
-        "- `title`: an executable verb phrase, NOT a vague topic ('Fix CRED-12 null-pointer' ✓, 'Process CRED stuff' ✗). Max ~100 chars.\n" +
-        "- `priority`: infer from urgency cues — ASAP/紧急/blocker → urgent; this week / 本周 → high; soon / 近期 → medium; backlog / 待办 → low; otherwise → none.\n" +
+        "- `title`: an executable verb phrase, NOT a vague topic ('Fix DEMO-12 null-pointer' ✓, 'Process demo stuff' ✗). Max ~100 chars.\n" +
+        "- `priority`: infer from urgency cues — ASAP/blocker -> urgent; this week -> high; soon -> medium; backlog -> low; otherwise none.\n" +
         "- `status`: defaults to 'open'. Use 'in_progress' only if work has actually started in this turn.\n" +
-        "- `dueAt`: include when the user mentions a date (今天/明天/周五前/by Friday). ISO datetime, UTC.\n" +
+        "- `dueAt`: include when the user mentions a date. Use an ISO datetime in UTC.\n" +
         "- `tags`: 2-4 short lowercase kebab-case tokens. Re-use existing tags when possible — search first if unsure.\n" +
         "- `parentId`: include when this task is a follow-up under another task or note.",
       annotations: {
@@ -426,7 +426,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Remember (Create Note)",
       description:
-        "Capture a free-form note. Title is optional (body's first line acts as label). Notes are botnote's memory layer — Boss's instinct is 'multi-记多用', so err on the side of remembering rather than forgetting.\n" +
+        "Capture a free-form note. Title is optional (body's first line acts as label). Notes are botnote's memory layer, so err on the side of preserving useful context.\n" +
         "\n" +
         "Conventions:\n" +
         "- `body`: the substance. Multi-line + markdown OK. Include the WHY, not just the WHAT.\n" +
@@ -477,8 +477,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "Update fields on an existing task or note. Pass ONLY the fields you want to change — omitted fields are left untouched.\n" +
         "\n" +
         "Common transitions:\n" +
-        "- task completion: `status='done'` (when user signals '搞定/done/完成了'). Optionally `remember` a closing note with `parentId` set to this task.\n" +
-        "- task soft-delete / give up: `status='archived'`. `status='rejected'` if the work was declined / 不做了.\n" +
+        "- task completion: `status='done'`. Optionally `remember` a closing note with `parentId` set to this task.\n" +
+        "- task soft-delete / give up: `status='archived'`. `status='rejected'` if the work was declined.\n" +
         "- start work: `status='in_progress'` ONLY when work actually begins in this turn (not just on every mention).\n" +
         "- re-parent: pass `parentId` (or `null` to detach).\n" +
         "- pin/unpin: `pinned: true/false`. Pinned notes drive opening_brief — use sparingly.\n" +

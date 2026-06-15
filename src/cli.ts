@@ -42,7 +42,7 @@ async function runMcp(): Promise<void> {
   // MCP stdio mode. The server is now an HTTP client of the botnote daemon
   // (no DB connection here), so this entry point is package-portable: it can
   // be installed via a Claude Code plugin on any machine and pointed at any
-  // daemon (tailnet IP, https://botnote.net, ...).
+  // daemon (private network URL, https://botnote.net, ...).
   // Every log line must go to stderr so we don't corrupt the MCP framed JSON
   // on stdout.
   const baseUrl = process.env.BOTNOTE_URL ?? DEFAULT_MCP_BASE_URL;

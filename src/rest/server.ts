@@ -50,12 +50,11 @@ function resolveWebDist(explicit?: string): string | null {
 }
 
 /** Default CORS allowlist. Add public origins via BOTNOTE_CORS_ORIGINS
- *  (comma-separated). The tailnet + localhost entries stay for ops access. */
+ *  (comma-separated). Localhost stays enabled for daemon access. */
 function defaultCorsOrigins(): string[] {
   const built: string[] = [
     "http://127.0.0.1:4280",
     "http://localhost:4280",
-    "http://100.68.185.53:4280",
     "https://botnote.net"
   ];
   const extra = process.env.BOTNOTE_CORS_ORIGINS;
@@ -83,7 +82,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
 
   const app = Fastify({
     logger: { level: opts.logLevel ?? "info" },
-    // We're behind CF Tunnel (or tailscale serve). Trust the immediate proxy so
+    // We're often behind a reverse proxy. Trust the immediate proxy so
     // req.ip is sensible, but rely on clientIp() above for rate-limit keying.
     trustProxy: true
   }).withTypeProvider<ZodTypeProvider>();
@@ -211,11 +210,11 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   });
 
   // ----- auth -----
-  // Trust direct connections (tailnet IP, 127.0.0.1, the macmini-local Web UI)
+  // Trust direct connections (loopback or private-network deployments)
   // and only enforce bearer tokens on requests that came through Cloudflare
   // Tunnel (or any reverse proxy that sets cf-connecting-ip / x-forwarded-for).
-  // This lets Boss browse the local tailnet URL without a login flow while
-  // keeping the public botnote.net surface fully token-gated.
+  // This lets a local daemon stay easy to use while keeping public proxy
+  // surfaces token-gated.
   const requireAuth = process.env.BOTNOTE_REQUIRE_AUTH === "1";
   if (requireAuth) {
     // IMPORTANT: register at onRequest, not preHandler. fastify-type-provider-zod
@@ -236,7 +235,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
       }
       const viaProxy =
         !!req.headers["cf-connecting-ip"] || !!req.headers["x-forwarded-for"];
-      if (!viaProxy) return; // direct tailnet/localhost — trusted
+      if (!viaProxy) return; // direct private-network/localhost access is trusted
 
       // Browser path: session cookie set by /v1/auth/login.
       const cookieToken = req.cookies?.botnote_session;
@@ -255,7 +254,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
 
       return reply.code(401).send({ error: "unauthenticated" });
     });
-    app.log.info("auth: required for /v1/* via reverse proxy (cookie or bearer; direct tailnet trusted)");
+    app.log.info("auth: required for /v1/* via reverse proxy (cookie or bearer; direct access trusted)");
   } else {
     app.log.info("auth: disabled (set BOTNOTE_REQUIRE_AUTH=1 to enforce)");
   }

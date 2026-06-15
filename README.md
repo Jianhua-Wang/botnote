@@ -1,6 +1,6 @@
 # botnote
 
-Notion for bots. A single binary that stores projects, tasks, notes, decisions, and memory — and exposes them to AI agents via MCP and REST.
+Notion for bots. A single binary that stores projects, tasks, notes, and agent memory — and exposes them to AI agents via MCP and REST.
 
 ## Why
 
@@ -8,18 +8,18 @@ Agents work best with one stable, queryable, write-friendly source of truth — 
 
 Three things only:
 
-1. **Project management** — projects, tasks, decisions, comments.
-2. **Note-taking** — free-form Markdown notes, tagged, searchable.
+1. **Project management** — projects and tasks with status, priority, due dates, and stable identifiers.
+2. **Note-taking** — free-form Markdown notes, tagged, searchable, and optionally pinned.
 3. **Memory for agents** — hybrid retrieval (BM25 + vector + time decay), opening brief auto-bundles AGENTS.md + recent context.
 
 ## Design
 
-- Storage: Postgres 16 + pgvector + tsvector. Single dedicated docker container.
-- Single multi-kind entity table — `task / note / decision / doc / comment / log / memory` discriminated by `kind` column.
+- Storage: Postgres + pgvector + tsvector. Single dedicated docker container.
+- Single multi-kind entity table — `task / note` discriminated by `kind` column.
 - Search: hybrid retrieval — tsvector BM25 + pgvector cosine + time decay, merged via Reciprocal Rank Fusion (k=60).
 - Embeddings: OpenAI `text-embedding-3-small` at 384 dimensions, written asynchronously. Falls back to BM25-only if no API key.
 - API: MCP server (stdio) + REST API (Fastify on `:4280`) over a shared service layer.
-- Every write requires `actor` (human / agent / system); `idempotency_key` is supported on every write.
+- Every write records `actorKind` (human / agent / system); `idempotencyKey` is supported on writes.
 - All MCP tools carry `2025-03-26` annotations: `readOnlyHint`, `idempotentHint`, `destructiveHint`, `openWorldHint`.
 
 ## Quick start
@@ -38,7 +38,13 @@ botnote login
 `botnote login` stores the daemon URL and bearer token in
 `~/.config/botnote/config.json`. Use `https://botnote.net` plus a token from
 Settings -> API tokens on remote machines; use `http://127.0.0.1:4280` without
-a token on the daemon host.
+a token on the daemon host. New API tokens remain copyable from Settings; tokens
+created before recoverable storage was added only show their prefix and should
+be regenerated if the full value was lost.
+
+Security note: newly-created API tokens are stored recoverably in the database
+so Settings can copy them later. Treat the database and backups as
+secret-bearing material, and revoke tokens if either is exposed.
 
 The Claude Code and Codex plugins call `botnote mcp`, so installing the npm
 package is enough for plugin runtime on machines that do not have a botnote
@@ -68,6 +74,20 @@ Then:
 
 Embeddings are optional. Set `OPENAI_API_KEY` to enable hybrid (BM25 + cosine) search; without it, search is BM25-only.
 
+### Tests
+
+Tests must run against a disposable database whose name contains `test`. The
+helper refuses any other database name so local test runs do not touch a live
+botnote instance.
+
+```bash
+docker compose up -d
+docker exec botnote-postgres createdb -U botnote botnote_test || true
+
+DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote_test pnpm db:migrate
+BOTNOTE_TEST_DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote_test pnpm test
+```
+
 ## REST endpoints
 
 | method | path | summary |
@@ -75,17 +95,23 @@ Embeddings are optional. Set `OPENAI_API_KEY` to enable hybrid (BM25 + cosine) s
 | `POST` | `/v1/projects` | Create project |
 | `GET` | `/v1/projects` | List projects |
 | `GET` | `/v1/projects/:id` | Fetch project |
+| `PATCH` | `/v1/projects/:id` | Update project |
 | `GET` | `/v1/projects/by-key/:key` | Fetch by key |
-| `GET` | `/v1/projects/:id/agents-md` | Read AGENTS.md |
-| `PUT` | `/v1/projects/:id/agents-md` | Write AGENTS.md |
 | `POST` | `/v1/projects/:id/opening-brief` | Opening brief |
-| `POST` | `/v1/entities` | Write entity |
+| `POST` | `/v1/opening-brief` | Workspace or project opening brief |
+| `POST` | `/v1/tasks` | Create task |
+| `POST` | `/v1/notes` | Create note |
 | `GET` | `/v1/entities/:id` | Fetch entity |
 | `PATCH` | `/v1/entities/:id` | Update entity |
+| `DELETE` | `/v1/entities/:id` | Delete entity |
+| `GET` | `/v1/entities/:id/related` | List related entities |
 | `POST` | `/v1/entities/:id/links` | Link entity to another |
 | `POST` | `/v1/recent` | Recent activity |
 | `POST` | `/v1/search` | Hybrid search |
-| `POST` | `/v1/actors` | Get/create actor |
+| `POST` | `/v1/tasks/range` | Scheduled, overdue, and backlog tasks |
+| `GET` | `/v1/tokens` | List API tokens |
+| `POST` | `/v1/tokens` | Create API token |
+| `DELETE` | `/v1/tokens/:id` | Revoke API token |
 | `GET` | `/health` | Health check |
 
 Schemas: see `/docs` (Swagger UI) or `/docs/json` (OpenAPI 3).
@@ -100,9 +126,9 @@ PID=$(curl -s -X POST $A/v1/projects \
   -d '{"key":"DEMO","name":"Demo","agentsMd":"ALWAYS run tests"}' \
   | jq -r .id)
 
-curl -s -X POST $A/v1/entities \
+curl -s -X POST $A/v1/tasks \
   -H 'content-type: application/json' \
-  -d "{\"kind\":\"task\",\"projectId\":\"$PID\",\"title\":\"Ship botnote v1\",\"actorKind\":\"human\"}"
+  -d "{\"projectId\":\"$PID\",\"title\":\"Ship botnote v1\",\"actorKind\":\"human\"}"
 
 curl -s -X POST $A/v1/search \
   -H 'content-type: application/json' \
@@ -112,8 +138,8 @@ curl -s -X POST $A/v1/search \
 ## Plugin
 
 The plugin bundles the MCP server, workflow skills/commands, and a curator
-subagent. All workflows route through MCP — no extra direct Letheia or Plane
-MCP installs are required.
+subagent. All workflows route through MCP, so no separate task or memory MCP
+setup is required.
 
 ### Claude Code
 
@@ -134,7 +160,7 @@ Slash commands:
 /botnote:today              # today + overdue
 /botnote:remember "..."     # capture a note via MCP
 /botnote:recall "..."       # hybrid search
-/botnote:start-work BOT     # pickup workflow on a project
+/botnote:start-work DEMO    # pickup workflow on a project
 /botnote:done               # mark current focus done
 /botnote:add-task "..."     # capture a task without starting it
 /botnote:show-todo          # workspace task/context summary
@@ -148,10 +174,10 @@ inside the plugin uses the URL + token from the install prompt and calls the
 ### Codex
 
 Add the plugin through `/settings -> plugin` in Codex, or add this marketplace
-from Git without a full source checkout:
+from the public repository without a full source checkout:
 
 ```bash
-codex plugin marketplace add git@github.com:Jianhua-Wang/botnote.git \
+codex plugin marketplace add https://github.com/jianhuawang/botnote.git \
   --sparse .agents/plugins \
   --sparse plugins/botnote
 
@@ -208,17 +234,20 @@ botnote exposes the following tools + resources over stdio.
 
 | tool | annotations | what it does |
 |---|---|---|
-| `opening_brief` | `readOnly` | Project context bundle (AGENTS.md + open tasks + decisions + recent) |
-| `search` | `readOnly` | Hybrid retrieval over entities |
-| `get` | `readOnly` | Fetch one entity by id |
-| `write` | `idempotent` | Create entity (task/note/decision/...) |
-| `update` | `destructive` | Mutate entity fields |
-| `link` | `idempotent` | Create typed edge between entities |
+| `opening_brief` | `readOnly` | Project or workspace context bundle (AGENTS.md + pinned notes + open tasks + recent) |
+| `search` | `readOnly` | Hybrid retrieval over tasks and notes |
 | `recent` | `readOnly` | Recent activity, filterable |
-| `agents_md` | `readOnly` | Read project AGENTS.md |
+| `list_projects` | `readOnly` | List all projects |
+| `get_project` | `readOnly` | Fetch a project by UUID or key, including AGENTS.md |
 | `create_project` | — | Create a project |
-| `set_agents_md` | `destructive idempotent` | Overwrite project AGENTS.md |
-| `ensure_actor` | `idempotent` | Get/create actor identity |
+| `update_project` | `destructive idempotent` | Update project name, color, icon, or AGENTS.md |
+| `get_entity` | `readOnly` | Fetch one task or note by UUID |
+| `get_entity_by_key` | `readOnly` | Fetch one task or note by human-readable identifier, e.g. `DEMO-12` |
+| `create_task` | `idempotent` | Create a structured task |
+| `remember` | `idempotent` | Create a free-form note |
+| `update_entity` | `destructive` | Mutate task or note fields |
+| `related` | `readOnly` | List child notes/tasks for an entity |
+| `link` | `idempotent` | Create typed edge between entities |
 
 ### Resource
 
@@ -274,4 +303,4 @@ v0 / M1 — complete. See `AGENTS.md` for codebase conventions and the `BOT` pro
 
 ## License
 
-Private.
+MIT.

@@ -11,7 +11,7 @@ function sha256(input: string): string {
 
 export interface CreatedToken {
   token: Token;
-  /** The plaintext token. Only available immediately after creation. */
+  /** The recoverable plaintext token. NULL only for tokens created before 0014. */
   plaintext: string;
 }
 
@@ -24,7 +24,7 @@ export async function createToken(
   const prefix = plaintext.slice(0, 11); // bn_ + first 8 hex
   const [row] = await db
     .insert(tokens)
-    .values({ name: input.name, tokenHash, prefix })
+    .values({ name: input.name, tokenHash, prefix, plaintext })
     .returning();
   if (!row) throw new Error("token insert returned no row");
   return { token: row, plaintext };

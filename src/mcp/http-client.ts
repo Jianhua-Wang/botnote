@@ -3,11 +3,11 @@
  *
  * The MCP server used to import drizzle and hit the DB directly. That coupled
  * the MCP process to the daemon's machine and required DATABASE_URL. The
- * plugin model needs the MCP to be runnable on any machine — laptop, tailnet,
- * public — pointing at whichever botnote daemon the user is reachable to.
+ * plugin model needs the MCP to be runnable on any machine — laptop, private
+ * network, public — pointing at whichever botnote daemon the user can reach.
  *
  * Auth model mirrors the daemon's:
- *   - direct tailnet/localhost: no token required (daemon trusts the network)
+ *   - direct private-network/localhost: no token required when the daemon trusts it
  *   - through Cloudflare Tunnel: bearer + optional CF Access service token
  */
 

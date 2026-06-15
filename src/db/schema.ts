@@ -131,6 +131,7 @@ export const tokens = pgTable(
     name: text("name").notNull(),
     tokenHash: text("token_hash").notNull(),
     prefix: text("prefix").notNull(),
+    plaintext: text("plaintext"),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },

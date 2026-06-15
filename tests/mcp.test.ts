@@ -1,25 +1,39 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { sql } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb } from "../src/db/client.js";
+import { buildServer } from "../src/rest/server.js";
+import { EmbeddingService } from "../src/service/embedding.js";
+import { createTestDb } from "./test_db.js";
 
-const DB_URL = process.env.DATABASE_URL ?? "postgres://botnote:botnote@127.0.0.1:55434/botnote";
 const ROOT = path.resolve(import.meta.dirname, "..");
 
-const { db: rawDb, pool } = createDb(undefined);
+const { db: rawDb, pool } = createTestDb();
+const embedding = new EmbeddingService(rawDb);
 
+let server: FastifyInstance;
+let baseUrl: string;
 let client: Client;
 let transport: StdioClientTransport;
 
 beforeAll(async () => {
-  await rawDb.execute(sql`TRUNCATE entities, edges, actors, projects RESTART IDENTITY CASCADE`);
+  await rawDb.execute(sql`TRUNCATE entities, edges, projects, tokens, sessions RESTART IDENTITY CASCADE`);
+
+  server = await buildServer({ db: rawDb, embedding, logLevel: "warn" });
+  await server.listen({ port: 0, host: "127.0.0.1" });
+  const addr = server.server.address();
+  if (typeof addr === "object" && addr !== null) {
+    baseUrl = `http://127.0.0.1:${addr.port}`;
+  } else {
+    throw new Error("could not derive REST baseUrl");
+  }
 
   transport = new StdioClientTransport({
     command: "node",
-    args: ["--import", "tsx", path.join(ROOT, "src/mcp/cli.ts")],
-    env: { ...process.env, DATABASE_URL: DB_URL, NODE_OPTIONS: "--no-warnings" }
+    args: ["--import", "tsx", path.join(ROOT, "src/cli.ts"), "mcp"],
+    env: { ...process.env, BOTNOTE_URL: baseUrl, NODE_OPTIONS: "--no-warnings" }
   });
   client = new Client({ name: "botnote-test", version: "0.0.1" });
   await client.connect(transport);
@@ -27,24 +41,28 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await client?.close();
+  await server?.close();
   await pool.end();
 }, 10000);
 
 describe("botnote MCP", () => {
-  it("lists 11 tools + 2 resources", async () => {
+  it("lists current tools + workspace resource", async () => {
     const tools = await client.listTools();
     expect(tools.tools.map((t) => t.name).sort()).toEqual([
-      "agents_md",
       "create_project",
-      "ensure_actor",
-      "get",
+      "create_task",
+      "get_entity",
+      "get_entity_by_key",
+      "get_project",
       "link",
+      "list_projects",
       "opening_brief",
       "recent",
+      "related",
+      "remember",
       "search",
-      "set_agents_md",
-      "update",
-      "write"
+      "update_entity",
+      "update_project"
     ]);
     const resources = await client.listResources();
     const resourceNames = resources.resources.map((r) => r.name);
@@ -56,13 +74,13 @@ describe("botnote MCP", () => {
     const byName = new Map(tools.tools.map((t) => [t.name, t]));
     expect(byName.get("opening_brief")?.annotations?.readOnlyHint).toBe(true);
     expect(byName.get("search")?.annotations?.readOnlyHint).toBe(true);
-    expect(byName.get("write")?.annotations?.idempotentHint).toBe(true);
-    expect(byName.get("update")?.annotations?.destructiveHint).toBe(true);
+    expect(byName.get("remember")?.annotations?.idempotentHint).toBe(true);
+    expect(byName.get("update_entity")?.annotations?.destructiveHint).toBe(true);
     expect(byName.get("link")?.annotations?.idempotentHint).toBe(true);
-    expect(byName.get("set_agents_md")?.annotations?.destructiveHint).toBe(true);
+    expect(byName.get("update_project")?.annotations?.destructiveHint).toBe(true);
   });
 
-  it("create_project + write + search round-trip", async () => {
+  it("create_project + remember + search round-trip", async () => {
     const createResp = await client.callTool({
       name: "create_project",
       arguments: { key: "MCP", name: "MCP Test", agentsMd: "## NEVER ship without tests" }
@@ -74,9 +92,8 @@ describe("botnote MCP", () => {
     expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
 
     const writeResp = await client.callTool({
-      name: "write",
+      name: "remember",
       arguments: {
-        kind: "decision",
         projectId,
         title: "Adopt MCP 2025-03-26 annotations",
         body: "All tools must declare readOnlyHint / idempotentHint / destructiveHint",
@@ -85,7 +102,7 @@ describe("botnote MCP", () => {
       }
     });
     const writeText = (writeResp.content as Array<{ text: string }>)[0]?.text ?? "";
-    expect(writeText).toMatch(/wrote decision/);
+    expect(writeText).toMatch(/remembered note/);
 
     const searchResp = await client.callTool({
       name: "search",
@@ -111,9 +128,8 @@ describe("botnote MCP", () => {
     expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
 
     await client.callTool({
-      name: "write",
+      name: "create_task",
       arguments: {
-        kind: "task",
         projectId,
         title: "Ship botnote v0",
         body: "M1 milestones in progress",
@@ -143,9 +159,8 @@ describe("botnote MCP", () => {
     expect(projectId).toBeTruthy();
 
     const first = await client.callTool({
-      name: "write",
+      name: "remember",
       arguments: {
-        kind: "note",
         projectId,
         title: "Once",
         body: "first",
@@ -158,9 +173,8 @@ describe("botnote MCP", () => {
     )?.[1];
 
     const second = await client.callTool({
-      name: "write",
+      name: "remember",
       arguments: {
-        kind: "note",
         projectId,
         title: "Different title",
         body: "different",

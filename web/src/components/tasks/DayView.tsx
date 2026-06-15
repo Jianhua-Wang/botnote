@@ -20,7 +20,7 @@ export function DayView({
     projectIds: projectIds ?? null,
     includeBacklog: false,
     // includeDone=true so the day's completed work shows up on its
-    // completion day — Boss's primary review surface.
+    // completion day, which is the primary daily review surface.
     includeDone: true
   });
   const { data: projects } = useProjects();

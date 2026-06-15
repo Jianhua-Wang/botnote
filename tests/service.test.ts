@@ -1,26 +1,25 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createDb } from "../src/db/client.js";
-import { ensureActor } from "../src/service/actors.js";
 import { EmbeddingService } from "../src/service/embedding.js";
 import { get, link, recent, setBodyVec, update, write } from "../src/service/entities.js";
 import { formatOpeningBrief, openingBrief } from "../src/service/opening_brief.js";
 import {
   createProject,
-  getAgentsMd,
   getProjectByKey,
-  setAgentsMd
+  updateProject
 } from "../src/service/projects.js";
 import { search } from "../src/service/search.js";
+import { consumeToken, createToken, listTokens } from "../src/service/tokens.js";
+import { createTestDb } from "./test_db.js";
 
-const { db, pool } = createDb();
+const { db, pool } = createTestDb();
 
 beforeAll(async () => {
   await db.execute(sql`SELECT 1`);
 });
 
 beforeEach(async () => {
-  await db.execute(sql`TRUNCATE entities, edges, actors, projects RESTART IDENTITY CASCADE`);
+  await db.execute(sql`TRUNCATE entities, edges, projects, tokens, sessions RESTART IDENTITY CASCADE`);
 });
 
 afterAll(async () => {
@@ -43,7 +42,6 @@ describe("botnote service", () => {
 
   it("write entity + get + update + recent", async () => {
     const p = await createProject(db, { key: "WORK", name: "Work" });
-    const a = await ensureActor(db, { name: "Boss", kind: "human" });
 
     const t = await write(db, {
       kind: "task",
@@ -52,7 +50,6 @@ describe("botnote service", () => {
       body: "Lightweight, agent-first.",
       tags: ["roadmap", "v0"],
       status: "open",
-      actorId: a.id,
       actorKind: "human",
       metadata: {},
       idempotencyKey: null
@@ -92,14 +89,6 @@ describe("botnote service", () => {
     expect(second.title).toBe("First write");
   });
 
-  it("ensureActor de-dupes by name and by key", async () => {
-    const a1 = await ensureActor(db, { name: "codex", kind: "agent", key: "codex" });
-    const a2 = await ensureActor(db, { name: "codex", kind: "agent", key: "codex" });
-    expect(a2.id).toBe(a1.id);
-    const a3 = await ensureActor(db, { name: "codex-alt", kind: "agent", key: "codex" });
-    expect(a3.id).toBe(a1.id);
-  });
-
   it("link creates edge + listChildren via parentId", async () => {
     const p = await createProject(db, { key: "LNK", name: "Link" });
     const parent = await write(db, {
@@ -113,9 +102,9 @@ describe("botnote service", () => {
       metadata: {}
     });
     const child = await write(db, {
-      kind: "comment",
+      kind: "note",
       projectId: p.id,
-      title: "Child comment",
+      title: "Child note",
       body: "looks good",
       tags: [],
       status: "open",
@@ -139,11 +128,11 @@ describe("botnote service", () => {
     expect(dup.created).toBe(false);
   });
 
-  it("setAgentsMd + getAgentsMd round-trip", async () => {
+  it("updateProject edits AGENTS.md", async () => {
     const p = await createProject(db, { key: "AGT", name: "Agt" });
-    expect(await getAgentsMd(db, p.id)).toBe("");
-    await setAgentsMd(db, { projectId: p.id, agentsMd: "## Be brief." });
-    expect(await getAgentsMd(db, p.id)).toBe("## Be brief.");
+    expect(p.agentsMd).toBe("");
+    const updated = await updateProject(db, p.id, { agentsMd: "## Be brief." });
+    expect(updated.agentsMd).toBe("## Be brief.");
   });
 
   it("search returns BM25 hit on tsvector match", async () => {
@@ -179,6 +168,19 @@ describe("botnote service", () => {
     svc.enqueue("fake-id", "some text");
     expect(svc.pendingCount()).toBe(0);
     expect(await svc.embedQuery("hello")).toBeNull();
+  });
+
+  it("stores recoverable API token plaintext for Settings copy", async () => {
+    const { plaintext } = await createToken(db, { name: "laptop" });
+    expect(plaintext).toMatch(/^bn_[0-9a-f]{48}$/);
+
+    const rows = await listTokens(db);
+    expect(rows[0]?.name).toBe("laptop");
+    expect(rows[0]?.prefix).toBe(plaintext.slice(0, 11));
+    expect(rows[0]?.plaintext).toBe(plaintext);
+
+    const consumed = await consumeToken(db, plaintext);
+    expect(consumed?.id).toBe(rows[0]?.id);
   });
 
   it("embedding queue drains via injected embedFn + sets body_vec", async () => {
@@ -305,14 +307,15 @@ describe("botnote service", () => {
       metadata: {}
     });
     await write(db, {
-      kind: "decision",
+      kind: "note",
       projectId: p.id,
-      title: "Use SQLite",
-      body: "decided to use SQLite",
+      title: "Pinned deployment note",
+      body: "Production uses the npm package for plugin runtime.",
       tags: [],
       status: "open",
       actorKind: "human",
-      metadata: {}
+      metadata: {},
+      pinned: true
     });
     await write(db, {
       kind: "note",
@@ -328,12 +331,12 @@ describe("botnote service", () => {
     expect(brief.project?.key).toBe("OBR");
     expect(brief.agentsMd).toContain("NEVER push");
     expect(brief.openTasks.length).toBe(1);
-    expect(brief.pendingDecisions.length).toBe(1);
+    expect(brief.pinnedNotes.length).toBe(1);
     expect(brief.recent.length).toBe(3);
 
     const formatted = formatOpeningBrief(brief);
     expect(formatted).toContain("# Project: OBR");
     expect(formatted).toContain("## Open Tasks");
-    expect(formatted).toContain("## Pending Decisions");
+    expect(formatted).toContain("## Pinned Notes");
   });
 });

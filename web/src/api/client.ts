@@ -40,16 +40,18 @@ function shouldRedirectOn401(path: string): boolean {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (init?.body !== undefined && init?.body !== null && !headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
     // credentials: "include" so the browser attaches the botnote_session
     // cookie on every API call, regardless of same-origin vs cross-origin
     // (in case the SPA is ever loaded from a different host than the API).
     credentials: "include",
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers ?? {})
-    }
+    headers
   });
   if (res.status === 401 && shouldRedirectOn401(path)) {
     // Stash the current URL so we can land back here after login.

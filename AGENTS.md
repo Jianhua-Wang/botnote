@@ -16,7 +16,7 @@ lives in the `projects.agents_md` column.)
 ## Stack
 
 - Node 20+, TypeScript ESM, pnpm
-- Postgres 16 + pgvector + tsvector, accessed via drizzle-orm + node-postgres
+- Postgres 16+ + pgvector + tsvector, accessed via drizzle-orm + node-postgres
 - Fastify 5 for REST, `@modelcontextprotocol/sdk` for MCP
 - zod for runtime validation
 - vitest for tests
@@ -38,8 +38,8 @@ either transport.
 ## Schema rules
 
 - `entities` is the single multi-kind table. Do not split per kind.
-- Every write MUST set `actor` (agent | human | system).
-- Every write MUST accept `idempotency_key`. Re-writes with the same key
+- Every write MUST set `actorKind` (agent | human | system).
+- Every write MUST accept `idempotencyKey`. Re-writes with the same key
   return the existing record unchanged.
 - `body_tsv` is a generated column from `body`. Do not write it directly.
 - `body_vec` is populated async via the embedding worker. NULL is a valid
@@ -63,8 +63,10 @@ either transport.
 ## Testing
 
 - Every service operation needs a unit test for happy path + idempotency.
-- E2E smoke lives in `tests/e2e/`. Spawn the daemon against a throwaway
-  Postgres schema, exercise both REST and MCP transports, assert behavior
+- Tests MUST use `BOTNOTE_TEST_DATABASE_URL`. Never run tests against a live
+  database. The helper refuses database names that do not contain `test`.
+- E2E smoke lives in `tests/e2e.test.ts`. Spawn the daemon against a throwaway
+  Postgres database, exercise both REST and MCP transports, assert behavior
   matches.
 
 ## Style

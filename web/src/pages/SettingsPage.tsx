@@ -207,7 +207,7 @@ botnote login`;
 }`;
 
   const codexGitBlock = `# No full source checkout required.
-codex plugin marketplace add git@github.com:Jianhua-Wang/botnote.git \\
+codex plugin marketplace add https://github.com/jianhuawang/botnote.git \\
   --sparse .agents/plugins \\
   --sparse plugins/botnote
 
@@ -224,7 +224,7 @@ source = "/absolute/path/to/botnote"`;
   const useBlock = `/botnote:today              # today + overdue
 /botnote:show-todo          # open work across projects
 /botnote:add-task "..."     # create a task
-/botnote:start-work BOT     # pick up project work
+/botnote:start-work DEMO    # pick up project work
 /botnote:remember "..."     # capture a note
 /botnote:recall "..."       # hybrid search
 /botnote:done               # mark current focus done`;
@@ -233,7 +233,7 @@ source = "/absolute/path/to/botnote"`;
     <>
       <SectionHeader
         title="Plugin"
-        blurb="The botnote plugin bundles slash commands and a curator subagent for Claude Code and Codex. The plugin calls the npm CLI for MCP, so no separate Letheia or Plane MCP setup is required."
+        blurb="The botnote plugin bundles slash commands and a curator subagent for Claude Code and Codex. The plugin calls the npm CLI for MCP, so no separate task or memory MCP setup is required."
       />
 
       <CodeBlock title="Install CLI runtime" code={cliInstallBlock} />
@@ -355,7 +355,7 @@ function AboutSection() {
         </div>
         <div className="pt-1 border-t border-lineSoft">
           Auth is enforced when <code className="text-ink">BOTNOTE_REQUIRE_AUTH=1</code> on the
-          daemon. Direct connections from loopback / tailnet are always trusted; requests via
+          daemon. Direct connections from loopback or private networks are trusted; requests via
           Cloudflare Tunnel (or any proxy that sets <code>cf-connecting-ip</code> /{" "}
           <code>x-forwarded-for</code>) require a bearer token or a browser session cookie.
         </div>
@@ -403,12 +403,14 @@ function TokensSection() {
   const revoke = useRevokeToken();
   const [name, setName] = useState("");
   const [fresh, setFresh] = useState<CreatedToken | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   // Single state for "which row just flashed Copied" — only one feedback at
   // a time, auto-clears after a brief moment.
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  function copyPrefix(t: { id: string; prefix: string }) {
-    navigator.clipboard.writeText(t.prefix).then(() => {
+  function copyToken(t: { id: string; plaintext: string }) {
+    navigator.clipboard.writeText(t.plaintext).then(() => {
       setCopiedId(t.id);
       setTimeout(() => setCopiedId((cur) => (cur === t.id ? null : cur)), 1400);
     });
@@ -422,18 +424,34 @@ function TokensSection() {
     setName("");
   }
 
+  async function onRevoke(id: string, tokenName: string) {
+    if (deletingId) return;
+    if (!confirm(`Revoke token "${tokenName}"? Any client using it stops working.`)) return;
+    setDeletingId(id);
+    setDeleteError(null);
+    try {
+      await revoke.mutateAsync(id);
+      if (fresh?.id === id) setFresh(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setDeleteError(`Could not revoke "${tokenName}": ${msg}`);
+    } finally {
+      setDeletingId((cur) => (cur === id ? null : cur));
+    }
+  }
+
   return (
     <>
       <SectionHeader
         title="API tokens"
-        blurb="Bearer tokens for the CLI, MCP server, and any direct REST call. Stored as sha256 hashes — full plaintext is shown once at creation. After that only the prefix is visible (enough to identify which client holds which token). Lost the plaintext? Revoke and generate a new one."
+        blurb="Bearer tokens for the CLI, MCP server, and direct REST calls. New tokens keep their full value available for copying here; older tokens created before this change only have a prefix and must be regenerated if the full value was lost."
       />
 
       {fresh && (
         <div className="border border-warn rounded-md bg-warn/10 p-3 space-y-2">
           <div className="flex items-center gap-2 text-xs font-medium text-warn">
             <AlertTriangle size={13} />
-            Copy this token now — it won't be shown again.
+            Copy this token now, or later from the token list.
           </div>
           <div className="flex items-center gap-2">
             <code className="flex-1 text-xs font-mono bg-surface border border-line rounded px-2 py-1 overflow-x-auto whitespace-nowrap">
@@ -449,6 +467,12 @@ function TokensSection() {
               Done
             </button>
           </div>
+        </div>
+      )}
+
+      {deleteError && (
+        <div className="border border-danger/30 rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">
+          {deleteError}
         </div>
       )}
 
@@ -480,19 +504,7 @@ function TokensSection() {
               <div className="flex-1 min-w-0">
                 <div className="text-sm text-ink truncate">{t.name}</div>
                 <div className="text-xxs text-muted flex items-center gap-3 mt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => copyPrefix(t)}
-                    className={`group inline-flex items-center gap-1 font-mono rounded px-1.5 py-0.5 -mx-1 transition-colors ${
-                      justCopied
-                        ? "bg-emerald-500/15 text-emerald-600"
-                        : "text-faint hover:bg-sidebar hover:text-ink"
-                    }`}
-                    title="Copy prefix"
-                  >
-                    <code>{t.prefix}…</code>
-                    {justCopied ? <Check size={10} /> : <Copy size={10} className="opacity-0 group-hover:opacity-100" />}
-                  </button>
+                  <code className="font-mono text-faint">{t.prefix}…</code>
                   <span>
                     created {formatDistanceToNow(new Date(t.createdAt), { addSuffix: true })}
                   </span>
@@ -503,16 +515,38 @@ function TokensSection() {
                   </span>
                 </div>
               </div>
+              {t.plaintext ? (
+                <button
+                  type="button"
+                  onClick={() => copyToken({ id: t.id, plaintext: t.plaintext! })}
+                  className={`btn gap-1.5 ${
+                    justCopied ? "!border-emerald-500/30 !text-emerald-600" : ""
+                  }`}
+                  title="Copy full token"
+                >
+                  {justCopied ? <Check size={11} /> : <Copy size={11} />}
+                  {justCopied ? "Copied" : "Copy token"}
+                </button>
+              ) : (
+                <span
+                  className="text-xxs text-faint border border-line rounded px-2 py-1"
+                  title="Full token is unavailable for tokens created before recoverable storage was enabled."
+                >
+                  Unavailable
+                </span>
+              )}
               <button
+                type="button"
                 className="text-faint hover:text-danger p-1 -m-1"
-                onClick={() => {
-                  if (confirm(`Revoke token "${t.name}"? Any client using it stops working.`)) {
-                    revoke.mutate(t.id);
-                  }
-                }}
-                title="Revoke"
+                disabled={deletingId !== null}
+                onClick={() => onRevoke(t.id, t.name)}
+                title={deletingId === t.id ? "Revoking" : "Revoke"}
               >
-                <Trash2 size={12} />
+                {deletingId === t.id ? (
+                  <span className="text-xxs text-muted">Revoking…</span>
+                ) : (
+                  <Trash2 size={12} />
+                )}
               </button>
             </div>
           );

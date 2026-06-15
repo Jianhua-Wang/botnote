@@ -4,7 +4,7 @@
       "command": "bash",
       "args": [
         "-lc",
-        "for d in \"${CLAUDE_PLUGIN_ROOT:-}\" \"$PWD\" \"$HOME/botnote/plugins/botnote\" \"/Users/jianhua/botnote/plugins/botnote\"; do if [ -n \"$d\" ] && [ -x \"$d/scripts/run-mcp.sh\" ]; then exec \"$d/scripts/run-mcp.sh\"; fi; done; echo 'botnote run-mcp.sh not found' >&2; exit 127"
+        "for d in \"${CLAUDE_PLUGIN_ROOT:-}\" \"$PWD\"; do if [ -n \"$d\" ] && [ -x \"$d/scripts/run-mcp.sh\" ]; then exec \"$d/scripts/run-mcp.sh\"; fi; done; echo 'botnote run-mcp.sh not found' >&2; exit 127"
       ],
       "cwd": ".",
       "env": {

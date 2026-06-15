@@ -13,13 +13,13 @@
     "botnote_url": {
       "type": "string",
       "title": "botnote daemon URL",
-      "description": "Default: http://127.0.0.1:4280. On tailnet use http://100.68.185.53:4280. Public https://botnote.net requires a bearer token.",
+      "description": "Default: http://127.0.0.1:4280. Public or remote URLs usually require a bearer token.",
       "default": "http://127.0.0.1:4280"
     },
     "botnote_token": {
       "type": "string",
       "title": "API bearer token",
-      "description": "Required only for https://botnote.net. Generate via Settings -> API tokens in the web UI, or `botnote tokens create` on the daemon host. Not needed when botnote_url is loopback or tailnet.",
+      "description": "Required for public or token-gated botnote URLs. Generate one in Settings -> API tokens. Not needed when botnote_url points to a trusted local daemon.",
       "sensitive": true
     }
   }

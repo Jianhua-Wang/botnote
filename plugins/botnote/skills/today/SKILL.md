@@ -1,14 +1,14 @@
 ---
 name: today
-description: Show today's botnote opening brief — workspace-wide pinned notes, open tasks, recent activity. Triggered by /today or the user asking "what's on my plate today" / "今天有什么".
+description: "Show today's botnote opening brief: workspace-wide pinned notes, open tasks, and recent activity. Triggered by /today or when the user asks what's on their plate today."
 ---
 
 When invoked:
 
-1. Call `mcp__botnote__opening_brief` with **no** `projectId` (workspace-wide brief).
+1. Call `mcp__botnote__opening_brief` with no `projectId`.
 
-2. Render the returned `markdown` field verbatim — the daemon already formats sections (AGENTS.md, Pinned Notes, Open Tasks, Recent Activity).
+2. Render the returned `markdown` field verbatim. The daemon formats sections such as AGENTS.md, Pinned Notes, Open Tasks, and Recent Activity.
 
-3. After the brief, scan the rendered output and add a single line: if any project has 3+ open tasks or pinned must-read notes, suggest `/start-work <KEY>` for that project to get its deeper context.
+3. After the brief, add a single line if a project looks worth opening, suggesting `/start-work <KEY>` for deeper context.
 
-4. Do not call any other tools unless the user follows up. The brief is the deliverable.
+4. Do not call other tools unless the user follows up. The brief is the deliverable.
