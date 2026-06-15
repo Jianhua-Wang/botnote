@@ -20,9 +20,7 @@ export function TopBar() {
   return (
     <header className="h-11 flex items-center justify-between px-3 border-b border-line bg-surface">
       <Link to="/" className="flex items-center gap-1.5 text-ink hover:opacity-90">
-        <div className="w-[18px] h-[18px] rounded-md bg-accent flex items-center justify-center text-white text-xxs font-bold">
-          b
-        </div>
+        <img src="/favicon.svg" alt="" aria-hidden="true" className="w-[18px] h-[18px]" />
         <span className="text-xs font-semibold tracking-tight">botnote</span>
       </Link>
 
