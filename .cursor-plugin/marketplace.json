@@ -1,0 +1,19 @@
+{
+  "name": "botnote-plugins",
+  "owner": {
+    "name": "Jianhua Wang",
+    "url": "https://github.com/jianhuawang"
+  },
+  "metadata": {
+    "description": "botnote plugins for Cursor",
+    "version": "0.1.1"
+  },
+  "plugins": [
+    {
+      "name": "botnote",
+      "source": "./plugins/botnote",
+      "description": "Notion for bots — MCP server, workflow skills, and project context for Cursor.",
+      "version": "0.1.1"
+    }
+  ]
+}

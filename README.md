@@ -46,9 +46,9 @@ Security note: newly-created API tokens are stored recoverably in the database
 so Settings can copy them later. Treat the database and backups as
 secret-bearing material, and revoke tokens if either is exposed.
 
-The Claude Code and Codex plugins call `botnote mcp`, so installing the npm
-package is enough for plugin runtime on machines that do not have a botnote
-source checkout.
+The Claude Code, Codex, and Cursor plugins call `botnote mcp`, so installing
+the npm package is enough for plugin runtime on machines that do not have a
+botnote source checkout.
 
 ### Local daemon development
 
@@ -178,11 +178,14 @@ from the public repository without a full source checkout:
 
 ```bash
 codex plugin marketplace add https://github.com/jianhuawang/botnote.git \
-  --sparse .agents/plugins \
+  --sparse .codex-plugin \
   --sparse plugins/botnote
 
 codex plugin add botnote@botnote-plugins
 ```
+
+The repo also keeps a `.agents/plugins/marketplace.json` entry for Codex clients
+that still discover marketplace files from that path.
 
 For local plugin development, add this marketplace entry to
 `.agents/plugins/marketplace.json` in the repo:
@@ -225,6 +228,21 @@ The Codex plugin starts `./scripts/run-mcp.sh`. It defaults to
 `BOTNOTE_URL=http://127.0.0.1:4280`, calls `botnote mcp` from PATH, and falls
 back to `npx -y botnote mcp`. Set `BOTNOTE_URL` and `BOTNOTE_TOKEN` only when
 using a remote daemon.
+
+### Cursor
+
+Cursor-compatible plugin metadata lives in `.cursor-plugin/marketplace.json`.
+The marketplace points at the same `plugins/botnote` bundle, so Cursor gets the
+same MCP server and workflow skills without a second plugin implementation.
+
+```bash
+# Marketplace root for Cursor plugin clients:
+https://github.com/jianhuawang/botnote
+```
+
+The Cursor plugin manifest is `plugins/botnote/.cursor-plugin/plugin.json` and
+uses the same `botnote_url` / `botnote_token` settings as the Claude Code
+plugin.
 
 ## MCP tools
 

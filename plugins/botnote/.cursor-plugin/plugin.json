@@ -1,0 +1,34 @@
+{
+  "name": "botnote",
+  "version": "0.1.1",
+  "description": "Agent-native tasks, notes, memory, and project context for Cursor.",
+  "author": {
+    "name": "Jianhua Wang"
+  },
+  "homepage": "https://botnote.net",
+  "repository": "https://github.com/jianhuawang/botnote",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "tasks",
+    "notes",
+    "mcp",
+    "agents"
+  ],
+  "skills": "./skills/",
+  "mcpServers": ".mcp.json",
+  "userConfig": {
+    "botnote_url": {
+      "type": "string",
+      "title": "botnote daemon URL",
+      "description": "Default: http://127.0.0.1:4280. Public or remote URLs usually require a bearer token.",
+      "default": "http://127.0.0.1:4280"
+    },
+    "botnote_token": {
+      "type": "string",
+      "title": "API bearer token",
+      "description": "Required for public or token-gated botnote URLs. Generate one in Settings -> API tokens. Not needed when botnote_url points to a trusted local daemon.",
+      "sensitive": true
+    }
+  }
+}

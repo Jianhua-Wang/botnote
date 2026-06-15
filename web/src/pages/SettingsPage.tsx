@@ -176,7 +176,7 @@ BOTNOTE_URL=http://127.0.0.1:4280 botnote today
 // ----------------------------------------------------------------------------
 
 function PluginSection() {
-  const cliInstallBlock = `# Runtime used by both Claude Code and Codex plugins.
+  const cliInstallBlock = `# Runtime used by Claude Code, Codex, and Cursor plugins.
 npm i -g botnote
 
 # Remote clients should save https://botnote.net + a bearer token.
@@ -208,10 +208,14 @@ botnote login`;
 
   const codexGitBlock = `# No full source checkout required.
 codex plugin marketplace add https://github.com/jianhuawang/botnote.git \\
-  --sparse .agents/plugins \\
+  --sparse .codex-plugin \\
   --sparse plugins/botnote
 
 codex plugin add botnote@botnote-plugins`;
+
+  const cursorMarketplaceBlock = `# Cursor plugin clients can use the repository marketplace.
+# Marketplace metadata lives at .cursor-plugin/marketplace.json.
+https://github.com/jianhuawang/botnote`;
 
   const codexSettingsBlock = `# ~/.codex/config.toml
 [plugins."botnote@botnote-plugins"]
@@ -233,7 +237,7 @@ source = "/absolute/path/to/botnote"`;
     <>
       <SectionHeader
         title="Plugin"
-        blurb="The botnote plugin bundles slash commands and a curator subagent for Claude Code and Codex. The plugin calls the npm CLI for MCP, so no separate task or memory MCP setup is required."
+        blurb="The botnote plugin bundles slash commands and a curator subagent for Claude Code, Codex, and Cursor. The plugin calls the npm CLI for MCP, so no separate task or memory MCP setup is required."
       />
 
       <CodeBlock title="Install CLI runtime" code={cliInstallBlock} />
@@ -241,6 +245,7 @@ source = "/absolute/path/to/botnote"`;
       <CodeBlock title="Codex marketplace entry" code={codexMarketplaceBlock} />
       <CodeBlock title="Codex Git marketplace" code={codexGitBlock} />
       <CodeBlock title="Codex settings" code={codexSettingsBlock} />
+      <CodeBlock title="Cursor marketplace" code={cursorMarketplaceBlock} />
       <CodeBlock title="Slash commands" code={useBlock} />
 
       <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted leading-relaxed">
