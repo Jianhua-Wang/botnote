@@ -111,6 +111,15 @@ describe("botnote MCP", () => {
     const searchText = (searchResp.content as Array<{ text: string }>)[0]?.text ?? "";
     expect(searchText).toMatch(/Adopt MCP 2025-03-26 annotations/);
     expect(searchText).toMatch(/embedding=off/);
+    const noteId = searchText.match(/note\/([0-9a-f-]{36})/)?.[1];
+    expect(noteId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const getResp = await client.callTool({
+      name: "get_entity",
+      arguments: { id: noteId }
+    });
+    const getText = (getResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(getText).toContain("Adopt MCP 2025-03-26 annotations");
   });
 
   it("opening_brief returns AGENTS.md + open tasks markdown", async () => {
@@ -127,7 +136,7 @@ describe("botnote MCP", () => {
     const projectId = idMatch?.[0];
     expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
 
-    await client.callTool({
+    const taskResp = await client.callTool({
       name: "create_task",
       arguments: {
         projectId,
@@ -137,6 +146,10 @@ describe("botnote MCP", () => {
         idempotencyKey: "mcp-task-1"
       }
     });
+    const taskText = (taskResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    const taskId = taskText.match(/id: ([0-9a-f-]{36})/)?.[1];
+    expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
+
     const briefResp = await client.callTool({
       name: "opening_brief",
       arguments: { projectId }
@@ -146,6 +159,8 @@ describe("botnote MCP", () => {
     expect(briefText).toMatch(/AGENTS.md/);
     expect(briefText).toMatch(/NEVER ship without tests/);
     expect(briefText).toMatch(/Ship botnote v0/);
+    expect(briefText).toContain(`[${taskId}]`);
+    expect(briefText).toContain(`task/${taskId}`);
   });
 
   it("write is idempotent on idempotencyKey via MCP", async () => {

@@ -296,7 +296,7 @@ describe("botnote service", () => {
       name: "OBR Project",
       agentsMd: "## NEVER push to main"
     });
-    await write(db, {
+    const openTask = await write(db, {
       kind: "task",
       projectId: p.id,
       title: "Open task A",
@@ -338,5 +338,7 @@ describe("botnote service", () => {
     expect(formatted).toContain("# Project: OBR");
     expect(formatted).toContain("## Open Tasks");
     expect(formatted).toContain("## Pinned Notes");
+    expect(formatted).toContain(`[${openTask.id}]`);
+    expect(formatted).toContain(`task/${openTask.id}`);
   });
 });

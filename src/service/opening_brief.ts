@@ -92,7 +92,7 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
   if (brief.openTasks.length) {
     lines.push(`## Open Tasks (${brief.openTasks.length})`);
     for (const t of brief.openTasks) {
-      lines.push(`- [${t.id.slice(0, 8)}] ${titleFor(t)}${t.tags.length ? ` [${t.tags.join(", ")}]` : ""}`);
+      lines.push(`- [${t.id}] ${titleFor(t)}${t.tags.length ? ` [${t.tags.join(", ")}]` : ""}`);
     }
     lines.push("");
   }
@@ -101,7 +101,7 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     lines.push(`## Recent Activity (${brief.recent.length})`);
     for (const r of brief.recent) {
       const when = r.createdAt.toISOString().slice(0, 16).replace("T", " ");
-      lines.push(`- ${when} · ${r.kind} · ${titleFor(r)}`);
+      lines.push(`- ${when} · ${r.kind}/${r.id} · ${titleFor(r)}`);
     }
     lines.push("");
   }

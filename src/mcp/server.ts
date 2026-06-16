@@ -36,7 +36,7 @@ function displayTitle(e: { title: string | null; body: string }): string {
 
 function summarizeEntity(e: EntityDTO): string {
   const tagPart = e.tags.length ? ` [${e.tags.join(", ")}]` : "";
-  return `${e.kind}/${e.id.slice(0, 8)} · ${displayTitle(e)}${tagPart}`;
+  return `${e.kind}/${e.id} · ${displayTitle(e)}${tagPart}`;
 }
 
 const ProjectKey = z
@@ -573,7 +573,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           {
             type: "text",
             text: result.created
-              ? `linked ${fromId.slice(0, 8)} -[${kind}]-> ${toId.slice(0, 8)}`
+              ? `linked ${fromId} -[${kind}]-> ${toId}`
               : `link already exists`
           }
         ]
@@ -608,7 +608,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       lines.push("## Recent (workspace-wide)");
       for (const r of recentRows) {
         lines.push(
-          `- ${r.createdAt.slice(0, 16).replace("T", " ")} · ${r.kind} · ${displayTitle(r)}`
+          `- ${r.createdAt.slice(0, 16).replace("T", " ")} · ${r.kind}/${r.id} · ${displayTitle(r)}`
         );
       }
       return { contents: [{ uri: uri.href, mimeType: "text/markdown", text: lines.join("\n") }] };
