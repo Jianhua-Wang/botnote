@@ -1,0 +1,89 @@
+name: Publish npm
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: botnote
+          POSTGRES_PASSWORD: botnote
+          POSTGRES_DB: botnote
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U botnote -d botnote"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://botnote:botnote@127.0.0.1:5432/botnote_test
+      BOTNOTE_TEST_DATABASE_URL: postgres://botnote:botnote@127.0.0.1:5432/botnote_test
+      NODE_OPTIONS: --no-warnings
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Install root dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install web dependencies
+        run: pnpm --dir web install --frozen-lockfile
+
+      - name: Create test database
+        run: |
+          node --input-type=module <<'JS'
+          import pg from "pg";
+          const client = new pg.Client({
+            connectionString: "postgres://botnote:botnote@127.0.0.1:5432/botnote"
+          });
+          await client.connect();
+          await client.query("DROP DATABASE IF EXISTS botnote_test WITH (FORCE)");
+          await client.query("CREATE DATABASE botnote_test");
+          await client.end();
+          JS
+
+      - name: Typecheck server
+        run: pnpm typecheck
+
+      - name: Typecheck web
+        run: pnpm --dir web typecheck
+
+      - name: Migrate test database
+        run: pnpm db:migrate
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Build package
+        run: pnpm build
+
+      - name: Publish to npm
+        run: npm publish --access public
