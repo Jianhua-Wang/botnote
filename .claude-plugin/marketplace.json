@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "botnote plugin marketplace — capture + recall for AI agents.",
-    "version": "0.1.4"
+    "version": "0.1.5"
   },
   "plugins": [
     {
@@ -15,7 +15,7 @@
       "description": "Notion for bots — MCP server + slash commands + curator subagent.",
       "homepage": "https://botnote.net",
       "keywords": ["notes", "tasks", "memory", "mcp", "agent"],
-      "version": "0.1.4"
+      "version": "0.1.5"
     }
   ]
 }
