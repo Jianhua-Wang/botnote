@@ -13,4 +13,4 @@ CREATE INDEX IF NOT EXISTS entities_task_due_idx
   ON entities(due_at) WHERE kind = 'task' AND due_at IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS entities_task_no_due_idx
-  ON entities(created_at DESC) WHERE kind = 'task' AND due_at IS NULL AND status NOT IN ('done', 'archived');
+  ON entities(created_at DESC) WHERE kind = 'task' AND due_at IS NULL AND status <> 'done';

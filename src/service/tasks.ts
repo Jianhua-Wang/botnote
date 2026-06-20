@@ -18,8 +18,8 @@ export interface TasksRangeResult {
  *   - everything else       → dueAt        (when it's supposed to happen)
  *
  * `scheduled` returns any task whose display date falls inside [from, to).
- * Done tasks without a completedAt (legacy / weird state) fall back to dueAt.
- * `overdue` keeps the original meaning — past-due open work — and explicitly
+ * Done tasks without a completedAt (legacy / weird state) fall back to updatedAt.
+ * `overdue` keeps the original meaning — past-due unfinished work — and explicitly
  * excludes done + in_progress so they don't double-surface (done shows on its
  * completion day; in_progress already shows on today).
  */
@@ -33,12 +33,10 @@ export async function tasksRange(
     : undefined;
 
   // Base filter applied to every bucket: only tasks, optional project filter,
-  // and the includeDone toggle (which gates done + archived together — both
-  // are terminal states that the day cell would otherwise mix into open work).
+  // and the includeDone toggle.
   const baseConds = [eq(entities.kind, "task")];
   if (!input.includeDone) {
     baseConds.push(or(ne(entities.status, "done"), isNull(entities.status))!);
-    baseConds.push(or(ne(entities.status, "archived"), isNull(entities.status))!);
   }
   if (projectFilter) baseConds.push(projectFilter);
 
@@ -65,23 +63,38 @@ export async function tasksRange(
     .where(and(...dueByDueConds))
     .orderBy(asc(entities.dueAt));
 
-  // (b) Done tasks rendered on completedAt. Only runs when the caller wants
-  // done items included — otherwise it returns nothing and the partial index
-  // is never touched.
+  // (b) Done tasks rendered on completedAt, with updatedAt as the legacy
+  // fallback for rows completed before completed_at existed. Never place done
+  // work by dueAt: completion history should reflect when work actually ended.
   let doneByCompleted: Entity[] = [];
   if (input.includeDone) {
-    const doneConds = [
+    const doneByCompletedConds = [
       eq(entities.kind, "task"),
       eq(entities.status, "done"),
       isNotNull(entities.completedAt),
       ...inRange(entities.completedAt)
     ];
-    if (projectFilter) doneConds.push(projectFilter);
-    doneByCompleted = await db
+    if (projectFilter) doneByCompletedConds.push(projectFilter);
+    const completedRows = await db
       .select()
       .from(entities)
-      .where(and(...doneConds))
+      .where(and(...doneByCompletedConds))
       .orderBy(asc(entities.completedAt));
+
+    const legacyDoneConds = [
+      eq(entities.kind, "task"),
+      eq(entities.status, "done"),
+      isNull(entities.completedAt),
+      ...inRange(entities.updatedAt)
+    ];
+    if (projectFilter) legacyDoneConds.push(projectFilter);
+    const legacyRows = await db
+      .select()
+      .from(entities)
+      .where(and(...legacyDoneConds))
+      .orderBy(asc(entities.updatedAt));
+
+    doneByCompleted = [...completedRows, ...legacyRows];
   }
 
   // (c) in_progress tasks → today. Only relevant when "now" falls inside the
@@ -116,8 +129,7 @@ export async function tasksRange(
     isNotNull(entities.dueAt),
     lt(entities.dueAt, now),
     or(ne(entities.status, "done"), isNull(entities.status))!,
-    or(ne(entities.status, "in_progress"), isNull(entities.status))!,
-    or(ne(entities.status, "archived"), isNull(entities.status))!
+    or(ne(entities.status, "in_progress"), isNull(entities.status))!
   ];
   if (projectFilter) overdueConds.push(projectFilter);
   const overdue = !input.includeDone

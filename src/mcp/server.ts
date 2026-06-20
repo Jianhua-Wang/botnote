@@ -19,9 +19,7 @@ const ACTOR_KINDS = ["human", "agent", "system"] as const;
 const TASK_STATUSES = [
   "open",
   "in_progress",
-  "delayed",
   "done",
-  "archived",
   "rejected"
 ] as const;
 const PRIORITIES = ["urgent", "high", "medium", "low", "none"] as const;
@@ -478,7 +476,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "\n" +
         "Common transitions:\n" +
         "- task completion: `status='done'`. Optionally `remember` a closing note with `parentId` set to this task.\n" +
-        "- task soft-delete / give up: `status='archived'`. `status='rejected'` if the work was declined.\n" +
+        "- task cancellation / give up: `status='rejected'`.\n" +
         "- start work: `status='in_progress'` ONLY when work actually begins in this turn (not just on every mention).\n" +
         "- re-parent: pass `parentId` (or `null` to detach).\n" +
         "- pin/unpin: `pinned: true/false`. Pinned notes drive opening_brief — use sparingly.\n" +
@@ -499,7 +497,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           .describe("Pass null to clear the title (notes only)."),
         body: z.string().optional(),
         tags: z.array(z.string()).optional(),
-        status: z.string().optional(),
+        status: z.enum(TASK_STATUSES).optional(),
         parentId: z.string().uuid().nullable().optional().describe("Re-link or unlink (null) parent."),
         dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear."),
         priority: z.enum(PRIORITIES).optional(),

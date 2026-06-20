@@ -11,4 +11,6 @@ When invoked:
 
 3. After the brief, add a single line if a project looks worth opening, suggesting `/start-work <KEY>` for deeper context.
 
-4. Do not call other tools unless the user follows up. The brief is the deliverable.
+4. If the user continues into project work, use recall/search for prior context and remember durable decisions, gotchas, and handoff notes as the work progresses.
+
+5. Do not call other tools unless the user follows up. The brief is the deliverable.

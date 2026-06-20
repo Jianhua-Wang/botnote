@@ -29,7 +29,7 @@ export function TodayPage() {
   });
 
   const { open } = useModals();
-  const overdue = data?.overdue ?? [];
+  const overdue = (data?.overdue ?? []).filter((t) => t.status !== "rejected");
   const scheduled = data?.scheduled ?? [];
 
   return (

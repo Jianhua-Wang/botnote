@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { BacklogRail } from "../components/tasks/BacklogRail";
 import { DayView } from "../components/tasks/DayView";
+import { InboxRail } from "../components/tasks/InboxRail";
 import { MonthView } from "../components/tasks/MonthView";
 import { TasksHeader } from "../components/tasks/TasksHeader";
 import { WeekView } from "../components/tasks/WeekView";
@@ -10,7 +10,7 @@ export function TasksPage() {
   const [view, setView] = useState<CalendarView>("week");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [projectIds, setProjectIds] = useState<string[] | null>(null);
-  const [backlogCollapsed, setBacklogCollapsed] = useState(false);
+  const [inboxCollapsed, setInboxCollapsed] = useState(false);
 
   return (
     <div className="h-full flex flex-col">
@@ -28,10 +28,10 @@ export function TasksPage() {
           {view === "week" && <WeekView anchor={anchor} projectIds={projectIds} />}
           {view === "month" && <MonthView anchor={anchor} projectIds={projectIds} />}
         </div>
-        <BacklogRail
+        <InboxRail
           projectIds={projectIds}
-          collapsed={backlogCollapsed}
-          onToggle={() => setBacklogCollapsed((v) => !v)}
+          collapsed={inboxCollapsed}
+          onToggle={() => setInboxCollapsed((v) => !v)}
         />
       </div>
     </div>

@@ -15,4 +15,6 @@ When the user asks for today's todo/context:
 Use $start-work <KEY> to load deeper context for a project.
 ```
 
+4. If the user starts working from this context, use recall/search for prior context and remember durable decisions, gotchas, and handoff notes as the work progresses.
+
 botnote is the task and memory source of truth for this workflow.

@@ -115,7 +115,6 @@ export const TASK_COLORS: Record<string, string> = {
   open: "bg-blue-50 border-blue-200 text-blue-900",
   in_progress: "bg-amber-50 border-amber-200 text-amber-900",
   done: "bg-emerald-50 border-emerald-200 text-emerald-900 opacity-70",
-  archived: "bg-slate-50 border-slate-200 text-slate-500 opacity-60",
   rejected: "bg-rose-50 border-rose-200 text-rose-900 opacity-70"
 };
 

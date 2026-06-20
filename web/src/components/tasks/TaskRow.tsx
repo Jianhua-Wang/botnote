@@ -29,7 +29,9 @@ export function TaskRow({
     task.dueAt &&
     new Date(task.dueAt).getTime() < Date.now() &&
     task.status !== "done" &&
-    task.status !== "archived";
+    task.status !== "in_progress";
+  const visibleDate = task.status === "done" ? (task.completedAt ?? task.updatedAt) : task.dueAt;
+  const visibleDateLabel = task.status === "done" ? "Completed" : "Due";
 
   return (
     <div
@@ -75,7 +77,13 @@ export function TaskRow({
 
       <span
         className={`flex-1 min-w-0 truncate ${
-          task.status === "done" ? "text-muted line-through" : isUntitled(task) ? "text-muted italic" : "text-ink"
+          task.status === "done"
+            ? "text-muted line-through"
+            : task.status === "rejected"
+              ? "text-muted"
+              : isUntitled(task)
+                ? "text-muted italic"
+                : "text-ink"
         }`}
       >
         {displayTitle(task)}
@@ -91,11 +99,12 @@ export function TaskRow({
         <span className="font-mono text-xxs text-faint shrink-0">{project.key}</span>
       )}
 
-      {task.dueAt && (
+      {visibleDate && (
         <span
           className={`text-xxs tabular-nums shrink-0 ${overdue ? "text-danger font-medium" : "text-muted"}`}
+          title={`${visibleDateLabel} ${new Date(visibleDate).toLocaleString()}`}
         >
-          {format(new Date(task.dueAt), "MMM d")}
+          {format(new Date(visibleDate), "MMM d")}
         </span>
       )}
 

@@ -6,14 +6,16 @@ export const ActorKindEnum = z.enum(ACTOR_KINDS);
 export const EdgeKindEnum = z.enum(EDGE_KINDS);
 
 export const PriorityEnum = z.enum(["urgent", "high", "medium", "low", "none"]);
-export const TaskStatusEnum = z.enum([
+export const CanonicalTaskStatusEnum = z.enum([
   "open",
   "in_progress",
-  "delayed",
   "done",
-  "archived",
   "rejected"
 ]);
+export const TaskStatusEnum = z.preprocess(
+  (value) => (value === "delayed" || value === "archived" ? "done" : value),
+  CanonicalTaskStatusEnum
+);
 
 export const Uuid = z.string().uuid();
 
@@ -78,7 +80,7 @@ export const UpdateInput = z.object({
   title: z.string().max(500).nullable().optional(),
   body: z.string().optional(),
   tags: z.array(z.string()).optional(),
-  status: z.string().optional(),
+  status: TaskStatusEnum.optional(),
   metadata: z.record(z.unknown()).optional(),
   parentId: Uuid.nullable().optional(),
   dueAt: z.coerce.date().nullable().optional(),

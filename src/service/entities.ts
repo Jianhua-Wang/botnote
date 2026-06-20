@@ -25,6 +25,10 @@ function normalizeDueAt(value: Date | null | undefined): Date | null {
   return value;
 }
 
+function normalizeStatus(value: string): string {
+  return value === "delayed" || value === "archived" ? "done" : value;
+}
+
 export async function write(db: Database["db"], input: WriteInput): Promise<Entity> {
   if (input.idempotencyKey) {
     const existing = await db
@@ -35,6 +39,7 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
     if (existing.length > 0) return existing[0]!;
   }
 
+  const status = normalizeStatus(input.status);
   const [row] = await db
     .insert(entities)
     .values({
@@ -43,7 +48,7 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
       title: input.title ?? null,
       body: input.body,
       tags: input.tags,
-      status: input.status,
+      status,
       parentId: input.parentId ?? null,
       actorKind: input.actorKind,
       metadata: input.metadata,
@@ -52,7 +57,7 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
       pinned: input.pinned,
       // Mirror the PATCH path: a task created already-done gets a
       // completedAt stamp so the calendar renders it on the right day.
-      completedAt: input.status === "done" ? new Date() : null,
+      completedAt: status === "done" ? new Date() : null,
       idempotencyKey: input.idempotencyKey ?? null
     })
     .returning();
@@ -73,7 +78,11 @@ export async function update(
   id: string,
   fields: UpdateInput
 ): Promise<Entity> {
-  const set: Record<string, unknown> = { ...fields, updatedAt: new Date() };
+  const normalizedFields: UpdateInput = { ...fields };
+  if (fields.status !== undefined) {
+    normalizedFields.status = normalizeStatus(fields.status) as NonNullable<UpdateInput["status"]>;
+  }
+  const set: Record<string, unknown> = { ...normalizedFields, updatedAt: new Date() };
   if (fields.dueAt !== undefined) {
     set.dueAt = normalizeDueAt(fields.dueAt);
   }
@@ -81,7 +90,7 @@ export async function update(
   // prior status to know whether this is an entry into or exit from 'done',
   // so do a tiny read first — cheaper than a CASE expression on UPDATE and
   // keeps the SQL the same shape as other writes.
-  if (fields.status !== undefined) {
+  if (normalizedFields.status !== undefined) {
     const prior = await db
       .select({ status: entities.status })
       .from(entities)
@@ -89,7 +98,7 @@ export async function update(
       .limit(1);
     if (!prior[0]) throw new Error(`entity ${id} not found`);
     const wasDone = prior[0].status === "done";
-    const isDone = fields.status === "done";
+    const isDone = normalizedFields.status === "done";
     if (isDone && !wasDone) set.completedAt = new Date();
     else if (!isDone && wasDone) set.completedAt = null;
   }

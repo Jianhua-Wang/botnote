@@ -79,13 +79,9 @@ function DayCell({
   const update = useUpdateEntity();
   const [hovered, setHovered] = useState(false);
 
-  // Drop archived/rejected — they shouldn't clutter the calendar. Sort
-  // in_progress -> open ("todo") -> done so the cell's top chips are the
-  // most actionable.
-  const active = tasks
-    .filter((t) => t.status !== "archived" && t.status !== "rejected")
-    .slice()
-    .sort(compareByStatus);
+  // Sort in_progress -> open ("todo") -> done so the cell's top chips are the
+  // most actionable. Cancelled tasks still render in calendar history.
+  const active = tasks.slice().sort(compareByStatus);
   const doneCount = active.filter((t) => t.status === "done").length;
   const totalCount = active.length;
   const allDone = totalCount > 0 && doneCount === totalCount;

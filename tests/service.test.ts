@@ -9,6 +9,7 @@ import {
   updateProject
 } from "../src/service/projects.js";
 import { search } from "../src/service/search.js";
+import { tasksRange } from "../src/service/tasks.js";
 import { consumeToken, createToken, listTokens } from "../src/service/tokens.js";
 import { createTestDb } from "./test_db.js";
 
@@ -87,6 +88,180 @@ describe("botnote service", () => {
     });
     expect(second.id).toBe(first.id);
     expect(second.title).toBe("First write");
+  });
+
+  it("normalizes retired delayed and archived statuses to done", async () => {
+    const p = await createProject(db, { key: "RET", name: "Retired statuses" });
+    const delayed = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Normalize delayed task",
+      body: "",
+      tags: [],
+      status: "delayed",
+      actorKind: "human",
+      metadata: {}
+    });
+    expect(delayed.status).toBe("done");
+    expect(delayed.completedAt).not.toBeNull();
+
+    const open = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Normalize archived update",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const archived = await update(db, open.id, { status: "archived" as never });
+    expect(archived.status).toBe("done");
+    expect(archived.completedAt).not.toBeNull();
+  });
+
+  it("tasksRange displays done tasks on completion day, not due day", async () => {
+    const p = await createProject(db, { key: "CAL", name: "Calendar" });
+    const dueAt = new Date("2026-06-01T12:00:00.000Z");
+    const completedAt = new Date("2026-06-10T15:30:00.000Z");
+    const legacyUpdatedAt = new Date("2026-06-11T09:00:00.000Z");
+
+    const done = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Ship finished task",
+      body: "",
+      tags: [],
+      status: "done",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    await db.execute(sql`
+      UPDATE entities
+      SET completed_at = ${completedAt}, updated_at = ${completedAt}
+      WHERE id = ${done.id}
+    `);
+
+    const legacyDone = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Legacy finished task",
+      body: "",
+      tags: [],
+      status: "done",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    await db.execute(sql`
+      UPDATE entities
+      SET completed_at = NULL, updated_at = ${legacyUpdatedAt}
+      WHERE id = ${legacyDone.id}
+    `);
+
+    const dueDay = await tasksRange(db, {
+      from: new Date("2026-06-01T00:00:00.000Z"),
+      to: new Date("2026-06-02T00:00:00.000Z"),
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: true
+    });
+    expect(dueDay.scheduled.map((t) => t.id)).not.toContain(done.id);
+    expect(dueDay.scheduled.map((t) => t.id)).not.toContain(legacyDone.id);
+
+    const completionDay = await tasksRange(db, {
+      from: new Date("2026-06-10T00:00:00.000Z"),
+      to: new Date("2026-06-11T00:00:00.000Z"),
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: true
+    });
+    expect(completionDay.scheduled.map((t) => t.id)).toContain(done.id);
+    expect(completionDay.scheduled.map((t) => t.id)).not.toContain(legacyDone.id);
+
+    const legacyCompletionDay = await tasksRange(db, {
+      from: new Date("2026-06-11T00:00:00.000Z"),
+      to: new Date("2026-06-12T00:00:00.000Z"),
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: true
+    });
+    expect(legacyCompletionDay.scheduled.map((t) => t.id)).toContain(legacyDone.id);
+  });
+
+  it("tasksRange keeps in-progress tasks on today and out of overdue", async () => {
+    const p = await createProject(db, { key: "NOW", name: "Now" });
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Keep active work visible",
+      body: "",
+      tags: [],
+      status: "in_progress",
+      actorKind: "human",
+      metadata: {},
+      dueAt: new Date("2020-01-01T12:00:00.000Z")
+    });
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
+    const today = await tasksRange(db, {
+      from: todayStart,
+      to: tomorrowStart,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false
+    });
+    expect(today.scheduled.map((t) => t.id)).toContain(task.id);
+    expect(today.overdue.map((t) => t.id)).not.toContain(task.id);
+
+    const yesterday = await tasksRange(db, {
+      from: yesterdayStart,
+      to: todayStart,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false
+    });
+    expect(yesterday.scheduled.map((t) => t.id)).not.toContain(task.id);
+  });
+
+  it("tasksRange includes cancelled tasks in inbox backlog", async () => {
+    const p = await createProject(db, { key: "INBX", name: "Inbox" });
+    const open = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Show undated task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const cancelled = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Show cancelled undated task",
+      body: "",
+      tags: [],
+      status: "rejected",
+      actorKind: "human",
+      metadata: {}
+    });
+
+    const range = await tasksRange(db, {
+      projectIds: [p.id],
+      includeBacklog: true,
+      includeDone: false
+    });
+    const ids = range.backlog.map((t) => t.id);
+    expect(ids).toContain(open.id);
+    expect(ids).toContain(cancelled.id);
   });
 
   it("link creates edge + listChildren via parentId", async () => {

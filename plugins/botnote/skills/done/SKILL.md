@@ -26,6 +26,7 @@ When the user signals something is finished:
    - `parentId`: the task's UUID.
    - `tags`: tags from the task plus `done`.
    - `projectId`: same as the task.
+   - Prefer capturing decisions, gotchas, and follow-up context that future agents would otherwise have to rediscover.
 
 5. Confirm in one line:
 

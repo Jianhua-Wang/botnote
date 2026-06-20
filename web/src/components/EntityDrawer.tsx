@@ -256,6 +256,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
             setPriority={setPriority}
             tagsStr={tagsStr}
             setTagsStr={setTagsStr}
+            completedAt={entity.completedAt}
             createdAt={entity.createdAt}
             actorKind={entity.actorKind}
           />
@@ -335,6 +336,7 @@ function MetaRow({
   setPriority,
   tagsStr,
   setTagsStr,
+  completedAt,
   createdAt,
   actorKind
 }: {
@@ -347,6 +349,7 @@ function MetaRow({
   setPriority: (p: Priority) => void;
   tagsStr: string;
   setTagsStr: (s: string) => void;
+  completedAt: string | null;
   createdAt: string;
   actorKind: string;
 }) {
@@ -378,7 +381,7 @@ function MetaRow({
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
             />
-            {!dueDate && <span className="text-faint text-xxs">backlog</span>}
+            {!dueDate && <span className="text-faint text-xxs">inbox</span>}
             {dueDate && (
               <button
                 className="text-faint hover:text-danger text-xxs"
@@ -405,6 +408,15 @@ function MetaRow({
               ))}
             </select>
           </span>
+
+          {status === "done" && (
+            <>
+              <span className="text-faint">Completed</span>
+              <span className="text-muted">
+                {completedAt ? new Date(completedAt).toLocaleString() : "Not recorded"}
+              </span>
+            </>
+          )}
         </>
       )}
 

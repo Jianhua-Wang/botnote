@@ -93,13 +93,9 @@ function DayCell({
   const { open } = useModals();
   const update = useUpdateEntity();
 
-  // Exclude archived/rejected from both the chip list and the count — they're
-  // soft-deleted and shouldn't clutter the day view. Sort in_progress -> open
-  // ("todo") -> done so the most actionable rows surface first.
-  const active = tasks
-    .filter((t) => t.status !== "archived" && t.status !== "rejected")
-    .slice()
-    .sort(compareByStatus);
+  // Sort in_progress -> open ("todo") -> done so the most actionable rows
+  // surface first. Cancelled tasks still render in calendar history.
+  const active = tasks.slice().sort(compareByStatus);
   const doneCount = active.filter((t) => t.status === "done").length;
   const totalCount = active.length;
   const allDone = totalCount > 0 && doneCount === totalCount;

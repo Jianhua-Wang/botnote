@@ -9,7 +9,7 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
     task.dueAt &&
     new Date(task.dueAt).getTime() < Date.now() &&
     task.status !== "done" &&
-    task.status !== "archived";
+    task.status !== "in_progress";
 
   return (
     <button
@@ -35,6 +35,8 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
         className={`truncate flex-1 min-w-0 ${
           task.status === "done"
             ? "line-through text-muted"
+            : task.status === "rejected"
+              ? "text-muted"
             : isUntitled(task)
               ? "italic text-muted"
               : "text-ink2"

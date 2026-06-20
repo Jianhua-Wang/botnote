@@ -8,10 +8,10 @@ import { PriorityIcon, StatusCircle } from "../tasks/icons";
 import { useModals } from "../../state/modals";
 
 const COLUMNS: Array<{ status: string; label: string; intent: string }> = [
-  { status: "delayed", label: "Delay", intent: "text-statusDelayed" },
   { status: "open", label: "Todo", intent: "text-statusOpen" },
   { status: "in_progress", label: "In Progress", intent: "text-statusInProgress" },
-  { status: "done", label: "Done", intent: "text-statusDone" }
+  { status: "done", label: "Done", intent: "text-statusDone" },
+  { status: "rejected", label: "Cancelled", intent: "text-statusRejected" }
 ];
 
 export function KanbanBoard({
@@ -117,8 +117,10 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
     task.dueAt &&
     new Date(task.dueAt).getTime() < Date.now() &&
     task.status !== "done" &&
-    task.status !== "archived";
+    task.status !== "in_progress";
   const idLabel = task.sequenceId ? `${project.key}-${task.sequenceId}` : null;
+  const visibleDate = task.status === "done" ? (task.completedAt ?? task.updatedAt) : task.dueAt;
+  const visibleDateLabel = task.status === "done" ? "Completed" : "Due";
 
   return (
     <div
@@ -148,6 +150,8 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
           className={`flex-1 min-w-0 text-sm leading-snug ${
             task.status === "done"
               ? "text-muted line-through"
+              : task.status === "rejected"
+                ? "text-muted"
               : isUntitled(task)
                 ? "italic text-muted"
                 : "text-ink"
@@ -159,9 +163,12 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
       </div>
       <div className="mt-1.5 flex items-center gap-2 text-xxs text-muted">
         {idLabel && <span className="font-mono tabular-nums">{idLabel}</span>}
-        {task.dueAt && (
-          <span className={`tabular-nums ${overdue ? "text-danger font-medium" : ""}`}>
-            {format(new Date(task.dueAt), "MMM d")}
+        {visibleDate && (
+          <span
+            className={`tabular-nums ${overdue ? "text-danger font-medium" : ""}`}
+            title={`${visibleDateLabel} ${new Date(visibleDate).toLocaleString()}`}
+          >
+            {format(new Date(visibleDate), "MMM d")}
           </span>
         )}
         {task.tags.slice(0, 2).map((t) => (

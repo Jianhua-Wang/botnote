@@ -4,7 +4,7 @@ import { useProjects, useTasksRange } from "../../api/hooks";
 import { TaskRow } from "./TaskRow";
 import { projectLookup } from "./utils";
 
-export function BacklogRail({
+export function InboxRail({
   projectIds,
   collapsed,
   onToggle
@@ -20,19 +20,19 @@ export function BacklogRail({
   });
   const { data: projects } = useProjects();
   const projectMap = useMemo(() => projectLookup(projects), [projects]);
-  const backlog = tasksData?.backlog ?? [];
+  const inboxTasks = (tasksData?.backlog ?? []).filter((t) => t.status !== "rejected");
 
   if (collapsed) {
     return (
       <button
         className="shrink-0 w-8 border-l border-line bg-sidebar/50 hover:bg-sidebar flex flex-col items-center pt-2 gap-2 group"
         onClick={onToggle}
-        title="Expand Backlog"
+        title="Expand Inbox"
       >
         <Inbox size={14} className="text-muted group-hover:text-ink" />
-        {backlog.length > 0 && (
+        {inboxTasks.length > 0 && (
           <div className="text-xxs text-muted bg-surface border border-line rounded-full w-5 h-5 flex items-center justify-center">
-            {backlog.length}
+            {inboxTasks.length}
           </div>
         )}
       </button>
@@ -44,8 +44,8 @@ export function BacklogRail({
       <div className="px-3 h-9 flex items-center justify-between border-b border-lineSoft">
         <div className="flex items-center gap-2 text-muted">
           <Inbox size={12} />
-          <h2 className="text-xs font-medium text-ink2">Backlog</h2>
-          <span className="text-xxs text-faint tabular-nums">{backlog.length}</span>
+          <h2 className="text-xs font-medium text-ink2">Inbox</h2>
+          <span className="text-xxs text-faint tabular-nums">{inboxTasks.length}</span>
         </div>
         <button
           onClick={onToggle}
@@ -56,13 +56,13 @@ export function BacklogRail({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {backlog.length === 0 ? (
+        {inboxTasks.length === 0 ? (
           <div className="text-xs text-muted text-center py-8 px-4">
-            No undated tasks.
-            <div className="text-faint mt-1">Tasks without due date land here.</div>
+            No tasks without due date.
+            <div className="text-faint mt-1">Tasks without due date appear here.</div>
           </div>
         ) : (
-          backlog.map((t) => (
+          inboxTasks.map((t) => (
             <TaskRow
               key={t.id}
               task={t}

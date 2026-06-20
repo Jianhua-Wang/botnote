@@ -33,9 +33,7 @@ export default {
         statusOpen: "#a8a8af",
         statusInProgress: "#f2994a",
         statusDone: "#4cb782",
-        statusArchived: "#c8c8cc",
-        statusRejected: "#eb5757",
-        statusDelayed: "#d97706"
+        statusRejected: "#eb5757"
       },
       fontFamily: {
         sans: [
