@@ -14,7 +14,13 @@
       "source": "./plugins/botnote",
       "description": "Notion for bots — MCP server + slash commands + curator subagent.",
       "homepage": "https://botnote.net",
-      "keywords": ["notes", "tasks", "memory", "mcp", "agent"],
+      "keywords": [
+        "notes",
+        "tasks",
+        "memory",
+        "mcp",
+        "agent"
+      ],
       "version": "0.1.10"
     }
   ]
