@@ -19,9 +19,9 @@ export interface TasksRangeResult {
  *
  * `scheduled` returns any task whose display date falls inside [from, to).
  * Done tasks without a completedAt (legacy / weird state) fall back to updatedAt.
- * `overdue` keeps the original meaning — past-due unfinished work — and explicitly
- * excludes done + in_progress so they don't double-surface (done shows on its
- * completion day; in_progress already shows on today).
+ * `overdue` keeps the original meaning — past-due unfinished work — and
+ * explicitly excludes done + in_progress so they don't double-surface (done
+ * shows on its completion day; in_progress already shows on today).
  */
 export async function tasksRange(
   db: Database["db"],
@@ -132,13 +132,11 @@ export async function tasksRange(
     or(ne(entities.status, "in_progress"), isNull(entities.status))!
   ];
   if (projectFilter) overdueConds.push(projectFilter);
-  const overdue = !input.includeDone
-    ? await db
-        .select()
-        .from(entities)
-        .where(and(...overdueConds))
-        .orderBy(asc(entities.dueAt))
-    : [];
+  const overdue = await db
+    .select()
+    .from(entities)
+    .where(and(...overdueConds))
+    .orderBy(asc(entities.dueAt));
 
   let backlog: Entity[] = [];
   if (input.includeBacklog) {

@@ -180,6 +180,17 @@ describe("botnote service", () => {
         WHERE id = ${legacyDone.id}
       `);
     });
+    const overdueOpen = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Still needs attention",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
 
     const dueDay = await tasksRange(db, {
       from: new Date("2026-06-01T00:00:00.000Z"),
@@ -200,6 +211,7 @@ describe("botnote service", () => {
     });
     expect(completionDay.scheduled.map((t) => t.id)).toContain(done.id);
     expect(completionDay.scheduled.map((t) => t.id)).not.toContain(legacyDone.id);
+    expect(completionDay.overdue.map((t) => t.id)).toContain(overdueOpen.id);
 
     const legacyCompletionDay = await tasksRange(db, {
       from: new Date("2026-06-11T00:00:00.000Z"),
