@@ -7,6 +7,7 @@ import type {
   SearchInput,
   TasksRangeInput,
   Token,
+  UpdateEmbeddingSettingsInput,
   UpdateEntityInput,
   UpdateProjectInput,
   WriteEntityInput
@@ -93,6 +94,35 @@ export function useSearch(input: SearchInput | null) {
     queryKey: ["search", input],
     queryFn: () => api.search(input!),
     enabled: Boolean(input && input.query.length > 0)
+  });
+}
+
+export function useEmbeddingSettings() {
+  return useQuery({
+    queryKey: ["settings", "embedding"],
+    queryFn: api.getEmbeddingSettings,
+    refetchInterval: POLL_INTERVAL
+  });
+}
+
+export function useUpdateEmbeddingSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateEmbeddingSettingsInput) => api.updateEmbeddingSettings(input),
+    onSuccess: (settings) => {
+      qc.setQueryData(["settings", "embedding"], settings);
+      qc.invalidateQueries({ queryKey: ["health"] });
+    }
+  });
+}
+
+export function useBackfillEmbeddings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (limit?: number) => api.backfillEmbeddings(limit),
+    onSuccess: (result) => {
+      qc.setQueryData(["settings", "embedding"], result.settings);
+    }
   });
 }
 

@@ -12,6 +12,9 @@ import type {
   TasksRangeInput,
   TasksRangeResult,
   Token,
+  EmbeddingBackfillResponse,
+  EmbeddingSettings,
+  UpdateEmbeddingSettingsInput,
   UpdateEntityInput,
   UpdateProjectInput,
   WriteEntityInput
@@ -124,6 +127,19 @@ export const api = {
 
   search: (input: SearchInput) =>
     request<SearchResponse>("/v1/search", { method: "POST", body: JSON.stringify(input) }),
+
+  getEmbeddingSettings: () =>
+    request<EmbeddingSettings>("/v1/settings/embedding"),
+  updateEmbeddingSettings: (input: UpdateEmbeddingSettingsInput) =>
+    request<EmbeddingSettings>("/v1/settings/embedding", {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }),
+  backfillEmbeddings: (limit?: number) =>
+    request<EmbeddingBackfillResponse>("/v1/settings/embedding/backfill", {
+      method: "POST",
+      body: JSON.stringify(limit == null ? {} : { limit })
+    }),
 
   tasksRange: (input: TasksRangeInput) =>
     request<TasksRangeResult>("/v1/tasks/range", {

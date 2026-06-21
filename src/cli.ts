@@ -21,6 +21,7 @@ async function runRest(): Promise<void> {
 
   const { db } = createDb();
   const embedding = new EmbeddingService(db, { apiKey: process.env.OPENAI_API_KEY });
+  await embedding.reloadConfig();
 
   const app = await buildServer({ db, embedding, logLevel });
   await app.listen({ port, host });

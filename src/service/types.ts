@@ -162,3 +162,20 @@ export const CreateTokenInput = z.object({
   name: z.string().min(1).max(200)
 });
 export type CreateTokenInput = z.infer<typeof CreateTokenInput>;
+
+export const EmbeddingProviderEnum = z.enum(["openai", "openai_compatible"]);
+export type EmbeddingProvider = z.infer<typeof EmbeddingProviderEnum>;
+
+export const UpdateEmbeddingSettingsInput = z.object({
+  enabled: z.boolean().optional(),
+  provider: EmbeddingProviderEnum.optional(),
+  model: z.string().min(1).max(200).optional(),
+  baseUrl: z.string().url().nullable().optional(),
+  apiKey: z.string().max(1000).nullable().optional()
+});
+export type UpdateEmbeddingSettingsInput = z.infer<typeof UpdateEmbeddingSettingsInput>;
+
+export const EmbeddingBackfillInput = z.object({
+  limit: z.number().int().min(1).max(100000).optional()
+});
+export type EmbeddingBackfillInput = z.infer<typeof EmbeddingBackfillInput>;

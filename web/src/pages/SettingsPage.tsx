@@ -1,28 +1,43 @@
 import { formatDistanceToNow } from "date-fns";
 import {
   AlertTriangle,
+  BrainCircuit,
   Check,
   Cog,
+  Command,
   Copy,
+  Download,
+  ExternalLink,
   Info,
   KeyRound,
   LogOut,
+  Package,
   Plug,
   Plus,
   Puzzle,
+  RefreshCw,
   Terminal,
   Trash2
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { useCreateToken, useHealth, useRevokeToken, useTokens } from "../api/hooks";
-import type { CreatedToken } from "../api/types";
+import {
+  useBackfillEmbeddings,
+  useCreateToken,
+  useEmbeddingSettings,
+  useHealth,
+  useRevokeToken,
+  useTokens,
+  useUpdateEmbeddingSettings
+} from "../api/hooks";
+import type { CreatedToken, EmbeddingProvider, EmbeddingStatusReason } from "../api/types";
 
 const BOTNOTE_HOST =
   typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:4280";
+const MAX_EMBEDDING_BACKFILL = 100000;
 
-type TabId = "account" | "tokens" | "cli" | "plugin" | "mcp" | "about";
+type TabId = "account" | "tokens" | "cli" | "plugin" | "embedding" | "mcp" | "about";
 
 interface TabDef {
   id: TabId;
@@ -35,6 +50,7 @@ const TABS: TabDef[] = [
   { id: "tokens", label: "API tokens", icon: KeyRound },
   { id: "cli", label: "CLI", icon: Terminal },
   { id: "plugin", label: "Plugin", icon: Puzzle },
+  { id: "embedding", label: "Embeddings", icon: BrainCircuit },
   { id: "mcp", label: "MCP", icon: Plug },
   { id: "about", label: "About", icon: Info }
 ];
@@ -69,11 +85,16 @@ export function SettingsPage() {
       </nav>
 
       <main className="flex-1 min-w-0 overflow-y-auto scrollbar-thin">
-        <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
+        <div
+          className={`mx-auto px-6 py-6 space-y-6 ${
+            tab === "plugin" ? "max-w-5xl" : "max-w-3xl"
+          }`}
+        >
           {tab === "account" && <AccountSection />}
           {tab === "tokens" && <TokensSection />}
           {tab === "cli" && <CliSection />}
           {tab === "plugin" && <PluginSection />}
+          {tab === "embedding" && <EmbeddingSection />}
           {tab === "mcp" && <McpSection />}
           {tab === "about" && <AboutSection />}
         </div>
@@ -177,22 +198,50 @@ BOTNOTE_URL=http://127.0.0.1:4280 botnote today
 
 function PluginSection() {
   const cliInstallBlock = `# Runtime used by Claude Code, Codex, and Cursor plugins.
-npm i -g botnote
+npm i -g botnote@latest
 
-# Remote clients should save https://botnote.net + a bearer token.
-# On the daemon host, use http://127.0.0.1:4280 and skip the token.
+# Remote clients: save https://botnote.net + a bearer token.
+# Daemon host: use http://127.0.0.1:4280 and skip the token.
 botnote login`;
 
+  const cliUpdateBlock = `# Keep the runtime current on every device.
+npm i -g botnote@latest
+botnote --version`;
+
   const claudeInstallBlock = `# In Claude Code
-/plugin marketplace add jianhuawang/botnote
+/plugin marketplace add jianhua-wang/botnote
 /plugin install botnote@botnote
 
 # Claude Code will prompt for:
 #   botnote_url    -> default https://botnote.net (use http://127.0.0.1:4280 on daemon host)
 #   botnote_token  -> bearer from Settings → API tokens (skip on loopback)`;
 
-  const codexMarketplaceBlock = `// Add this to .agents/plugins/marketplace.json in your repo.
-// Then install botnote@botnote-plugins from Codex Settings → Plugin.
+  const claudeUpdateBlock = `# Preferred: enable marketplace auto-update in Claude Code.
+/plugin
+# Marketplaces → botnote → Enable auto-update
+
+# After Claude reports an updated plugin:
+/reload-plugins
+
+# Manual update, if available in your Claude Code build:
+claude plugin update botnote@botnote`;
+
+  const codexInstallBlock = `# No full source checkout required.
+codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \\
+  --sparse .codex-plugin \\
+  --sparse plugins/botnote
+
+codex plugin add botnote@botnote-plugins`;
+
+  const codexUpdateBlock = `# Codex refreshes Git marketplaces, then installs from the fresh snapshot.
+codex plugin marketplace upgrade botnote-plugins
+codex plugin remove botnote@botnote-plugins
+codex plugin add botnote@botnote-plugins
+
+# Open a new Codex session after updating.`;
+
+  const repoMarketplaceBlock = `// Advanced: repo-local marketplace entry for .agents/plugins/marketplace.json.
+// Use this only when the repo already vendors ./plugins/botnote.
 {
   "name": "botnote-plugins",
   "interface": { "displayName": "botnote Plugins" },
@@ -206,24 +255,19 @@ botnote login`;
   ]
 }`;
 
-  const codexGitBlock = `# No full source checkout required.
-codex plugin marketplace add https://github.com/jianhuawang/botnote.git \\
-  --sparse .codex-plugin \\
-  --sparse plugins/botnote
-
-codex plugin add botnote@botnote-plugins`;
-
-  const cursorMarketplaceBlock = `# Cursor plugin clients can use the repository marketplace.
+  const cursorInstallBlock = `# Cursor plugin clients can use the repository marketplace.
 # Marketplace metadata lives at .cursor-plugin/marketplace.json.
-https://github.com/jianhuawang/botnote`;
+https://github.com/jianhua-wang/botnote
 
-  const codexSettingsBlock = `# ~/.codex/config.toml
-[plugins."botnote@botnote-plugins"]
-enabled = true
+# Then install:
+botnote@botnote-plugins`;
 
-[marketplaces.botnote-plugins]
-source_type = "local"
-source = "/absolute/path/to/botnote"`;
+  const cursorUpdateBlock = `# Refresh the marketplace in Cursor's plugin UI.
+# If an explicit update action is unavailable, remove and install again
+# from the same repository marketplace.
+
+# Keep the shared runtime current too:
+npm i -g botnote@latest`;
 
   const useBlock = `/botnote:today              # today + overdue
 /botnote:show-todo          # open work across projects
@@ -237,34 +281,429 @@ source = "/absolute/path/to/botnote"`;
     <>
       <SectionHeader
         title="Plugin"
-        blurb="The botnote plugin bundles slash commands and a curator subagent for Claude Code, Codex, and Cursor. The plugin calls the npm CLI for MCP, so no separate task or memory MCP setup is required."
+        blurb="Install the botnote runtime once, then add the plugin for each agent client. The plugin bundles MCP, slash commands, and workflow skills, so Letheia / Plane MCP setup should stay retired."
       />
 
-      <CodeBlock title="Install CLI runtime" code={cliInstallBlock} />
-      <CodeBlock title="Claude Code install" code={claudeInstallBlock} />
-      <CodeBlock title="Codex marketplace entry" code={codexMarketplaceBlock} />
-      <CodeBlock title="Codex Git marketplace" code={codexGitBlock} />
-      <CodeBlock title="Codex settings" code={codexSettingsBlock} />
-      <CodeBlock title="Cursor marketplace" code={cursorMarketplaceBlock} />
-      <CodeBlock title="Slash commands" code={useBlock} />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+        <PluginStep
+          icon={Package}
+          title="1. Runtime"
+          body="Install or update the npm binary on every device. Plugins call this binary for MCP."
+        />
+        <PluginStep
+          icon={Download}
+          title="2. Client plugin"
+          body="Install the marketplace plugin in Claude Code, Codex, Cursor, or another agent client."
+        />
+        <PluginStep
+          icon={RefreshCw}
+          title="3. Update both"
+          body="Runtime and plugin cache update separately. Refresh the client after updating."
+        />
+      </div>
 
-      <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted leading-relaxed">
-        Plugin distribution lives at{" "}
-        <a
-          href="https://github.com/jianhuawang/botnote"
-          target="_blank"
-          className="text-accent hover:underline"
-          rel="noreferrer"
-        >
-          jianhuawang/botnote
-        </a>
-        {". "}
-        The MCP server inside the plugin uses the URL + token from the install prompt.
-        On the daemon host, <code className="text-ink">http://127.0.0.1:4280</code> can run
-        without a token; remote clients should use a bearer token from API tokens.
+      <div className="border border-accent/20 bg-accentSoft/50 rounded-md px-4 py-3 text-xs text-accentText leading-relaxed">
+        Use <code className="text-ink">https://botnote.net</code> with an API token from this
+        settings page on remote devices. On the daemon host, use{" "}
+        <code className="text-ink">http://127.0.0.1:4280</code> and skip the token.
+      </div>
+
+      <PluginClientHeader
+        icon={Package}
+        title="Runtime"
+        subtitle="Required first. Claude Code, Codex, and Cursor all launch this binary for MCP."
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <CodeBlock title="Install runtime" code={cliInstallBlock} />
+        <CodeBlock title="Update runtime" code={cliUpdateBlock} />
+      </div>
+
+      <PluginClientHeader
+        icon={Command}
+        title="Claude Code"
+        subtitle="Recommended for day-to-day work. Enable marketplace auto-update after installation."
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <CodeBlock title="Install" code={claudeInstallBlock} />
+        <CodeBlock title="Update" code={claudeUpdateBlock} />
+      </div>
+
+      <PluginClientHeader
+        icon={Terminal}
+        title="Codex"
+        subtitle="Use the Git marketplace flow; sparse checkout means no full botnote source checkout."
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <CodeBlock title="Install" code={codexInstallBlock} />
+        <CodeBlock title="Update" code={codexUpdateBlock} />
+      </div>
+
+      <PluginClientHeader
+        icon={Puzzle}
+        title="Cursor"
+        subtitle="Uses the same plugin bundle and the same npm runtime."
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <CodeBlock title="Install" code={cursorInstallBlock} />
+        <CodeBlock title="Update" code={cursorUpdateBlock} />
+      </div>
+
+      <PluginClientHeader
+        icon={Cog}
+        title="Advanced"
+        subtitle="Only needed when a repo vendors the plugin files locally."
+      />
+      <CodeBlock title="Repo-local marketplace entry" code={repoMarketplaceBlock} />
+
+      <PluginClientHeader
+        icon={Plug}
+        title="Slash commands"
+        subtitle="Available after the plugin is installed and the client reloads plugins."
+      />
+      <CodeBlock title="Commands" code={useBlock} />
+
+      <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted leading-relaxed flex items-start gap-3">
+        <ExternalLink size={13} className="mt-0.5 shrink-0 text-accent" />
+        <div>
+          Plugin distribution lives at{" "}
+          <a
+            href="https://github.com/jianhua-wang/botnote"
+            target="_blank"
+            className="text-accent hover:underline"
+            rel="noreferrer"
+          >
+            jianhua-wang/botnote
+          </a>
+          {". "}
+          Claude Code can auto-update third-party marketplaces when enabled; after an update, run{" "}
+          <code className="text-ink">/reload-plugins</code>. Codex currently refreshes Git
+          marketplace snapshots with{" "}
+          <code className="text-ink">codex plugin marketplace upgrade</code>.
+        </div>
       </div>
     </>
   );
+}
+
+function PluginStep({
+  icon: Icon,
+  title,
+  body
+}: {
+  icon: typeof Cog;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="border border-line rounded-md bg-surface px-4 py-3 min-h-[104px]">
+      <div className="flex items-center gap-2 text-sm font-semibold text-ink">
+        <span className="w-6 h-6 rounded-md bg-accentSoft text-accent flex items-center justify-center shrink-0">
+          <Icon size={13} />
+        </span>
+        {title}
+      </div>
+      <p className="mt-2 text-xs text-muted leading-relaxed">{body}</p>
+    </div>
+  );
+}
+
+function PluginClientHeader({
+  icon: Icon,
+  title,
+  subtitle
+}: {
+  icon: typeof Cog;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="pt-2 border-t border-lineSoft flex items-start gap-2">
+      <span className="mt-0.5 w-6 h-6 rounded-md bg-sidebar text-muted border border-line flex items-center justify-center shrink-0">
+        <Icon size={13} />
+      </span>
+      <div>
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        <p className="text-xs text-muted leading-relaxed mt-0.5">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+
+function EmbeddingSection() {
+  const { data, isLoading } = useEmbeddingSettings();
+  const update = useUpdateEmbeddingSettings();
+  const backfill = useBackfillEmbeddings();
+  const [enabled, setEnabled] = useState(true);
+  const [provider, setProvider] = useState<EmbeddingProvider>("openai");
+  const [model, setModel] = useState("text-embedding-3-small");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [clearKey, setClearKey] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    setEnabled(data.enabled);
+    setProvider(data.provider);
+    setModel(data.model);
+    setBaseUrl(data.baseUrl ?? "");
+    setApiKey("");
+    setClearKey(false);
+  }, [data]);
+
+  async function onSave(e: React.FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+    const trimmedKey = apiKey.trim();
+    const input = {
+      enabled,
+      provider,
+      model: model.trim(),
+      baseUrl: provider === "openai_compatible" ? baseUrl.trim() || null : null,
+      ...(trimmedKey ? { apiKey: trimmedKey } : clearKey ? { apiKey: null } : {})
+    };
+    const next = await update.mutateAsync(input);
+    setApiKey("");
+    setClearKey(false);
+    setMessage(next.effectiveEnabled ? "Embedding search is ready." : statusReasonText(next.statusReason));
+  }
+
+  async function onBackfill() {
+    setMessage(null);
+    const requested = Math.min(data?.missingCount ?? MAX_EMBEDDING_BACKFILL, MAX_EMBEDDING_BACKFILL);
+    const result = await backfill.mutateAsync(requested);
+    const capped = data && data.missingCount > MAX_EMBEDDING_BACKFILL;
+    setMessage(
+      capped
+        ? `Queued ${result.enqueued} item(s), the maximum per request. Pending queue: ${result.pendingCount}.`
+        : `Queued all ${result.enqueued} missing item(s). Pending queue: ${result.pendingCount}.`
+    );
+  }
+
+  const embeddedPercent =
+    data && data.totalCount > 0 ? Math.round((data.embeddedCount / data.totalCount) * 100) : 0;
+  const canBackfill = Boolean(data?.effectiveEnabled && data.missingCount > 0);
+
+  return (
+    <>
+      <SectionHeader
+        title="Embeddings"
+        blurb="Configure semantic search for botnote. The database vector column is fixed at 384 dimensions, so provider models must return 384-dimensional embeddings."
+      />
+
+      <div
+        className={`border rounded-md px-4 py-3 text-xs leading-relaxed ${
+          data?.effectiveEnabled
+            ? "border-success/30 bg-success/10 text-ink"
+            : "border-warn/30 bg-warn/10 text-ink"
+        }`}
+      >
+        {isLoading ? (
+          "Loading embedding settings..."
+        ) : data?.effectiveEnabled ? (
+          <>
+            Semantic search is enabled via <strong>{providerLabel(data.provider)}</strong> using{" "}
+            <code>{data.model}</code>. Search merges BM25 + cosine + time decay.
+          </>
+        ) : (
+          <>
+            Semantic search is not active: {statusReasonText(data?.statusReason ?? "not_loaded")}.
+            Text search still works through BM25.
+          </>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+        <MetricCard label="Status" value={data?.effectiveEnabled ? "On" : "Off"} />
+        <MetricCard label="Embedded" value={`${data?.embeddedCount ?? 0}/${data?.totalCount ?? 0}`} />
+        <MetricCard label="Missing" value={`${data?.missingCount ?? 0}`} />
+        <MetricCard label="Queue" value={`${data?.pendingCount ?? 0}`} />
+      </div>
+
+      <div className="border border-line rounded-md bg-surface px-4 py-3 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold text-ink">Vector coverage</div>
+            <div className="text-xxs text-muted">
+              {embeddedPercent}% of task/note records have embeddings.
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn"
+            disabled={!canBackfill || backfill.isPending}
+            onClick={onBackfill}
+            title={
+              data?.effectiveEnabled
+                ? "Queue embeddings for all existing records without body_vec"
+                : "Enable embeddings before backfilling"
+            }
+          >
+            <RefreshCw size={11} /> {backfill.isPending ? "Queueing..." : "Backfill all missing"}
+          </button>
+        </div>
+        <div className="h-2 rounded bg-sidebar overflow-hidden border border-lineSoft">
+          <div
+            className="h-full bg-accent"
+            style={{ width: `${embeddedPercent}%` }}
+          />
+        </div>
+      </div>
+
+      <form onSubmit={onSave} className="border border-line rounded-md bg-surface px-4 py-4 space-y-4">
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+          />
+          Enable semantic search
+        </label>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="space-y-1">
+            <span className="block text-xxs uppercase tracking-wider text-muted">Provider</span>
+            <select
+              className="input"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as EmbeddingProvider)}
+            >
+              <option value="openai">OpenAI</option>
+              <option value="openai_compatible">OpenAI-compatible</option>
+            </select>
+          </label>
+
+          <label className="space-y-1">
+            <span className="block text-xxs uppercase tracking-wider text-muted">Model</span>
+            <input
+              className="input font-mono"
+              list="embedding-models"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="text-embedding-3-small"
+            />
+            <datalist id="embedding-models">
+              <option value="text-embedding-3-small" />
+              <option value="text-embedding-3-large" />
+            </datalist>
+          </label>
+        </div>
+
+        {provider === "openai_compatible" && (
+          <label className="space-y-1 block">
+            <span className="block text-xxs uppercase tracking-wider text-muted">Base URL</span>
+            <input
+              className="input font-mono"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://api.example.com/v1"
+            />
+          </label>
+        )}
+
+        <label className="space-y-1 block">
+          <span className="block text-xxs uppercase tracking-wider text-muted">API key</span>
+          <input
+            className="input font-mono"
+            type="password"
+            value={apiKey}
+            onChange={(e) => {
+              setApiKey(e.target.value);
+              if (e.target.value) setClearKey(false);
+            }}
+            placeholder={
+              data?.apiKeyConfigured
+                ? `Configured (${data.apiKeySource ?? "unknown"}${data.apiKeyPreview ? ` · ${data.apiKeyPreview}` : ""})`
+                : "sk-..."
+            }
+          />
+          <div className="flex items-center justify-between gap-3 text-xxs text-muted">
+            <span>
+              Full keys are stored server-side and are not returned to the browser after save.
+            </span>
+            {data?.settingsApiKeyConfigured && (
+              <label className="inline-flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={clearKey}
+                  onChange={(e) => {
+                    setClearKey(e.target.checked);
+                    if (e.target.checked) setApiKey("");
+                  }}
+                />
+                Clear stored key
+              </label>
+            )}
+          </div>
+        </label>
+
+        <div className="border border-lineSoft rounded-md bg-sidebar/30 px-3 py-2 text-xs text-muted leading-relaxed">
+          OpenAI-compatible providers must accept the OpenAI embeddings API and return{" "}
+          <code className="text-ink">384</code> dimensions for the selected model. Existing
+          vectors are not automatically regenerated when provider or model changes; use Backfill
+          all missing to queue every record that does not have a vector yet.
+        </div>
+
+        {message && (
+          <div className="text-xs text-accentText bg-accentSoft/50 border border-accent/20 rounded-md px-3 py-2">
+            {message}
+          </div>
+        )}
+        {update.error && (
+          <div className="text-xs text-danger">
+            {update.error instanceof Error ? update.error.message : String(update.error)}
+          </div>
+        )}
+        {backfill.error && (
+          <div className="text-xs text-danger">
+            {backfill.error instanceof Error ? backfill.error.message : String(backfill.error)}
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={update.isPending || model.trim().length === 0}
+          >
+            <Check size={11} /> {update.isPending ? "Saving..." : "Save embedding settings"}
+          </button>
+        </div>
+      </form>
+    </>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-line rounded-md bg-surface px-3 py-2">
+      <div className="text-xxs uppercase tracking-wider text-muted">{label}</div>
+      <div className="text-lg font-semibold text-ink mt-0.5">{value}</div>
+    </div>
+  );
+}
+
+function providerLabel(provider: EmbeddingProvider): string {
+  return provider === "openai_compatible" ? "OpenAI-compatible" : "OpenAI";
+}
+
+function statusReasonText(reason: EmbeddingStatusReason): string {
+  switch (reason) {
+    case "ready":
+      return "ready";
+    case "disabled":
+      return "disabled";
+    case "missing_api_key":
+      return "missing API key";
+    case "missing_base_url":
+      return "missing base URL";
+    case "injected":
+      return "using injected test embedder";
+    case "not_loaded":
+      return "configuration not loaded yet";
+  }
 }
 
 // ----------------------------------------------------------------------------

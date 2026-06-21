@@ -141,6 +141,18 @@ export const tokens = pgTable(
   })
 );
 
+export const embeddingSettings = pgTable("embedding_settings", {
+  id: text("id").primaryKey().default("default"),
+  enabled: boolean("enabled").notNull().default(true),
+  provider: text("provider").notNull().default("openai"),
+  model: text("model").notNull().default("text-embedding-3-small"),
+  baseUrl: text("base_url"),
+  apiKey: text("api_key"),
+  dimensions: integer("dimensions").notNull().default(VECTOR_DIMENSIONS),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});
+
 // Browser-facing session cookies. The plaintext is stored in an httpOnly
 // cookie; the row stores sha256(plaintext). On login the user posts the master
 // password (env BOTNOTE_PASSWORD) and we mint a row + set the cookie.
@@ -164,4 +176,5 @@ export type Project = typeof projects.$inferSelect;
 export type Entity = typeof entities.$inferSelect;
 export type Edge = typeof edges.$inferSelect;
 export type Token = typeof tokens.$inferSelect;
+export type EmbeddingSettings = typeof embeddingSettings.$inferSelect;
 export type Session = typeof sessions.$inferSelect;

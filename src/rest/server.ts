@@ -148,7 +148,8 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
           { name: "tasks", description: "Task calendar queries (range + backlog)." },
           { name: "search", description: "Hybrid retrieval." },
           { name: "brief", description: "Opening brief — agent context bundle." },
-          { name: "tokens", description: "API token management." }
+          { name: "tokens", description: "API token management." },
+          { name: "settings", description: "Daemon runtime settings." }
         ]
       },
       transform: jsonSchemaTransform

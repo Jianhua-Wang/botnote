@@ -22,6 +22,11 @@ import {
 } from "../service/projects.js";
 import { search } from "../service/search.js";
 import {
+  embeddingCoverage,
+  getEmbeddingSettings,
+  updateEmbeddingSettings
+} from "../service/embedding_settings.js";
+import {
   createSession,
   revokeSession,
   verifyMasterPassword
@@ -33,11 +38,13 @@ import {
   CreateProjectInput,
   CreateTaskInput,
   CreateTokenInput,
+  EmbeddingBackfillInput,
   LinkInput,
   OpeningBriefInput,
   RecentInput,
   SearchInput,
   TasksRangeInput,
+  UpdateEmbeddingSettingsInput,
   UpdateInput,
   UpdateProjectInput,
   Uuid
@@ -65,13 +72,106 @@ function publicToken(t: Token) {
   };
 }
 
+async function embeddingSettingsResponse(ctx: ServerContext) {
+  const settings = await getEmbeddingSettings(ctx.db);
+  const coverage = await embeddingCoverage(ctx.db);
+  const runtime = ctx.embedding.runtimeStatus();
+  return {
+    enabled: settings.enabled,
+    effectiveEnabled: runtime.enabled,
+    provider: settings.provider,
+    model: settings.model,
+    baseUrl: settings.baseUrl,
+    dimensions: settings.dimensions,
+    apiKeyConfigured: runtime.apiKeyConfigured,
+    settingsApiKeyConfigured: Boolean(settings.apiKey),
+    apiKeySource: runtime.apiKeySource,
+    apiKeyPreview: runtime.apiKeyPreview,
+    statusReason: runtime.reason,
+    pendingCount: ctx.embedding.pendingCount(),
+    totalCount: coverage.totalCount,
+    embeddedCount: coverage.embeddedCount,
+    missingCount: coverage.missingCount,
+    updatedAt: settings.updatedAt
+  };
+}
+
 export async function registerRoutes(
   rawApp: FastifyInstance,
   ctx: ServerContext
 ): Promise<void> {
   const app = rawApp.withTypeProvider<ZodTypeProvider>();
 
-  app.get("/health", async () => ({ ok: true, version: VERSION }));
+  app.get("/health", async () => {
+    const embedding = ctx.embedding.runtimeStatus();
+    return {
+      ok: true,
+      version: VERSION,
+      embedding: {
+        enabled: embedding.enabled,
+        provider: embedding.provider,
+        model: embedding.model,
+        dimensions: embedding.dimensions,
+        reason: embedding.reason
+      }
+    };
+  });
+
+  // ----- settings -----
+
+  app.get(
+    "/v1/settings/embedding",
+    {
+      schema: {
+        tags: ["settings"],
+        summary: "Read embedding provider/model/key status and vector coverage"
+      }
+    },
+    async () => embeddingSettingsResponse(ctx)
+  );
+
+  app.patch(
+    "/v1/settings/embedding",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+      schema: {
+        tags: ["settings"],
+        summary: "Update embedding provider/model/key settings",
+        body: UpdateEmbeddingSettingsInput
+      }
+    },
+    async (req) => {
+      const body = UpdateEmbeddingSettingsInput.parse(req.body);
+      await updateEmbeddingSettings(ctx.db, body);
+      await ctx.embedding.reloadConfig();
+      return embeddingSettingsResponse(ctx);
+    }
+  );
+
+  app.post(
+    "/v1/settings/embedding/backfill",
+    {
+      config: { rateLimit: { max: 20, timeWindow: "1 hour" } },
+      schema: {
+        tags: ["settings"],
+        summary: "Queue missing embeddings for existing notes and tasks",
+        body: EmbeddingBackfillInput.optional()
+      }
+    },
+    async (req) => {
+      const body = EmbeddingBackfillInput.parse(req.body ?? {});
+      const coverage = await embeddingCoverage(ctx.db);
+      const limit = body.limit ?? coverage.missingCount;
+      const queued =
+        limit > 0
+          ? await ctx.embedding.enqueueMissing(limit)
+          : { enqueued: 0, pendingCount: ctx.embedding.pendingCount() };
+      return {
+        ...queued,
+        settings: await embeddingSettingsResponse(ctx)
+      };
+    }
+  );
 
   // ----- projects -----
 

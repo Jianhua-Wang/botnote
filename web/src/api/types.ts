@@ -76,6 +76,49 @@ export interface SearchResponse {
   embeddingUsed: boolean;
 }
 
+export type EmbeddingProvider = "openai" | "openai_compatible";
+export type EmbeddingApiKeySource = "settings" | "environment" | "injected" | null;
+export type EmbeddingStatusReason =
+  | "ready"
+  | "disabled"
+  | "missing_api_key"
+  | "missing_base_url"
+  | "injected"
+  | "not_loaded";
+
+export interface EmbeddingSettings {
+  enabled: boolean;
+  effectiveEnabled: boolean;
+  provider: EmbeddingProvider;
+  model: string;
+  baseUrl: string | null;
+  dimensions: number;
+  apiKeyConfigured: boolean;
+  settingsApiKeyConfigured: boolean;
+  apiKeySource: EmbeddingApiKeySource;
+  apiKeyPreview: string | null;
+  statusReason: EmbeddingStatusReason;
+  pendingCount: number;
+  totalCount: number;
+  embeddedCount: number;
+  missingCount: number;
+  updatedAt: string;
+}
+
+export interface UpdateEmbeddingSettingsInput {
+  enabled?: boolean;
+  provider?: EmbeddingProvider;
+  model?: string;
+  baseUrl?: string | null;
+  apiKey?: string | null;
+}
+
+export interface EmbeddingBackfillResponse {
+  enqueued: number;
+  pendingCount: number;
+  settings: EmbeddingSettings;
+}
+
 export interface OpeningBriefResponse {
   project: Project | null;
   agentsMd: string;

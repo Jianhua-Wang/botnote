@@ -1,6 +1,11 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { EmbeddingService } from "../src/service/embedding.js";
+import {
+  embeddingCoverage,
+  getEmbeddingSettings,
+  updateEmbeddingSettings
+} from "../src/service/embedding_settings.js";
 import { get, link, recent, setBodyVec, update, write } from "../src/service/entities.js";
 import { formatOpeningBrief, openingBrief } from "../src/service/opening_brief.js";
 import {
@@ -20,12 +25,24 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.execute(sql`TRUNCATE entities, edges, projects, tokens, sessions RESTART IDENTITY CASCADE`);
+  await db.execute(sql`
+    TRUNCATE entities, edges, projects, tokens, sessions, embedding_settings
+    RESTART IDENTITY CASCADE
+  `);
 });
 
 afterAll(async () => {
   await pool.end();
 });
+
+async function withEntitiesTouchDisabled(fn: () => Promise<void>): Promise<void> {
+  await db.execute(sql`ALTER TABLE entities DISABLE TRIGGER entities_touch_updated_at`);
+  try {
+    await fn();
+  } finally {
+    await db.execute(sql`ALTER TABLE entities ENABLE TRIGGER entities_touch_updated_at`);
+  }
+}
 
 describe("botnote service", () => {
   it("creates a project and looks it up by key", async () => {
@@ -137,11 +154,13 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    await db.execute(sql`
-      UPDATE entities
-      SET completed_at = ${completedAt}, updated_at = ${completedAt}
-      WHERE id = ${done.id}
-    `);
+    await withEntitiesTouchDisabled(async () => {
+      await db.execute(sql`
+        UPDATE entities
+        SET completed_at = ${completedAt}, updated_at = ${completedAt}
+        WHERE id = ${done.id}
+      `);
+    });
 
     const legacyDone = await write(db, {
       kind: "task",
@@ -154,11 +173,13 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    await db.execute(sql`
-      UPDATE entities
-      SET completed_at = NULL, updated_at = ${legacyUpdatedAt}
-      WHERE id = ${legacyDone.id}
-    `);
+    await withEntitiesTouchDisabled(async () => {
+      await db.execute(sql`
+        UPDATE entities
+        SET completed_at = NULL, updated_at = ${legacyUpdatedAt}
+        WHERE id = ${legacyDone.id}
+      `);
+    });
 
     const dueDay = await tasksRange(db, {
       from: new Date("2026-06-01T00:00:00.000Z"),
@@ -345,6 +366,51 @@ describe("botnote service", () => {
     expect(await svc.embedQuery("hello")).toBeNull();
   });
 
+  it("embedding settings persist and reload the runtime", async () => {
+    const initial = await getEmbeddingSettings(db);
+    expect(initial.enabled).toBe(true);
+    expect(initial.model).toBe("text-embedding-3-small");
+
+    const svc = new EmbeddingService(db);
+    const missing = await svc.reloadConfig();
+    expect(missing.enabled).toBe(false);
+    expect(missing.reason).toBe("missing_api_key");
+
+    await updateEmbeddingSettings(db, {
+      provider: "openai",
+      model: "text-embedding-3-large",
+      apiKey: "sk-test"
+    });
+
+    const ready = await svc.reloadConfig();
+    expect(ready.enabled).toBe(true);
+    expect(ready.model).toBe("text-embedding-3-large");
+    expect(ready.apiKeySource).toBe("settings");
+    expect(ready.apiKeyPreview).toBe("configured");
+  });
+
+  it("openai-compatible embedding settings require a base URL", async () => {
+    await updateEmbeddingSettings(db, {
+      provider: "openai_compatible",
+      model: "custom-384",
+      apiKey: "sk-compatible"
+    });
+
+    const svc = new EmbeddingService(db);
+    const missingBaseUrl = await svc.reloadConfig();
+    expect(missingBaseUrl.enabled).toBe(false);
+    expect(missingBaseUrl.reason).toBe("missing_base_url");
+
+    await updateEmbeddingSettings(db, {
+      baseUrl: "https://embeddings.example.com/v1"
+    });
+
+    const ready = await svc.reloadConfig();
+    expect(ready.enabled).toBe(true);
+    expect(ready.provider).toBe("openai_compatible");
+    expect(ready.baseUrl).toBe("https://embeddings.example.com/v1");
+  });
+
   it("stores recoverable API token plaintext for Settings copy", async () => {
     const { plaintext } = await createToken(db, { name: "laptop" });
     expect(plaintext).toMatch(/^bn_[0-9a-f]{48}$/);
@@ -382,6 +448,48 @@ describe("botnote service", () => {
     const fetched = await get(db, note.id);
     expect(fetched?.bodyVec).not.toBeNull();
     expect(fetched?.bodyVec?.length).toBe(384);
+  });
+
+  it("embedding backfill queues only entities without vectors", async () => {
+    const p = await createProject(db, { key: "BFI", name: "Backfill" });
+    const missing = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Needs embedding",
+      body: "queue this one",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const alreadyEmbedded = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Already embedded",
+      body: "skip this one",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    await setBodyVec(db, alreadyEmbedded.id, new Array(384).fill(0.2));
+
+    const before = await embeddingCoverage(db);
+    expect(before.missingCount).toBe(1);
+    expect(before.embeddedCount).toBe(1);
+
+    const svc = new EmbeddingService(db, {
+      embedFn: async () => new Array(384).fill(0.4),
+      logger: () => undefined
+    });
+    const queued = await svc.enqueueMissing(10);
+    expect(queued.enqueued).toBe(1);
+    await svc.drain(5000);
+
+    const fetchedMissing = await get(db, missing.id);
+    const fetchedExisting = await get(db, alreadyEmbedded.id);
+    expect(fetchedMissing?.bodyVec?.[0]).toBe(0.4);
+    expect(fetchedExisting?.bodyVec?.[0]).toBe(0.2);
   });
 
   it("embedding queue retries on transient failure", async () => {
