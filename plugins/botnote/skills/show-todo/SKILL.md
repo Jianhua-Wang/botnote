@@ -12,7 +12,7 @@ When the user asks for today's todo/context:
 3. Add one concise line at the end if a specific project looks worth opening, for example:
 
 ```text
-Use $start-work <KEY> to load deeper context for a project.
+Use $start-work <TASK-KEY> to pick up a task, or $start-work <PROJECT-KEY> to load project context.
 ```
 
 4. If the user starts working from this context, use recall/search for prior context and remember durable decisions, gotchas, and handoff notes as the work progresses.

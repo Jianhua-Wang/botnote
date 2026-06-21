@@ -272,7 +272,7 @@ npm i -g botnote@latest`;
   const useBlock = `/botnote:today              # today + overdue
 /botnote:show-todo          # open work across projects
 /botnote:add-task "..."     # create a task
-/botnote:start-work DEMO    # pick up project work
+/botnote:start-work DEMO-12 # pick up a task with project context
 /botnote:remember "..."     # capture a note
 /botnote:recall "..."       # hybrid search
 /botnote:done               # mark current focus done`;

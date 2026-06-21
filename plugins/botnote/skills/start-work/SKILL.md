@@ -1,27 +1,45 @@
 ---
 name: start-work
-description: Load full context for a specific botnote project before working on it. Triggered by /start-work KEY or when the user asks to work on a project.
+description: Start or resume focused work from a botnote task key/id, loading the task plus its project context. Also supports project-key context loading when the user has not chosen a task yet. Triggered by /start-work TASK-KEY, /start-work PROJECT-KEY, or when the user asks to pick up work.
 ---
 
-When invoked with a project key:
+Prefer task-first starts. Project-only starts are for orientation before a task is chosen.
 
-Argument: `<project-key>`.
+Argument: `<task-key-or-project-key>`.
 
-1. Call `mcp__botnote__get_project` with `key: "<KEY>"` to resolve the project's UUID and confirm it exists.
-   - If the project is not found, report `unknown project: <KEY>` and call `mcp__botnote__list_projects` to show available projects.
+1. Resolve the argument.
+   - If it looks like a task key, such as `BOT-42` or `T2DF-7`, call `mcp__botnote__get_entity_by_key` with `key: "<KEY>"`.
+   - If the exact task is not found, call `mcp__botnote__search` with `kind: "task"` and a query made from the argument, then ask the user to choose if there is more than one plausible match.
+   - If it looks like a project key, such as `BOT` or `T2DF`, call `mcp__botnote__get_project` with `key: "<KEY>"`.
+   - If neither path resolves, call `mcp__botnote__list_projects` and ask the user which project or task they meant.
 
-2. Call `mcp__botnote__opening_brief` with the resolved `projectId`.
+2. When a task is resolved:
+   - Confirm the entity is a task. If it is not, briefly say what was found and ask for a task key.
+   - Use the task's `projectId` when present and call `mcp__botnote__opening_brief` with that `projectId`; otherwise call `mcp__botnote__opening_brief` without a `projectId`.
+   - If the task is `open`, update it to `in_progress` with `mcp__botnote__update_entity`, `actorKind: "agent"`, and an idempotency key for this start-work action.
+   - If the task is already `in_progress`, continue without changing it.
+   - If the task is `done`, `cancelled`, or otherwise terminal, do not reopen it automatically; ask whether the user wants to reopen or only review context.
 
-3. Render the brief's `markdown` field verbatim. It includes:
+3. When only a project is resolved:
+   - Call `mcp__botnote__opening_brief` with the resolved `projectId`.
+   - Render the brief and ask which task the user wants to start. Do not auto-pick a task unless the user clearly named one.
+
+4. Render the brief's `markdown` field verbatim. It includes:
    - AGENTS.md project conventions
    - pinned notes
    - open tasks
    - recent activity
 
-4. Treat botnote as working memory while doing the project work.
+5. For task starts, add a concise focused-task summary after the brief:
+   - task key/title
+   - status
+   - due date and priority when present
+   - one-line next action if it is obvious from the task body
+
+6. Treat botnote as working memory while doing the work.
    - Use `mcp__botnote__search` or `/botnote:recall` when prior decisions, related notes, similar tasks, or missing context could matter.
    - Use `mcp__botnote__remember` or `/botnote:remember` to preserve durable decisions, gotchas, useful findings, handoff notes, and final summaries.
 
-5. After the brief, ask the user what they want to do. Do not auto-pick a task.
+7. After loading the focused context, ask the user what they want to do next unless they already gave a concrete implementation request.
 
-This skill loads context; it does not commit to work by itself.
+This skill starts a focused working session. It may mark an open task `in_progress`, but it should not mark work done, cancel work, or create replacement tasks without user confirmation.

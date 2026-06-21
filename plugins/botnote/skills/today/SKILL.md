@@ -9,7 +9,7 @@ When invoked:
 
 2. Render the returned `markdown` field verbatim. The daemon formats sections such as AGENTS.md, Pinned Notes, Open Tasks, and Recent Activity.
 
-3. After the brief, add a single line if a project looks worth opening, suggesting `/start-work <KEY>` for deeper context.
+3. After the brief, add a single line if a task or project looks worth opening, suggesting `/start-work <TASK-KEY>` to pick up a task or `/start-work <PROJECT-KEY>` for project context.
 
 4. If the user continues into project work, use recall/search for prior context and remember durable decisions, gotchas, and handoff notes as the work progresses.
 

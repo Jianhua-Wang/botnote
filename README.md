@@ -160,7 +160,7 @@ Slash commands:
 /botnote:today              # today + overdue
 /botnote:remember "..."     # capture a note via MCP
 /botnote:recall "..."       # hybrid search
-/botnote:start-work DEMO    # pickup workflow on a project
+/botnote:start-work DEMO-12 # pick up a task with project context
 /botnote:done               # mark current focus done
 /botnote:add-task "..."     # capture a task without starting it
 /botnote:show-todo          # workspace task/context summary
