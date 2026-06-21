@@ -1,12 +1,13 @@
 import { markdown } from "@codemirror/lang-markdown";
 import CodeMirror from "@uiw/react-codemirror";
 import {
+  Check,
   ChevronRight,
   Cloud,
   CloudUpload,
-  ExternalLink,
   Link2,
   Loader2,
+  Pencil,
   Pin,
   Trash2,
   X
@@ -90,6 +91,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   const [status, setStatus] = useState("open");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Priority>("none");
+  const [isEditing, setIsEditing] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const initializedFor = useRef<string | null>(null);
 
@@ -104,18 +106,18 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     setStatus(entity.status);
     setDueDate(entity.dueAt ? entity.dueAt.slice(0, 10) : "");
     setPriority(entity.priority);
+    setIsEditing(false);
     setSaveState("idle");
     initializedFor.current = entity.id;
   }, [entity?.id, entity]);
 
   // Compute the diff between local draft and persisted entity.
   const diff = useMemo(() => {
-    if (!entity || initializedFor.current !== entity.id) return null;
+    if (!isEditing || !entity || initializedFor.current !== entity.id) return null;
     const isNote = entity.kind === "note";
     const trimmedTitle = title.trim();
     const draftTitle = trimmedTitle ? trimmedTitle : isNote ? null : trimmedTitle;
     const draftTags = tagsStr.split(",").map((t) => t.trim()).filter(Boolean);
-    const draftDue = dueDate ? new Date(dueDate).toISOString() : null;
 
     const out: Record<string, unknown> = {};
     if (draftTitle !== (entity.title ?? "")) {
@@ -128,14 +130,16 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     if (JSON.stringify(draftTags) !== JSON.stringify(entity.tags)) out.tags = draftTags;
     if (status !== entity.status) out.status = status;
     if (priority !== entity.priority) out.priority = priority;
-    const currentDue = entity.dueAt ?? null;
-    if (draftDue !== currentDue) out.dueAt = draftDue;
+    const currentDueDate = entity.dueAt ? entity.dueAt.slice(0, 10) : "";
+    if (dueDate !== currentDueDate) {
+      out.dueAt = dueDate ? new Date(dueDate).toISOString() : null;
+    }
     return out;
-  }, [entity, title, body, tagsStr, status, priority, dueDate]);
+  }, [isEditing, entity, title, body, tagsStr, status, priority, dueDate]);
 
   // Debounced auto-save.
   useEffect(() => {
-    if (!entity || !diff || Object.keys(diff).length === 0) return;
+    if (!isEditing || !entity || !diff || Object.keys(diff).length === 0) return;
     setSaveState("idle");
     const t = setTimeout(async () => {
       setSaveState("saving");
@@ -148,7 +152,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     }, AUTOSAVE_DELAY_MS);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diff]);
+  }, [isEditing, diff]);
 
   if (isLoading || !entity) {
     return (
@@ -161,9 +165,37 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     );
   }
 
-  const project = projects?.find((p) => p.id === entity.projectId);
+  const loadedEntity = entity;
+  const project = projects?.find((p) => p.id === loadedEntity.projectId);
   const linkPrefix = project ? `/p/${project.key}` : "";
-  const isNote = entity.kind === "note";
+  const isNote = loadedEntity.kind === "note";
+  const isDirty = diff ? Object.keys(diff).length > 0 : false;
+
+  function startEditing() {
+    setTitle(loadedEntity.title ?? "");
+    setBody(loadedEntity.body);
+    setTagsStr(loadedEntity.tags.join(", "));
+    setStatus(loadedEntity.status);
+    setDueDate(loadedEntity.dueAt ? loadedEntity.dueAt.slice(0, 10) : "");
+    setPriority(loadedEntity.priority);
+    setSaveState("idle");
+    setIsEditing(true);
+  }
+
+  async function finishEditing() {
+    if (!isDirty || !diff) {
+      setIsEditing(false);
+      return;
+    }
+    setSaveState("saving");
+    try {
+      await update.mutateAsync({ id: loadedEntity.id, fields: diff });
+      setSaveState("saved");
+      setIsEditing(false);
+    } catch {
+      setSaveState("error");
+    }
+  }
 
   async function remove() {
     if (!confirm(`Delete "${displayTitle(entity!)}"? This cannot be undone.`)) return;
@@ -201,7 +233,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
           )}
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          <SaveIndicator state={saveState} dirty={diff ? Object.keys(diff).length > 0 : false} />
+          {isEditing && <SaveIndicator state={saveState} dirty={isDirty} />}
           {isNote && (
             <button
               className={`p-1 -m-1 rounded hover:bg-sidebar ${
@@ -215,14 +247,22 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
               <Pin size={13} fill={entity.pinned ? "currentColor" : "none"} />
             </button>
           )}
-          {project && (
-            <Link
-              to={`/p/${project.key}/e/${entity.id}`}
+          {isEditing ? (
+            <button
               className="p-1 -m-1 text-faint hover:text-ink rounded hover:bg-sidebar"
-              title="Open as full page"
+              onClick={finishEditing}
+              title="Finish editing"
             >
-              <ExternalLink size={13} />
-            </Link>
+              <Check size={13} />
+            </button>
+          ) : (
+            <button
+              className="p-1 -m-1 text-faint hover:text-ink rounded hover:bg-sidebar"
+              onClick={startEditing}
+              title="Edit"
+            >
+              <Pencil size={13} />
+            </button>
           )}
           <button
             className="p-1 -m-1 text-faint hover:text-danger rounded hover:bg-danger/10"
@@ -236,17 +276,28 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <div className="px-6 py-5 space-y-4">
-          <input
-            className={`w-full text-lg font-semibold bg-transparent border-none outline-none focus:outline-none px-0 py-1 ${
-              !title ? "placeholder:text-muted/60 placeholder:italic" : ""
-            }`}
-            value={title}
-            placeholder={isNote ? "Untitled" : "Title"}
-            onChange={(e) => setTitle(e.target.value)}
-            autoFocus
-          />
+          {isEditing ? (
+            <input
+              className={`w-full text-lg font-semibold bg-transparent border-none outline-none focus:outline-none px-0 py-1 ${
+                !title ? "placeholder:text-muted/60 placeholder:italic" : ""
+              }`}
+              value={title}
+              placeholder={isNote ? "Untitled" : "Title"}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+            />
+          ) : (
+            <h2
+              className={`text-lg font-semibold py-1 ${
+                isUntitled(entity) ? "italic text-muted" : "text-ink"
+              }`}
+            >
+              {displayTitle(entity)}
+            </h2>
+          )}
 
           <MetaRow
+            isEditing={isEditing}
             isTask={entity.kind === "task"}
             status={status}
             setStatus={setStatus}
@@ -279,23 +330,31 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
           )}
 
           <div className="border border-line rounded-md overflow-hidden bg-surface">
-            <CodeMirror
-              value={body}
-              onChange={(v) => setBody(v)}
-              extensions={[markdown()]}
-              basicSetup={{
-                lineNumbers: false,
-                foldGutter: false,
-                highlightActiveLine: false,
-                highlightActiveLineGutter: false
-              }}
-              theme="light"
-              minHeight="220px"
-              placeholder="Write in Markdown…"
-            />
+            {isEditing ? (
+              <CodeMirror
+                value={body}
+                onChange={(v) => setBody(v)}
+                extensions={[markdown()]}
+                basicSetup={{
+                  lineNumbers: false,
+                  foldGutter: false,
+                  highlightActiveLine: false,
+                  highlightActiveLineGutter: false
+                }}
+                theme="light"
+                minHeight="220px"
+                placeholder="Write in Markdown…"
+              />
+            ) : body ? (
+              <div className="min-h-[120px] p-3">
+                <MarkdownView body={body} />
+              </div>
+            ) : (
+              <div className="min-h-[120px] p-3 text-xs text-faint">No description.</div>
+            )}
           </div>
 
-          {body && (
+          {isEditing && body && (
             <details className="text-xxs text-muted">
               <summary className="cursor-pointer hover:text-ink">Preview rendered Markdown</summary>
               <div className="mt-2 p-3 border border-line rounded bg-sidebar/30">
@@ -327,6 +386,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 function MetaRow({
+  isEditing,
   isTask,
   status,
   setStatus,
@@ -340,6 +400,7 @@ function MetaRow({
   createdAt,
   actorKind
 }: {
+  isEditing: boolean;
   isTask: boolean;
   status: string;
   setStatus: (s: string) => void;
@@ -360,53 +421,69 @@ function MetaRow({
           <span className="text-faint">Status</span>
           <span className="flex items-center gap-1.5">
             <StatusCircle status={status} size={12} />
-            <select
-              className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              {TASK_STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABEL[s] ?? s}
-                </option>
-              ))}
-            </select>
+            {isEditing ? (
+              <select
+                className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                {TASK_STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABEL[s] ?? s}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-ink">{STATUS_LABEL[status] ?? status}</span>
+            )}
           </span>
 
           <span className="text-faint">Due</span>
           <span className="flex items-center gap-1.5">
-            <input
-              type="date"
-              className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-            />
-            {!dueDate && <span className="text-faint text-xxs">inbox</span>}
-            {dueDate && (
-              <button
-                className="text-faint hover:text-danger text-xxs"
-                onClick={() => setDueDate("")}
-                title="Clear"
-              >
-                ✕
-              </button>
+            {isEditing ? (
+              <>
+                <input
+                  type="date"
+                  className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                />
+                {!dueDate && <span className="text-faint text-xxs">inbox</span>}
+                {dueDate && (
+                  <button
+                    className="text-faint hover:text-danger text-xxs"
+                    onClick={() => setDueDate("")}
+                    title="Clear"
+                  >
+                    ✕
+                  </button>
+                )}
+              </>
+            ) : (
+              <span className={dueDate ? "text-ink" : "text-faint text-xxs"}>
+                {dueDate || "inbox"}
+              </span>
             )}
           </span>
 
           <span className="text-faint">Priority</span>
           <span className="flex items-center gap-1.5">
             <PriorityIcon priority={priority} size={12} />
-            <select
-              className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as Priority)}
-            >
-              {PRIORITY_LEVELS.map((p) => (
-                <option key={p} value={p}>
-                  {PRIORITY_LABEL[p]}
-                </option>
-              ))}
-            </select>
+            {isEditing ? (
+              <select
+                className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as Priority)}
+              >
+                {PRIORITY_LEVELS.map((p) => (
+                  <option key={p} value={p}>
+                    {PRIORITY_LABEL[p]}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-ink">{PRIORITY_LABEL[priority]}</span>
+            )}
           </span>
 
           {status === "done" && (
@@ -421,12 +498,18 @@ function MetaRow({
       )}
 
       <span className="text-faint">Tags</span>
-      <input
-        className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
-        value={tagsStr}
-        onChange={(e) => setTagsStr(e.target.value)}
-        placeholder="comma, separated"
-      />
+      {isEditing ? (
+        <input
+          className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+          value={tagsStr}
+          onChange={(e) => setTagsStr(e.target.value)}
+          placeholder="comma, separated"
+        />
+      ) : (
+        <span className={tagsStr ? "text-muted" : "text-faint"}>
+          {tagsStr || "none"}
+        </span>
+      )}
 
       <span className="text-faint">Created</span>
       <span className="text-muted">
