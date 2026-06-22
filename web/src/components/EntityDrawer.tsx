@@ -23,7 +23,7 @@ import {
   useRelatedEntities,
   useUpdateEntity
 } from "../api/hooks";
-import { PRIORITY_LEVELS, type EntityKind, type Priority } from "../api/types";
+import { PRIORITY_LEVELS, type Entity, type EntityKind, type Priority } from "../api/types";
 import { useDrawer } from "../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
 import { useModals } from "../state/modals";
@@ -36,7 +36,7 @@ import {
   STATUS_LABEL,
   TASK_STATUS_OPTIONS
 } from "./tasks/icons";
-import { nextToggleStatus, statusToggleLabel } from "./tasks/StatusToggleButton";
+import { StatusPickerButton } from "./tasks/StatusPickerButton";
 
 const AUTOSAVE_DELAY_MS = 600;
 
@@ -204,17 +204,6 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     onClose();
   }
 
-  function toggleTaskStatus() {
-    if (loadedEntity.kind !== "task") return;
-    const currentStatus = status;
-    const nextStatus = nextToggleStatus(currentStatus);
-    setStatus(nextStatus);
-    update.mutate(
-      { id: loadedEntity.id, fields: { status: nextStatus } },
-      { onError: () => setStatus(currentStatus) }
-    );
-  }
-
   return (
     <>
       <header className="h-12 px-3 border-b border-line flex items-center gap-2 shrink-0">
@@ -322,7 +311,8 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
             completedAt={entity.completedAt}
             createdAt={entity.createdAt}
             actorKind={entity.actorKind}
-            onToggleStatus={toggleTaskStatus}
+            task={loadedEntity.kind === "task" ? { ...loadedEntity, status } : undefined}
+            onStatusChange={setStatus}
           />
 
           {isNote && parentEntity && (
@@ -412,7 +402,8 @@ function MetaRow({
   completedAt,
   createdAt,
   actorKind,
-  onToggleStatus
+  task,
+  onStatusChange
 }: {
   isEditing: boolean;
   isTask: boolean;
@@ -427,7 +418,8 @@ function MetaRow({
   completedAt: string | null;
   createdAt: string;
   actorKind: string;
-  onToggleStatus?: () => void;
+  task?: Entity;
+  onStatusChange?: (status: string) => void;
 }) {
   return (
     <div className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 items-center text-xs">
@@ -435,18 +427,10 @@ function MetaRow({
         <>
           <span className="text-faint">Status</span>
           <span className="flex items-center gap-1.5">
-            {isEditing || !onToggleStatus ? (
+            {isEditing || !task ? (
               <StatusCircle status={status} size={12} />
             ) : (
-              <button
-                type="button"
-                className="inline-flex shrink-0 items-center justify-center rounded p-0.5 -m-0.5 hover:bg-line/40"
-                onClick={onToggleStatus}
-                title={`${statusToggleLabel(status)} (${STATUS_LABEL[status] ?? status})`}
-                aria-label={statusToggleLabel(status)}
-              >
-                <StatusCircle status={status} size={12} />
-              </button>
+              <StatusPickerButton task={task} size={12} onStatusChange={onStatusChange} />
             )}
             {isEditing ? (
               <select

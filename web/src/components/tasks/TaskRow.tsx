@@ -5,7 +5,7 @@ import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { PriorityIcon, PRIORITY_LABEL } from "./icons";
 import { PopoverMenu } from "./PopoverMenu";
-import { StatusToggleButton } from "./StatusToggleButton";
+import { StatusPickerButton } from "./StatusPickerButton";
 
 const PRIORITY_OPTIONS: Priority[] = ["urgent", "high", "medium", "low", "none"];
 
@@ -38,7 +38,7 @@ export function TaskRow({
       className={`task-row group ${compact ? "!h-7 text-xs" : ""}`}
       onClick={() => drawer.open(task.id)}
     >
-      <StatusToggleButton task={task} />
+      <StatusPickerButton task={task} />
 
       {idLabel && !compact && (
         <span className="font-mono text-xxs text-faint tabular-nums shrink-0">{idLabel}</span>

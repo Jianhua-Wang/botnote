@@ -2,7 +2,7 @@ import type { Entity, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { PriorityIcon } from "./icons";
-import { StatusToggleButton } from "./StatusToggleButton";
+import { StatusPickerButton } from "./StatusPickerButton";
 
 export function TaskChip({ task, project }: { task: Entity; project?: Project }) {
   const drawer = useDrawer();
@@ -37,7 +37,7 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
         className="w-[2px] self-stretch rounded-sm shrink-0"
         style={{ backgroundColor: project?.color ?? "#a8a8af" }}
       />
-      <StatusToggleButton task={task} size={11} />
+      <StatusPickerButton task={task} size={11} />
       <span
         className={`truncate flex-1 min-w-0 ${
           task.status === "done"
