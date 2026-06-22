@@ -8,10 +8,10 @@
   "homepage": "https://botnote.net",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jianhua-wang/botnote.git"
+    "url": "https://github.com/Jianhua-Wang/botnote"
   },
   "bugs": {
-    "url": "https://github.com/jianhua-wang/botnote/issues"
+    "url": "https://github.com/Jianhua-Wang/botnote/issues"
   },
   "keywords": [
     "agents",
