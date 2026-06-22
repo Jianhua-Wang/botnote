@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+
+type MenuPosition = {
+  top: number;
+  left: number;
+};
 
 export function PopoverMenu({
   trigger,
@@ -10,12 +16,43 @@ export function PopoverMenu({
   align?: "start" | "end";
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<MenuPosition | null>(null);
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const updatePosition = useCallback(() => {
+    const triggerEl = triggerRef.current;
+    const menuEl = menuRef.current;
+    if (!triggerEl || !menuEl) return;
+
+    const viewportPadding = 8;
+    const gap = 4;
+    const triggerRect = triggerEl.getBoundingClientRect();
+    const menuWidth = menuEl.offsetWidth;
+    const menuHeight = menuEl.offsetHeight;
+    const maxLeft = window.innerWidth - menuWidth - viewportPadding;
+    const belowTop = triggerRect.bottom + gap;
+    const aboveTop = triggerRect.top - menuHeight - gap;
+    const hasRoomBelow = belowTop + menuHeight <= window.innerHeight - viewportPadding;
+    const hasRoomAbove = aboveTop >= viewportPadding;
+    const rawLeft = align === "end" ? triggerRect.right - menuWidth : triggerRect.left;
+    const rawTop = hasRoomBelow || !hasRoomAbove ? belowTop : aboveTop;
+    const maxTop = window.innerHeight - menuHeight - viewportPadding;
+
+    setPosition({
+      top: Math.min(Math.max(viewportPadding, rawTop), Math.max(viewportPadding, maxTop)),
+      left: Math.min(Math.max(viewportPadding, rawLeft), Math.max(viewportPadding, maxLeft))
+    });
+  }, [align]);
 
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        !triggerRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
         setOpen(false);
       }
     };
@@ -30,9 +67,27 @@ export function PopoverMenu({
     };
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+
+    updatePosition();
+    const frame = window.requestAnimationFrame(updatePosition);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, updatePosition]);
+
   return (
-    <div className="relative" ref={ref}>
+    <>
       <span
+        ref={triggerRef}
         onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
@@ -40,14 +95,23 @@ export function PopoverMenu({
       >
         {trigger}
       </span>
-      {open && (
-        <div
-          className={`popover top-full mt-1 ${align === "end" ? "right-0" : "left-0"}`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {children(() => setOpen(false))}
-        </div>
-      )}
-    </div>
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="popover"
+            style={{
+              position: "fixed",
+              top: position?.top ?? -9999,
+              left: position?.left ?? -9999,
+              visibility: position ? "visible" : "hidden"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {children(() => setOpen(false))}
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
