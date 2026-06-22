@@ -229,7 +229,7 @@ claude plugin update botnote@botnote`;
 
   const codexInstallBlock = `# No full source checkout required.
 codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \\
-  --sparse marketplace.json \\
+  --sparse .agents/plugins \\
   --sparse plugins/botnote
 
 codex plugin add botnote@botnote-plugins`;

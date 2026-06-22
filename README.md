@@ -179,14 +179,14 @@ from the public repository without a full source checkout:
 
 ```bash
 codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \
-  --sparse marketplace.json \
+  --sparse .agents/plugins \
   --sparse plugins/botnote
 
 codex plugin add botnote@botnote-plugins
 ```
 
-The repo also keeps a `.agents/plugins/marketplace.json` entry for Codex clients
-that still discover marketplace files from that path.
+The sparse checkout must include `.agents/plugins`, because Codex discovers the
+marketplace manifest from `.agents/plugins/marketplace.json`.
 
 For local plugin development, add this marketplace entry to
 `.agents/plugins/marketplace.json` in the repo:
