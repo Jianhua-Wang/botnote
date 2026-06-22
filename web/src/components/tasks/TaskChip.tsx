@@ -1,7 +1,8 @@
 import type { Entity, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
-import { PriorityIcon, StatusCircle } from "./icons";
+import { PriorityIcon } from "./icons";
+import { StatusToggleButton } from "./StatusToggleButton";
 
 export function TaskChip({ task, project }: { task: Entity; project?: Project }) {
   const drawer = useDrawer();
@@ -12,8 +13,9 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
     task.status !== "in_progress";
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData("text/task-id", task.id);
@@ -21,6 +23,11 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
         e.stopPropagation();
       }}
       onClick={() => drawer.open(task.id)}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        drawer.open(task.id);
+      }}
       className={`group w-full text-left flex items-center gap-1.5 pl-1 pr-1.5 py-1 rounded text-xs hover:bg-sidebarHover transition-colors cursor-grab active:cursor-grabbing ${
         overdue ? "bg-danger/5" : ""
       }`}
@@ -30,7 +37,7 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
         className="w-[2px] self-stretch rounded-sm shrink-0"
         style={{ backgroundColor: project?.color ?? "#a8a8af" }}
       />
-      <StatusCircle status={task.status} size={11} />
+      <StatusToggleButton task={task} size={11} />
       <span
         className={`truncate flex-1 min-w-0 ${
           task.status === "done"
@@ -45,6 +52,6 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
         {displayTitle(task)}
       </span>
       {task.priority !== "none" && <PriorityIcon priority={task.priority} size={11} />}
-    </button>
+    </div>
   );
 }

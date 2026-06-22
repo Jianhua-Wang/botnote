@@ -4,7 +4,8 @@ import { useUpdateEntity } from "../../api/hooks";
 import type { Entity, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
-import { PriorityIcon, StatusCircle } from "../tasks/icons";
+import { PriorityIcon } from "../tasks/icons";
+import { StatusToggleButton } from "../tasks/StatusToggleButton";
 import { useModals } from "../../state/modals";
 
 const COLUMNS: Array<{ status: string; label: string; intent: string }> = [
@@ -112,7 +113,6 @@ function KanbanColumn({
 
 function KanbanCard({ task, project }: { task: Entity; project: Project }) {
   const drawer = useDrawer();
-  const update = useUpdateEntity();
   const overdue =
     task.dueAt &&
     new Date(task.dueAt).getTime() < Date.now() &&
@@ -133,19 +133,7 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
       className="group bg-surface border border-line rounded p-2 cursor-grab active:cursor-grabbing hover:border-accent transition-colors"
     >
       <div className="flex items-start gap-1.5">
-        <button
-          className="shrink-0 mt-0.5"
-          onClick={(e) => {
-            e.stopPropagation();
-            update.mutate({
-              id: task.id,
-              fields: { status: task.status === "done" ? "open" : "done" }
-            });
-          }}
-          title={task.status === "done" ? "Reopen" : "Mark done"}
-        >
-          <StatusCircle status={task.status} size={13} />
-        </button>
+        <StatusToggleButton task={task} size={13} className="mt-0.5" />
         <span
           className={`flex-1 min-w-0 text-sm leading-snug ${
             task.status === "done"

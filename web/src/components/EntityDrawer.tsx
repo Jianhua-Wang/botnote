@@ -36,6 +36,7 @@ import {
   STATUS_LABEL,
   TASK_STATUS_OPTIONS
 } from "./tasks/icons";
+import { nextToggleStatus, statusToggleLabel } from "./tasks/StatusToggleButton";
 
 const AUTOSAVE_DELAY_MS = 600;
 
@@ -203,6 +204,17 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     onClose();
   }
 
+  function toggleTaskStatus() {
+    if (loadedEntity.kind !== "task") return;
+    const currentStatus = status;
+    const nextStatus = nextToggleStatus(currentStatus);
+    setStatus(nextStatus);
+    update.mutate(
+      { id: loadedEntity.id, fields: { status: nextStatus } },
+      { onError: () => setStatus(currentStatus) }
+    );
+  }
+
   return (
     <>
       <header className="h-12 px-3 border-b border-line flex items-center gap-2 shrink-0">
@@ -310,6 +322,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
             completedAt={entity.completedAt}
             createdAt={entity.createdAt}
             actorKind={entity.actorKind}
+            onToggleStatus={toggleTaskStatus}
           />
 
           {isNote && parentEntity && (
@@ -398,7 +411,8 @@ function MetaRow({
   setTagsStr,
   completedAt,
   createdAt,
-  actorKind
+  actorKind,
+  onToggleStatus
 }: {
   isEditing: boolean;
   isTask: boolean;
@@ -413,6 +427,7 @@ function MetaRow({
   completedAt: string | null;
   createdAt: string;
   actorKind: string;
+  onToggleStatus?: () => void;
 }) {
   return (
     <div className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 items-center text-xs">
@@ -420,7 +435,19 @@ function MetaRow({
         <>
           <span className="text-faint">Status</span>
           <span className="flex items-center gap-1.5">
-            <StatusCircle status={status} size={12} />
+            {isEditing || !onToggleStatus ? (
+              <StatusCircle status={status} size={12} />
+            ) : (
+              <button
+                type="button"
+                className="inline-flex shrink-0 items-center justify-center rounded p-0.5 -m-0.5 hover:bg-line/40"
+                onClick={onToggleStatus}
+                title={`${statusToggleLabel(status)} (${STATUS_LABEL[status] ?? status})`}
+                aria-label={statusToggleLabel(status)}
+              >
+                <StatusCircle status={status} size={12} />
+              </button>
+            )}
             {isEditing ? (
               <select
                 className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"

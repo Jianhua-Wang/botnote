@@ -3,10 +3,10 @@ import { useDeleteEntity, useUpdateEntity } from "../../api/hooks";
 import type { Entity, Priority, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
-import { PriorityIcon, PRIORITY_LABEL, StatusCircle, STATUS_LABEL, TASK_STATUS_OPTIONS } from "./icons";
+import { PriorityIcon, PRIORITY_LABEL } from "./icons";
 import { PopoverMenu } from "./PopoverMenu";
+import { StatusToggleButton } from "./StatusToggleButton";
 
-const STATUS_OPTIONS = TASK_STATUS_OPTIONS;
 const PRIORITY_OPTIONS: Priority[] = ["urgent", "high", "medium", "low", "none"];
 
 export function TaskRow({
@@ -38,38 +38,7 @@ export function TaskRow({
       className={`task-row group ${compact ? "!h-7 text-xs" : ""}`}
       onClick={() => drawer.open(task.id)}
     >
-      <PopoverMenu
-        trigger={
-          <button
-            className="shrink-0 p-0.5 -m-0.5 rounded hover:bg-line/40"
-            onClick={(e) => e.stopPropagation()}
-            title={STATUS_LABEL[task.status] ?? task.status}
-          >
-            <StatusCircle status={task.status} />
-          </button>
-        }
-        align="start"
-      >
-        {(close) => (
-          <>
-            {STATUS_OPTIONS.map((s) => (
-              <button
-                key={s}
-                className="popover-item"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  update.mutate({ id: task.id, fields: { status: s } });
-                  close();
-                }}
-              >
-                <StatusCircle status={s} size={12} />
-                <span>{STATUS_LABEL[s] ?? s}</span>
-                {task.status === s && <span className="ml-auto text-faint">✓</span>}
-              </button>
-            ))}
-          </>
-        )}
-      </PopoverMenu>
+      <StatusToggleButton task={task} />
 
       {idLabel && !compact && (
         <span className="font-mono text-xxs text-faint tabular-nums shrink-0">{idLabel}</span>
