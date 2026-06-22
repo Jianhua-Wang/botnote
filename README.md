@@ -145,7 +145,7 @@ setup is required.
 
 ```text
 # In Claude Code
-/plugin marketplace add jianhuawang/botnote
+/plugin marketplace add jianhua-wang/botnote
 /plugin install botnote@botnote
 
 # Claude Code will prompt for:
@@ -167,7 +167,7 @@ Slash commands:
 ```
 
 Plugin distribution lives at
-[jianhuawang/botnote](https://github.com/jianhuawang/botnote). The MCP server
+[jianhua-wang/botnote](https://github.com/jianhua-wang/botnote). The MCP server
 inside the plugin uses the URL + token from the install prompt. A global
 `botnote` CLI install is optional: the plugin runs `npx -y botnote@<plugin-version> mcp`
 when no matching local CLI is available.
@@ -178,8 +178,8 @@ Add the plugin through `/settings -> plugin` in Codex, or add this marketplace
 from the public repository without a full source checkout:
 
 ```bash
-codex plugin marketplace add https://github.com/jianhuawang/botnote.git \
-  --sparse .codex-plugin \
+codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \
+  --sparse marketplace.json \
   --sparse plugins/botnote
 
 codex plugin add botnote@botnote-plugins
@@ -239,7 +239,7 @@ same MCP server and workflow skills without a second plugin implementation.
 
 ```bash
 # Marketplace root for Cursor plugin clients:
-https://github.com/jianhuawang/botnote
+https://github.com/jianhua-wang/botnote
 ```
 
 The Cursor plugin manifest is `plugins/botnote/.cursor-plugin/plugin.json` and

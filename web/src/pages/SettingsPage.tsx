@@ -197,7 +197,8 @@ BOTNOTE_URL=http://127.0.0.1:4280 botnote today
 // ----------------------------------------------------------------------------
 
 function PluginSection() {
-  const cliInstallBlock = `# Runtime used by Claude Code, Codex, and Cursor plugins.
+  const cliInstallBlock = `# Optional helper CLI for login and manual commands.
+# Plugins can run without a global CLI by using npx.
 npm i -g botnote@latest
 
 # Remote clients: save https://botnote.net + a bearer token.
@@ -228,7 +229,7 @@ claude plugin update botnote@botnote`;
 
   const codexInstallBlock = `# No full source checkout required.
 codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \\
-  --sparse .codex-plugin \\
+  --sparse marketplace.json \\
   --sparse plugins/botnote
 
 codex plugin add botnote@botnote-plugins`;
