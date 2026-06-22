@@ -768,10 +768,12 @@ curl -X POST '${BOTNOTE_HOST}/v1/search' \\
       <CodeBlock title="REST · curl" code={curlExample} />
 
       <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted leading-relaxed">
-        Requires the <code className="text-ink">botnote</code> binary in
+        Raw MCP configuration requires the <code className="text-ink">botnote</code> binary in
         <code className="text-ink"> PATH</code>{" "}
-        (<code className="text-ink">npm i -g botnote</code>). The MCP server has no DB connection of
-        its own; it speaks HTTP to whichever <code className="text-ink">BOTNOTE_URL</code> you set.
+        (<code className="text-ink">npm i -g botnote</code>). The Claude Code and Codex plugins do not
+        require a global CLI install; they run the matching npm package version automatically. The
+        MCP server has no DB connection of its own; it speaks HTTP to whichever{" "}
+        <code className="text-ink">BOTNOTE_URL</code> you set.
       </div>
     </>
   );

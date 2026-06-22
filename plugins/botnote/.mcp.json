@@ -3,7 +3,7 @@
     "botnote": {
       "command": "bash",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp.sh"
+        "scripts/run-mcp.sh"
       ],
       "cwd": ".",
       "env": {

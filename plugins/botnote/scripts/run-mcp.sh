@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# Wrapper that locates the botnote CLI and runs it in MCP stdio mode.
+# Wrapper that runs the botnote CLI in MCP stdio mode.
 # Resolution order:
 #   1. BOTNOTE_BIN env var (manual override, e.g. for dev checkouts)
-#   2. `botnote` on PATH (global npm install or `npm link`)
-#   3. `npx -y botnote` (npm package fallback, last resort)
+#   2. `botnote` on PATH only when it matches this plugin version
+#   3. `npx -y botnote@<plugin-version>` (normal plugin install path)
+#   4. `botnote` on PATH as a last-resort offline fallback
 #
 # The MCP server itself is an HTTP client of the botnote daemon — it reads
 # BOTNOTE_URL / BOTNOTE_TOKEN / BOTNOTE_CF_ACCESS_CLIENT_{ID,SECRET} from env.
 # Those are populated by Claude Code from the plugin's userConfig at startup.
 
 set -euo pipefail
+
+plugin_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+plugin_version="$(node -e "const fs=require('fs'); const path=require('path'); for (const rel of ['.codex-plugin/plugin.json', '.claude-plugin/plugin.json']) { try { const c=JSON.parse(fs.readFileSync(path.join(process.argv[1], rel), 'utf8')); if (typeof c.version === 'string') { process.stdout.write(c.version); process.exit(0); } } catch {} }" "$plugin_root" 2>/dev/null || true)"
 
 if [[ "${BOTNOTE_URL:-}" == '${user_config.botnote_url}' ]]; then
   unset BOTNOTE_URL
@@ -41,8 +45,30 @@ if [[ -n "${BOTNOTE_BIN:-}" && -x "$BOTNOTE_BIN" ]]; then
 fi
 
 if command -v botnote >/dev/null 2>&1; then
+  cli_version="$(botnote --version 2>/dev/null || botnote version 2>/dev/null || true)"
+  if [[ -n "$plugin_version" && "$cli_version" == "$plugin_version" ]]; then
+    exec botnote mcp
+  fi
+fi
+
+if command -v npx >/dev/null 2>&1; then
+  if [[ -n "$plugin_version" ]]; then
+    if npx -y "botnote@$plugin_version" mcp; then
+      exit 0
+    fi
+    echo "botnote plugin $plugin_version could not start via npx botnote@$plugin_version; trying PATH fallback" >&2
+  else
+    if npx -y botnote mcp; then
+      exit 0
+    fi
+    echo "botnote plugin could not start via npx botnote; trying PATH fallback" >&2
+  fi
+fi
+
+if command -v botnote >/dev/null 2>&1; then
+  echo "botnote plugin $plugin_version falling back to PATH botnote $(botnote --version 2>/dev/null || true)" >&2
   exec botnote mcp
 fi
 
-# Last resort: try npx without requiring a permanent global install.
-exec npx -y botnote mcp
+echo "botnote plugin could not find BOTNOTE_BIN, npx, or botnote on PATH" >&2
+exit 127

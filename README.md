@@ -168,8 +168,9 @@ Slash commands:
 
 Plugin distribution lives at
 [jianhuawang/botnote](https://github.com/jianhuawang/botnote). The MCP server
-inside the plugin uses the URL + token from the install prompt and calls the
-`botnote` CLI from PATH. Install the npm package first on non-dev machines.
+inside the plugin uses the URL + token from the install prompt. A global
+`botnote` CLI install is optional: the plugin runs `npx -y botnote@<plugin-version> mcp`
+when no matching local CLI is available.
 
 ### Codex
 
@@ -225,9 +226,10 @@ source = "/absolute/path/to/botnote"
 ```
 
 The Codex plugin starts `./scripts/run-mcp.sh`. It defaults to
-`BOTNOTE_URL=http://127.0.0.1:4280`, calls `botnote mcp` from PATH, and falls
-back to `npx -y botnote mcp`. Set `BOTNOTE_URL` and `BOTNOTE_TOKEN` only when
-using a remote daemon.
+`BOTNOTE_URL=https://botnote.net`, reads `~/.config/botnote/config.json` when
+available, uses a matching `botnote` CLI from PATH when present, and otherwise
+runs the exact plugin version with `npx -y botnote@<plugin-version> mcp`. Set
+`BOTNOTE_URL` and `BOTNOTE_TOKEN` only when using a custom daemon.
 
 ### Cursor
 
