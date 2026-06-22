@@ -205,7 +205,7 @@ npm i -g botnote@latest
 # Daemon host: use http://127.0.0.1:4280 and skip the token.
 botnote login`;
 
-  const cliUpdateBlock = `# Keep the runtime current on every device.
+  const cliUpdateBlock = `# If you installed the optional helper CLI, keep it current.
 npm i -g botnote@latest
 botnote --version`;
 
@@ -232,7 +232,10 @@ codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \\
   --sparse .agents/plugins \\
   --sparse plugins/botnote
 
-codex plugin add botnote@botnote-plugins`;
+codex plugin add botnote@botnote-plugins
+
+# Restart Codex: exit this session, then run codex again.
+# In the new session, check /mcp.`;
 
   const codexUpdateBlock = `# Codex refreshes Git marketplaces, then installs from the fresh snapshot.
 codex plugin marketplace upgrade botnote-plugins
@@ -282,14 +285,14 @@ npm i -g botnote@latest`;
     <>
       <SectionHeader
         title="Plugin"
-        blurb="Install the botnote runtime once, then add the plugin for each agent client. The plugin bundles MCP, slash commands, and workflow skills, so Letheia / Plane MCP setup should stay retired."
+        blurb="Add botnote as the plugin-backed MCP + workflow layer for each agent client. Letheia / Plane MCP setup should stay retired."
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         <PluginStep
           icon={Package}
-          title="1. Runtime"
-          body="Install or update the npm binary on every device. Plugins call this binary for MCP."
+          title="1. Optional CLI"
+          body="Install the npm binary when you want botnote login or terminal commands. Plugins can run without it via npx."
         />
         <PluginStep
           icon={Download}
@@ -298,8 +301,8 @@ npm i -g botnote@latest`;
         />
         <PluginStep
           icon={RefreshCw}
-          title="3. Update both"
-          body="Runtime and plugin cache update separately. Refresh the client after updating."
+          title="3. Reload client"
+          body="Claude Code reloads plugins in-session. Codex needs a new session after install or update."
         />
       </div>
 
@@ -312,7 +315,7 @@ npm i -g botnote@latest`;
       <PluginClientHeader
         icon={Package}
         title="Runtime"
-        subtitle="Required first. Claude Code, Codex, and Cursor all launch this binary for MCP."
+        subtitle="Optional helper for login, manual CLI commands, and offline fallback. Plugin MCP can run through npx without a global CLI."
       />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <CodeBlock title="Install runtime" code={cliInstallBlock} />
@@ -332,7 +335,7 @@ npm i -g botnote@latest`;
       <PluginClientHeader
         icon={Terminal}
         title="Codex"
-        subtitle="Use the Git marketplace flow; sparse checkout means no full botnote source checkout."
+        subtitle="Use the Git marketplace flow; sparse checkout means no full botnote source checkout. Restart Codex after install or update."
       />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <CodeBlock title="Install" code={codexInstallBlock} />
@@ -342,7 +345,7 @@ npm i -g botnote@latest`;
       <PluginClientHeader
         icon={Puzzle}
         title="Cursor"
-        subtitle="Uses the same plugin bundle and the same npm runtime."
+        subtitle="Uses the same plugin bundle. Keep the CLI installed only if you want terminal commands or offline fallback."
       />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <CodeBlock title="Install" code={cursorInstallBlock} />
@@ -359,7 +362,7 @@ npm i -g botnote@latest`;
       <PluginClientHeader
         icon={Plug}
         title="Slash commands"
-        subtitle="Available after the plugin is installed and the client reloads plugins."
+        subtitle="Available after Claude Code reloads plugins or Codex starts a new session with the plugin installed."
       />
       <CodeBlock title="Commands" code={useBlock} />
 
@@ -377,9 +380,10 @@ npm i -g botnote@latest`;
           </a>
           {". "}
           Claude Code can auto-update third-party marketplaces when enabled; after an update, run{" "}
-          <code className="text-ink">/reload-plugins</code>. Codex currently refreshes Git
-          marketplace snapshots with{" "}
-          <code className="text-ink">codex plugin marketplace upgrade</code>.
+          <code className="text-ink">/reload-plugins</code>. Codex has no reload command: refresh
+          Git marketplace snapshots with{" "}
+          <code className="text-ink">codex plugin marketplace upgrade</code>, reinstall the plugin,
+          then start a new Codex session.
         </div>
       </div>
     </>
