@@ -217,15 +217,17 @@ botnote --version`;
 #   botnote_url    -> default https://botnote.net (use http://127.0.0.1:4280 on daemon host)
 #   botnote_token  -> bearer from Settings → API tokens (skip on loopback)`;
 
-  const claudeUpdateBlock = `# Preferred: enable marketplace auto-update in Claude Code.
+  const claudeUpdateBlock = `# Claude Code does not expose auto-update in every build.
 /plugin
-# Marketplaces → botnote → Enable auto-update
+# Marketplaces -> botnote -> Update, if your build shows it.
 
-# After Claude reports an updated plugin:
-/reload-plugins
+# If there is no Update action:
+# 1. Remove/uninstall botnote from /plugin.
+# 2. Install it again.
+/plugin install botnote@botnote
 
-# Manual update, if available in your Claude Code build:
-claude plugin update botnote@botnote`;
+# Apply changes in this session:
+/reload-plugins`;
 
   const codexInstallBlock = `# No full source checkout required.
 codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \\
@@ -325,7 +327,7 @@ npm i -g botnote@latest`;
       <PluginClientHeader
         icon={Command}
         title="Claude Code"
-        subtitle="Recommended for day-to-day work. Enable marketplace auto-update after installation."
+        subtitle="Recommended for day-to-day work. Update through /plugin, then reload plugins in-session."
       />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <CodeBlock title="Install" code={claudeInstallBlock} />
@@ -379,9 +381,9 @@ npm i -g botnote@latest`;
             jianhua-wang/botnote
           </a>
           {". "}
-          Claude Code can auto-update third-party marketplaces when enabled; after an update, run{" "}
-          <code className="text-ink">/reload-plugins</code>. Codex has no reload command: refresh
-          Git marketplace snapshots with{" "}
+          Claude Code updates through <code className="text-ink">/plugin</code>; after updating or
+          reinstalling, run <code className="text-ink">/reload-plugins</code>. Codex has no reload
+          command: refresh Git marketplace snapshots with{" "}
           <code className="text-ink">codex plugin marketplace upgrade</code>, reinstall the plugin,
           then start a new Codex session.
         </div>
