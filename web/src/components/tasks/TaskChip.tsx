@@ -3,14 +3,11 @@ import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { PriorityIcon } from "./icons";
 import { StatusPickerButton } from "./StatusPickerButton";
+import { isTaskOverdue } from "./utils";
 
 export function TaskChip({ task, project }: { task: Entity; project?: Project }) {
   const drawer = useDrawer();
-  const overdue =
-    task.dueAt &&
-    new Date(task.dueAt).getTime() < Date.now() &&
-    task.status !== "done" &&
-    task.status !== "in_progress";
+  const overdue = isTaskOverdue(task);
 
   return (
     <div

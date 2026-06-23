@@ -6,6 +6,7 @@ import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { PriorityIcon, PRIORITY_LABEL } from "./icons";
 import { PopoverMenu } from "./PopoverMenu";
 import { StatusPickerButton } from "./StatusPickerButton";
+import { isTaskOverdue } from "./utils";
 
 const PRIORITY_OPTIONS: Priority[] = ["urgent", "high", "medium", "low", "none"];
 
@@ -25,11 +26,7 @@ export function TaskRow({
   const del = useDeleteEntity();
 
   const idLabel = project && task.sequenceId ? `${project.key}-${task.sequenceId}` : null;
-  const overdue =
-    task.dueAt &&
-    new Date(task.dueAt).getTime() < Date.now() &&
-    task.status !== "done" &&
-    task.status !== "in_progress";
+  const overdue = isTaskOverdue(task);
   const visibleDate = task.status === "done" ? (task.completedAt ?? task.updatedAt) : task.dueAt;
   const visibleDateLabel = task.status === "done" ? "Completed" : "Due";
 

@@ -5,6 +5,7 @@ import type { Entity, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { PriorityIcon } from "../tasks/icons";
+import { isTaskOverdue } from "../tasks/utils";
 import { StatusPickerButton } from "../tasks/StatusPickerButton";
 import { useModals } from "../../state/modals";
 
@@ -113,11 +114,7 @@ function KanbanColumn({
 
 function KanbanCard({ task, project }: { task: Entity; project: Project }) {
   const drawer = useDrawer();
-  const overdue =
-    task.dueAt &&
-    new Date(task.dueAt).getTime() < Date.now() &&
-    task.status !== "done" &&
-    task.status !== "in_progress";
+  const overdue = isTaskOverdue(task);
   const idLabel = task.sequenceId ? `${project.key}-${task.sequenceId}` : null;
   const visibleDate = task.status === "done" ? (task.completedAt ?? task.updatedAt) : task.dueAt;
   const visibleDateLabel = task.status === "done" ? "Completed" : "Due";

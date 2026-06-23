@@ -350,7 +350,7 @@ export async function registerRoutes(
         tags: ["tasks"],
         summary: "Tasks in a date range + overdue + backlog (no due_at)",
         description:
-          "Returns three buckets: scheduled (display date in [from, to)), overdue (unfinished due_at before now), backlog (no due_at, only when includeBacklog).",
+          "Returns three buckets: scheduled (display date in [from, to)), overdue (unfinished due_at before from, or before now when from is omitted), backlog (no due_at, only when includeBacklog).",
         body: TasksRangeInput
       }
     },

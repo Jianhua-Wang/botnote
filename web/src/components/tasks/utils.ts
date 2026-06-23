@@ -76,6 +76,14 @@ export function displayDate(t: Entity): Date | null {
   return t.dueAt ? new Date(t.dueAt) : null;
 }
 
+export function isTaskOverdue(t: Entity, now = new Date()): boolean {
+  if (!t.dueAt) return false;
+  if (t.status === "done" || t.status === "in_progress" || t.status === "rejected") {
+    return false;
+  }
+  return new Date(t.dueAt).getTime() < startOfDay(now).getTime();
+}
+
 export function groupTasksByDay(
   tasks: Entity[]
 ): Map<string, Entity[]> {

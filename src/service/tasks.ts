@@ -19,9 +19,9 @@ export interface TasksRangeResult {
  *
  * `scheduled` returns any task whose display date falls inside [from, to).
  * Done tasks without a completedAt (legacy / weird state) fall back to updatedAt.
- * `overdue` keeps the original meaning — past-due unfinished work — and
- * explicitly excludes done + in_progress so they don't double-surface (done
- * shows on its completion day; in_progress already shows on today).
+ * `overdue` is unfinished work before the requested range start (or before now
+ * when no range start is supplied), so a task scheduled inside the active day
+ * cannot also appear in the overdue alert.
  */
 export async function tasksRange(
   db: Database["db"],
@@ -121,15 +121,17 @@ export async function tasksRange(
   for (const e of inProgressToday) scheduledMap.set(e.id, e);
   const scheduled = Array.from(scheduledMap.values());
 
-  // Overdue = past-due work that still needs attention. Done + in_progress
-  // tasks are intentionally excluded: done is shown on its completion day,
-  // in_progress is shown on today, neither belongs in an "overdue" alert.
+  // Overdue = past-due work that still needs attention. Use the range start
+  // when present so today's scheduled tasks do not double-surface as overdue
+  // later in the same day.
+  const overdueCutoff = input.from ?? now;
   const overdueConds = [
     eq(entities.kind, "task"),
     isNotNull(entities.dueAt),
-    lt(entities.dueAt, now),
+    lt(entities.dueAt, overdueCutoff),
     or(ne(entities.status, "done"), isNull(entities.status))!,
-    or(ne(entities.status, "in_progress"), isNull(entities.status))!
+    or(ne(entities.status, "in_progress"), isNull(entities.status))!,
+    or(ne(entities.status, "rejected"), isNull(entities.status))!
   ];
   if (projectFilter) overdueConds.push(projectFilter);
   const overdue = await db

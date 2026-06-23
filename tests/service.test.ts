@@ -223,6 +223,36 @@ describe("botnote service", () => {
     expect(legacyCompletionDay.scheduled.map((t) => t.id)).toContain(legacyDone.id);
   });
 
+  it("tasksRange does not duplicate in-range tasks into overdue", async () => {
+    const p = await createProject(db, { key: "DUP", name: "No Duplicate" });
+    const from = new Date(Date.now() - 2 * 60 * 1000);
+    const dueAt = new Date(Date.now() - 60 * 1000);
+    const to = new Date(Date.now() + 60 * 60 * 1000);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Show once in the active range",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+
+    const range = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false
+    });
+
+    expect(range.scheduled.map((t) => t.id)).toContain(task.id);
+    expect(range.overdue.map((t) => t.id)).not.toContain(task.id);
+  });
+
   it("tasksRange keeps in-progress tasks on today and out of overdue", async () => {
     const p = await createProject(db, { key: "NOW", name: "Now" });
     const task = await write(db, {
