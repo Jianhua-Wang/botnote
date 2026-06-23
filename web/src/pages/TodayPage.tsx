@@ -5,7 +5,7 @@ import { useProjects, useTasksRange } from "../api/hooks";
 import type { Entity, Project } from "../api/types";
 import { ProjectIcon } from "../components/ProjectIcon";
 import { TaskRow } from "../components/tasks/TaskRow";
-import { compareByStatus, projectLookup } from "../components/tasks/utils";
+import { compareByStatus, isTaskOverdue, projectLookup } from "../components/tasks/utils";
 import { useModals } from "../state/modals";
 
 export function TodayPage() {
@@ -29,7 +29,7 @@ export function TodayPage() {
   });
 
   const { open } = useModals();
-  const overdue = (data?.overdue ?? []).filter((t) => t.status !== "rejected");
+  const overdue = (data?.overdue ?? []).filter((t) => isTaskOverdue(t, today));
   const scheduled = (data?.scheduled ?? []).slice().sort(compareByStatus);
 
   return (
