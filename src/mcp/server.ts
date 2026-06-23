@@ -27,6 +27,12 @@ const EDGE_KINDS = ["blocks", "references", "parent_of"] as const;
 const RECURRENCE_PRESETS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
 const RECURRENCE_ANCHORS = ["scheduled", "completion"] as const;
 const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
+const EntityIdRef = z
+  .string()
+  .min(8)
+  .max(36)
+  .regex(/^[0-9a-fA-F-]+$/)
+  .describe("Full entity UUID or a unique UUID prefix such as the first 8 hex characters.");
 
 function displayTitle(e: { title: string | null; body: string }): string {
   if (e.title && e.title.trim()) return e.title;
@@ -37,7 +43,7 @@ function displayTitle(e: { title: string | null; body: string }): string {
 
 function summarizeEntity(e: EntityDTO): string {
   const tagPart = e.tags.length ? ` [${e.tags.join(", ")}]` : "";
-  return `${e.kind}/${e.id} · ${displayTitle(e)}${tagPart}`;
+  return `${e.kind}/${e.id} · id: ${e.id} · ${displayTitle(e)}${tagPart}`;
 }
 
 const ProjectKey = z
@@ -316,14 +322,14 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     "get_entity",
     {
       title: "Get Entity",
-      description: "Fetch a single task or note by its UUID.",
+      description: "Fetch a single task or note by its UUID or unique UUID prefix.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false
       },
-      inputSchema: { id: z.string().uuid() }
+      inputSchema: { id: EntityIdRef }
     },
     async ({ id }) => {
       try {
@@ -491,7 +497,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         openWorldHint: false
       },
       inputSchema: {
-        id: z.string().uuid(),
+        id: EntityIdRef,
         title: z
           .string()
           .max(500)
@@ -643,14 +649,14 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Related Entities",
       description:
-        "List entities whose parent_id is the given id — typically notes linked under a task. Use this after opening a task to surface the relevant notes/context.",
+        "List entities whose parent_id is the given id or unique UUID prefix. Use this after opening a task to surface the relevant notes/context.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false
       },
-      inputSchema: { id: z.string().uuid() }
+      inputSchema: { id: EntityIdRef }
     },
     async ({ id }) => {
       const rows = await c.listRelated(id);

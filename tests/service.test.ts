@@ -82,6 +82,12 @@ describe("botnote service", () => {
     const fetched = await get(db, t.id);
     expect(fetched?.title).toBe("Build botnote v0");
 
+    const fetchedByPrefix = await get(db, t.id.slice(0, 8));
+    expect(fetchedByPrefix?.id).toBe(t.id);
+
+    const prefixUpdated = await update(db, t.id.slice(0, 8), { priority: "high" });
+    expect(prefixUpdated.priority).toBe("high");
+
     const updated = await update(db, t.id, { status: "done" });
     expect(updated.status).toBe("done");
     expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(updated.createdAt.getTime());

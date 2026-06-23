@@ -130,6 +130,22 @@ describe("botnote MCP", () => {
     });
     const getText = (getResp.content as Array<{ text: string }>)[0]?.text ?? "";
     expect(getText).toContain("Adopt MCP 2025-03-26 annotations");
+
+    const shortId = noteId!.slice(0, 8);
+    const getByPrefixResp = await client.callTool({
+      name: "get_entity",
+      arguments: { id: shortId }
+    });
+    const getByPrefixText = (getByPrefixResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(getByPrefixText).toContain(noteId!);
+
+    const updateByPrefixResp = await client.callTool({
+      name: "update_entity",
+      arguments: { id: shortId, title: "Adopt MCP annotations with short ids" }
+    });
+    const updateByPrefixText =
+      (updateByPrefixResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(updateByPrefixText).toContain("Adopt MCP annotations with short ids");
   });
 
   it("opening_brief returns AGENTS.md + open tasks markdown", async () => {

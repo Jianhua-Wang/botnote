@@ -5,8 +5,33 @@ import { normalizeDueAt } from "./dates.js";
 import { advanceRecurrenceOnCompletion } from "./recurrence.js";
 import type { LinkInput, RecentInput, UpdateInput, WriteInput } from "./types.js";
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_PREFIX_RE = /^[0-9a-f-]{8,36}$/i;
+
 function normalizeStatus(value: string): string {
   return value === "delayed" || value === "archived" ? "done" : value;
+}
+
+export async function resolveEntityId(
+  db: Database["db"],
+  idOrPrefix: string
+): Promise<string | null> {
+  if (UUID_RE.test(idOrPrefix)) return idOrPrefix;
+  if (!UUID_PREFIX_RE.test(idOrPrefix)) return null;
+
+  const rows = (
+    await db.execute<{ id: string }>(sql`
+      SELECT id::text AS id
+      FROM entities
+      WHERE id::text LIKE ${`${idOrPrefix.toLowerCase()}%`}
+      LIMIT 2
+    `)
+  ).rows;
+
+  if (rows.length === 1) return rows[0]!.id;
+  if (rows.length > 1) throw new Error(`entity id prefix ${idOrPrefix} is ambiguous`);
+  return null;
 }
 
 export async function write(db: Database["db"], input: WriteInput): Promise<Entity> {
@@ -58,6 +83,9 @@ export async function update(
   id: string,
   fields: UpdateInput
 ): Promise<Entity> {
+  const entityId = await resolveEntityId(db, id);
+  if (!entityId) throw new Error(`entity ${id} not found`);
+
   const normalizedFields: UpdateInput = { ...fields };
   if (fields.status !== undefined) {
     normalizedFields.status = normalizeStatus(fields.status) as NonNullable<UpdateInput["status"]>;
@@ -75,7 +103,7 @@ export async function update(
     const prior = await db
       .select({ status: entities.status })
       .from(entities)
-      .where(eq(entities.id, id))
+      .where(eq(entities.id, entityId))
       .limit(1);
     if (!prior[0]) throw new Error(`entity ${id} not found`);
     const wasDone = prior[0].status === "done";
@@ -84,7 +112,7 @@ export async function update(
     if (isDone && !wasDone) set.completedAt = new Date();
     else if (!isDone && wasDone) set.completedAt = null;
   }
-  const [row] = await db.update(entities).set(set).where(eq(entities.id, id)).returning();
+  const [row] = await db.update(entities).set(set).where(eq(entities.id, entityId)).returning();
   if (!row) throw new Error(`entity ${id} not found`);
   if (fields.parentId !== undefined && fields.parentId !== null) {
     await db
@@ -102,15 +130,21 @@ export async function listRelated(
   db: Database["db"],
   parentId: string
 ): Promise<Entity[]> {
+  const entityId = await resolveEntityId(db, parentId);
+  if (!entityId) return [];
+
   return db
     .select()
     .from(entities)
-    .where(eq(entities.parentId, parentId))
+    .where(eq(entities.parentId, entityId))
     .orderBy(desc(entities.createdAt));
 }
 
 export async function get(db: Database["db"], id: string): Promise<Entity | null> {
-  const rows = await db.select().from(entities).where(eq(entities.id, id)).limit(1);
+  const entityId = await resolveEntityId(db, id);
+  if (!entityId) return null;
+
+  const rows = await db.select().from(entities).where(eq(entities.id, entityId)).limit(1);
   return rows[0] ?? null;
 }
 
@@ -133,7 +167,13 @@ export async function getByKey(
 }
 
 export async function remove(db: Database["db"], id: string): Promise<boolean> {
-  const res = await db.delete(entities).where(eq(entities.id, id)).returning({ id: entities.id });
+  const entityId = await resolveEntityId(db, id);
+  if (!entityId) return false;
+
+  const res = await db
+    .delete(entities)
+    .where(eq(entities.id, entityId))
+    .returning({ id: entities.id });
   return res.length > 0;
 }
 

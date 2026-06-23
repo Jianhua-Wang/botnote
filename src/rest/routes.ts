@@ -64,6 +64,8 @@ import { VERSION } from "../version.js";
 import type { ServerContext } from "./server.js";
 
 const IdParams = z.object({ id: Uuid });
+const EntityIdRef = z.string().min(8).max(36).regex(/^[0-9a-fA-F-]+$/);
+const EntityIdParams = z.object({ id: EntityIdRef });
 const RuleIdParams = z.object({ id: Uuid });
 const KeyParams = z.object({ key: z.string() });
 const KeySeqParams = z.object({
@@ -283,9 +285,9 @@ export async function registerRoutes(
 
   app.get(
     "/v1/entities/:id",
-    { schema: { tags: ["entities"], summary: "Fetch an entity by id", params: IdParams } },
+    { schema: { tags: ["entities"], summary: "Fetch an entity by id", params: EntityIdParams } },
     async (req, reply) => {
-      const { id } = IdParams.parse(req.params);
+      const { id } = EntityIdParams.parse(req.params);
       const e = await get(ctx.db, id);
       if (!e) return reply.code(404).send({ error: "not_found" });
       return e;
@@ -315,11 +317,11 @@ export async function registerRoutes(
       schema: {
         tags: ["entities"],
         summary: "List entities whose parent_id is this id (e.g. notes linked to a task)",
-        params: IdParams
+        params: EntityIdParams
       }
     },
     async (req) => {
-      const { id } = IdParams.parse(req.params);
+      const { id } = EntityIdParams.parse(req.params);
       return listRelated(ctx.db, id);
     }
   );
@@ -509,12 +511,12 @@ export async function registerRoutes(
       schema: {
         tags: ["entities"],
         summary: "Update an entity (task or note)",
-        params: IdParams,
+        params: EntityIdParams,
         body: UpdateInput
       }
     },
     async (req) => {
-      const { id } = IdParams.parse(req.params);
+      const { id } = EntityIdParams.parse(req.params);
       const fields = UpdateInput.parse(req.body);
       const updated = await update(ctx.db, id, fields);
       if (
@@ -533,11 +535,11 @@ export async function registerRoutes(
       schema: {
         tags: ["entities"],
         summary: "Delete an entity",
-        params: IdParams
+        params: EntityIdParams
       }
     },
     async (req, reply) => {
-      const { id } = IdParams.parse(req.params);
+      const { id } = EntityIdParams.parse(req.params);
       const ok = await remove(ctx.db, id);
       if (!ok) return reply.code(404).send({ error: "not_found" });
       return reply.code(204).send();
