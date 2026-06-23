@@ -25,13 +25,22 @@ When the user wants to add a task:
    - `dueAt`: include only when the user mentions or clearly implies a date. For date-only intents, use noon UTC for that date.
    - Before setting `dueAt`, consider priority and visible daily workload from the opening brief, active context, or available task list. If that day already looks full enough, suggest a later date or leave `dueAt` empty and explain why.
    - `tags`: 2-4 short lowercase kebab-case tokens.
+   - Recurrence: only configure recurrence when the user explicitly asks for a repeating task, routine, meeting, cadence, or recurring reminder. Do not infer recurrence from vague words like `later`, `ongoing`, or `long-term`.
 
-5. Call `mcp__botnote__create_task` with `status: "open"`, `actorKind: "agent"`, and the resolved fields.
+5. Handle recurring tasks carefully.
+   - A recurring task still needs a concrete first `dueAt`; ask for one if it is missing.
+   - Use `scheduled` recurrence for fixed calendar-like work such as meetings, check-ins, reports, and routines that should stay on the calendar cadence.
+   - Use `completion` recurrence for maintenance work where the next due date should be based on when the current occurrence was actually completed.
+   - Prefer simple presets (`daily`, `weekly`, `monthly`, `yearly`) with `interval`, `byWeekday`, `byMonthDay`, `until`, or `count` when needed.
 
-6. Confirm in one concise line:
+6. Call `mcp__botnote__create_task` with `status: "open"`, `actorKind: "agent"`, and the resolved fields.
+
+7. If recurrence is needed, call `mcp__botnote__configure_recurrence` for the newly created task with the chosen preset or RRULE. Do this after task creation so the task title/project/due date are confirmed first.
+
+8. Confirm in one concise line:
 
 ```text
-Added {KEY-seq or task/id8}: "{title}" in {project} [{priority}, due {date or "-"}]
+Added {KEY-seq or task/id8}: "{title}" in {project} [{priority}, due {date or "-"}{, repeats <cadence> if recurring}]
 ```
 
 botnote is the task source of truth for this workflow.

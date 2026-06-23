@@ -7,8 +7,12 @@ import type {
   OpeningBriefResponse,
   Project,
   RecentInput,
+  RecurrenceDetails,
+  RecurrenceInput,
+  RecurrenceRule,
   SearchInput,
   SearchResponse,
+  SkipOccurrenceResult,
   TasksRangeInput,
   TasksRangeResult,
   Token,
@@ -145,6 +149,24 @@ export const api = {
     request<TasksRangeResult>("/v1/tasks/range", {
       method: "POST",
       body: JSON.stringify(input)
+    }),
+
+  configureRecurrence: (taskId: string, input: RecurrenceInput) =>
+    request<RecurrenceRule>(`/v1/tasks/${taskId}/recurrence`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    }),
+  getRecurrence: (taskId: string) =>
+    request<RecurrenceDetails>(`/v1/tasks/${taskId}/recurrence`),
+  skipOccurrence: (taskId: string, reason?: string) =>
+    request<SkipOccurrenceResult>(`/v1/tasks/${taskId}/skip-occurrence`, {
+      method: "POST",
+      body: JSON.stringify(reason ? { reason, actorKind: "human" } : { actorKind: "human" })
+    }),
+  stopRecurrence: (ruleId: string, reason?: string) =>
+    request<RecurrenceRule>(`/v1/recurrences/${ruleId}/stop`, {
+      method: "POST",
+      body: JSON.stringify(reason ? { reason } : {})
     }),
 
   listTokens: () => request<Token[]>("/v1/tokens"),

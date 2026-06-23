@@ -1,11 +1,19 @@
 import { z } from "zod";
-import { ACTOR_KINDS, EDGE_KINDS, ENTITY_KINDS } from "../db/schema.js";
+import {
+  ACTOR_KINDS,
+  EDGE_KINDS,
+  ENTITY_KINDS,
+  RECURRENCE_ANCHORS
+} from "../db/schema.js";
 
 export const EntityKindEnum = z.enum(ENTITY_KINDS);
 export const ActorKindEnum = z.enum(ACTOR_KINDS);
 export const EdgeKindEnum = z.enum(EDGE_KINDS);
 
 export const PriorityEnum = z.enum(["urgent", "high", "medium", "low", "none"]);
+export const RecurrenceAnchorEnum = z.enum(RECURRENCE_ANCHORS);
+export const RecurrenceFrequencyEnum = z.enum(["hourly", "daily", "weekly", "monthly", "yearly"]);
+export const WeekdayEnum = z.enum(["MO", "TU", "WE", "TH", "FR", "SA", "SU"]);
 export const CanonicalTaskStatusEnum = z.enum([
   "open",
   "in_progress",
@@ -88,6 +96,49 @@ export const UpdateInput = z.object({
   pinned: z.boolean().optional()
 });
 export type UpdateInput = z.infer<typeof UpdateInput>;
+
+const PositiveInterval = z.number().int().min(1).max(999);
+
+const RecurrenceFields = z.object({
+  rrule: z.string().min(1).max(1000).optional(),
+  preset: RecurrenceFrequencyEnum.optional(),
+  interval: PositiveInterval.default(1),
+  byWeekday: z.array(WeekdayEnum).optional(),
+  byMonthDay: z.array(z.number().int().min(1).max(31)).optional(),
+  bySetPos: z.number().int().min(-5).max(5).optional(),
+  byMonth: z.array(z.number().int().min(1).max(12)).optional(),
+  until: z.coerce.date().nullable().optional(),
+  count: z.number().int().min(1).max(10000).nullable().optional(),
+  dtstart: z.coerce.date().optional(),
+  timezone: z.string().min(1).max(80).default("UTC"),
+  allDay: z.boolean().default(true),
+  anchor: RecurrenceAnchorEnum.default("scheduled")
+});
+
+export const RecurrenceInput = RecurrenceFields
+  .refine((value) => value.rrule || value.preset, {
+    message: "Provide either rrule or preset"
+  })
+  .refine((value) => !(value.until && value.count), {
+    message: "Use either until or count, not both"
+});
+export type RecurrenceInput = z.infer<typeof RecurrenceInput>;
+
+export const UpdateRecurrenceInput = RecurrenceFields.partial().extend({
+  enabled: z.boolean().optional()
+});
+export type UpdateRecurrenceInput = z.infer<typeof UpdateRecurrenceInput>;
+
+export const StopRecurrenceInput = z.object({
+  reason: z.string().max(500).optional()
+});
+export type StopRecurrenceInput = z.infer<typeof StopRecurrenceInput>;
+
+export const SkipOccurrenceInput = z.object({
+  reason: z.string().max(500).optional(),
+  actorKind: ActorKindEnum.default("human")
+});
+export type SkipOccurrenceInput = z.infer<typeof SkipOccurrenceInput>;
 
 export const SearchInput = z.object({
   query: z.string().min(1),

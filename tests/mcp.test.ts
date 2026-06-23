@@ -19,7 +19,10 @@ let client: Client;
 let transport: StdioClientTransport;
 
 beforeAll(async () => {
-  await rawDb.execute(sql`TRUNCATE entities, edges, projects, tokens, sessions RESTART IDENTITY CASCADE`);
+  await rawDb.execute(sql`
+    TRUNCATE recurrence_exceptions, recurrence_rules, entities, edges, projects, tokens, sessions
+    RESTART IDENTITY CASCADE
+  `);
 
   server = await buildServer({ db: rawDb, embedding, logLevel: "warn" });
   await server.listen({ port: 0, host: "127.0.0.1" });
@@ -49,11 +52,13 @@ describe("botnote MCP", () => {
   it("lists current tools + workspace resource", async () => {
     const tools = await client.listTools();
     expect(tools.tools.map((t) => t.name).sort()).toEqual([
+      "configure_recurrence",
       "create_project",
       "create_task",
       "get_entity",
       "get_entity_by_key",
       "get_project",
+      "get_recurrence",
       "link",
       "list_projects",
       "opening_brief",
@@ -61,6 +66,8 @@ describe("botnote MCP", () => {
       "related",
       "remember",
       "search",
+      "skip_occurrence",
+      "stop_recurrence",
       "update_entity",
       "update_project"
     ]);
@@ -78,6 +85,9 @@ describe("botnote MCP", () => {
     expect(byName.get("update_entity")?.annotations?.destructiveHint).toBe(true);
     expect(byName.get("link")?.annotations?.idempotentHint).toBe(true);
     expect(byName.get("update_project")?.annotations?.destructiveHint).toBe(true);
+    expect(byName.get("configure_recurrence")?.annotations?.idempotentHint).toBe(true);
+    expect(byName.get("get_recurrence")?.annotations?.readOnlyHint).toBe(true);
+    expect(byName.get("skip_occurrence")?.annotations?.destructiveHint).toBe(true);
   });
 
   it("create_project + remember + search round-trip", async () => {
@@ -199,6 +209,69 @@ describe("botnote MCP", () => {
     });
     const secondText = (second.content as Array<{ text: string }>)[0]?.text ?? "";
     expect(secondText).toContain(firstId!);
+  });
+
+  it("configures and advances recurrence via MCP", async () => {
+    const createResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "RMC", name: "Recurrence MCP" }
+    });
+    const projectId = (createResp.content as Array<{ text: string }>)[0]?.text.match(
+      /[0-9a-f-]{36}/
+    )?.[0];
+    expect(projectId).toBeTruthy();
+
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const taskResp = await client.callTool({
+      name: "create_task",
+      arguments: {
+        projectId,
+        title: "Review recurring MCP task",
+        actorKind: "agent",
+        dueAt: dueAt.toISOString(),
+        idempotencyKey: "mcp-recurring-task-1"
+      }
+    });
+    const taskId = (taskResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(taskId).toBeTruthy();
+
+    const configureResp = await client.callTool({
+      name: "configure_recurrence",
+      arguments: {
+        taskId,
+        preset: "daily",
+        interval: 1,
+        anchor: "scheduled",
+        timezone: "UTC",
+        allDay: true
+      }
+    });
+    const configureText = (configureResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(configureText).toMatch(/configured recurrence/);
+
+    await client.callTool({
+      name: "update_entity",
+      arguments: {
+        id: taskId,
+        status: "done"
+      }
+    });
+
+    const recurrenceResp = await client.callTool({
+      name: "get_recurrence",
+      arguments: { taskId }
+    });
+    const recurrence = JSON.parse(
+      (recurrenceResp.content as Array<{ text: string }>)[0]?.text ?? "{}"
+    ) as { currentOccurrence?: { id?: string; dueAt?: string } };
+    expect(recurrence.currentOccurrence?.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(recurrence.currentOccurrence?.id).not.toBe(taskId);
+    expect(recurrence.currentOccurrence?.dueAt).toBe(
+      new Date(dueAt.getTime() + 24 * 60 * 60 * 1000).toISOString()
+    );
   });
 
   it("reads workspace_overview resource", async () => {

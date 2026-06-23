@@ -100,6 +100,11 @@ BOTNOTE_TEST_DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote_tes
 | `POST` | `/v1/projects/:id/opening-brief` | Opening brief |
 | `POST` | `/v1/opening-brief` | Workspace or project opening brief |
 | `POST` | `/v1/tasks` | Create task |
+| `POST` | `/v1/tasks/:id/recurrence` | Configure task recurrence |
+| `GET` | `/v1/tasks/:id/recurrence` | Fetch task recurrence |
+| `PATCH` | `/v1/recurrences/:id` | Update recurrence rule |
+| `POST` | `/v1/tasks/:id/skip-occurrence` | Skip current recurring occurrence |
+| `POST` | `/v1/recurrences/:id/stop` | Stop recurrence series |
 | `POST` | `/v1/notes` | Create note |
 | `GET` | `/v1/entities/:id` | Fetch entity |
 | `PATCH` | `/v1/entities/:id` | Update entity |
@@ -134,6 +139,35 @@ curl -s -X POST $A/v1/search \
   -H 'content-type: application/json' \
   -d "{\"query\":\"ship\",\"projectId\":\"$PID\"}"
 ```
+
+### Recurring tasks
+
+Recurring tasks are normal task rows plus a recurrence rule. Configure a first
+dated task, then attach a rule. Completing the current occurrence generates the
+next occurrence idempotently.
+
+```bash
+botnote task "Attend weekly lab meeting" \
+  --project LAB \
+  --due 2026-06-26 \
+  --repeat weekly \
+  --on FR \
+  --anchor scheduled
+
+botnote task "Review backups" \
+  --project OPS \
+  --due 2026-06-26 \
+  --repeat monthly \
+  --anchor completion
+
+botnote recurrence OPS-12
+botnote skip OPS-12 --reason "holiday"
+botnote stop-recurrence OPS-12
+```
+
+Use `scheduled` for calendar-like events, meetings, and fixed routines. Use
+`completion` for maintenance work where the next due date should be calculated
+from when the previous occurrence was actually completed.
 
 ## Plugin
 
@@ -264,6 +298,10 @@ botnote exposes the following tools + resources over stdio.
 | `get_entity` | `readOnly` | Fetch one task or note by UUID |
 | `get_entity_by_key` | `readOnly` | Fetch one task or note by human-readable identifier, e.g. `DEMO-12` |
 | `create_task` | `idempotent` | Create a structured task |
+| `configure_recurrence` | `idempotent` | Attach or update a recurrence rule for a dated task |
+| `get_recurrence` | `readOnly` | Read a task's recurrence rule and current series state |
+| `skip_occurrence` | `destructive` | Skip the current recurring occurrence and advance the series |
+| `stop_recurrence` | `destructive` | Disable future occurrences for a recurrence series |
 | `remember` | `idempotent` | Create a free-form note |
 | `update_entity` | `destructive` | Mutate task or note fields |
 | `related` | `readOnly` | List child notes/tasks for an entity |

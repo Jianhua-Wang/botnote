@@ -124,6 +124,68 @@ export const edges = pgTable(
   })
 );
 
+export const RECURRENCE_ANCHORS = ["scheduled", "completion"] as const;
+export type RecurrenceAnchor = (typeof RECURRENCE_ANCHORS)[number];
+
+export const RECURRENCE_EXCEPTION_ACTIONS = ["skipped", "cancelled", "modified"] as const;
+export type RecurrenceExceptionAction = (typeof RECURRENCE_EXCEPTION_ACTIONS)[number];
+
+export const recurrenceRules = pgTable(
+  "recurrence_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    seriesId: uuid("series_id")
+      .notNull()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    currentOccurrenceId: uuid("current_occurrence_id").references(() => entities.id, {
+      onDelete: "set null"
+    }),
+    enabled: boolean("enabled").notNull().default(true),
+    rrule: text("rrule").notNull(),
+    dtstart: timestamp("dtstart", { withTimezone: true }).notNull(),
+    timezone: text("timezone").notNull().default("UTC"),
+    allDay: boolean("all_day").notNull().default(true),
+    anchor: text("anchor").notNull().default("scheduled"),
+    maxInstancesAhead: integer("max_instances_ahead").notNull().default(1),
+    generatedCount: integer("generated_count").notNull().default(1),
+    lastOccurrenceAt: timestamp("last_occurrence_at", { withTimezone: true }),
+    nextOccurrenceAt: timestamp("next_occurrence_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => ({
+    seriesIdx: uniqueIndex("recurrence_rules_series_idx").on(t.seriesId),
+    currentOccurrenceIdx: index("recurrence_rules_current_occurrence_idx").on(
+      t.currentOccurrenceId
+    ),
+    nextOccurrenceIdx: index("recurrence_rules_next_occurrence_idx").on(t.nextOccurrenceAt),
+    enabledIdx: index("recurrence_rules_enabled_idx").on(t.enabled, t.nextOccurrenceAt)
+  })
+);
+
+export const recurrenceExceptions = pgTable(
+  "recurrence_exceptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ruleId: uuid("rule_id")
+      .notNull()
+      .references(() => recurrenceRules.id, { onDelete: "cascade" }),
+    occurrenceAt: timestamp("occurrence_at", { withTimezone: true }).notNull(),
+    action: text("action").notNull(),
+    entityId: uuid("entity_id").references(() => entities.id, { onDelete: "set null" }),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => ({
+    ruleOccurrenceIdx: index("recurrence_exceptions_rule_occurrence_idx").on(
+      t.ruleId,
+      t.occurrenceAt
+    ),
+    entityIdx: index("recurrence_exceptions_entity_idx").on(t.entityId)
+  })
+);
+
 export const tokens = pgTable(
   "tokens",
   {
@@ -175,6 +237,8 @@ export const sessions = pgTable(
 export type Project = typeof projects.$inferSelect;
 export type Entity = typeof entities.$inferSelect;
 export type Edge = typeof edges.$inferSelect;
+export type RecurrenceRule = typeof recurrenceRules.$inferSelect;
+export type RecurrenceException = typeof recurrenceExceptions.$inferSelect;
 export type Token = typeof tokens.$inferSelect;
 export type EmbeddingSettings = typeof embeddingSettings.$inferSelect;
 export type Session = typeof sessions.$inferSelect;

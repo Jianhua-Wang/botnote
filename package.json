@@ -67,6 +67,7 @@
     "fastify-type-provider-zod": "^4.0.2",
     "openai": "^4.70.0",
     "pg": "^8.13.0",
+    "rrule": "^2.8.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {

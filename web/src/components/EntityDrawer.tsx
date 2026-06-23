@@ -20,10 +20,19 @@ import {
   useDeleteEntity,
   useEntity,
   useProjects,
+  useRecurrence,
   useRelatedEntities,
+  useSkipOccurrence,
+  useStopRecurrence,
   useUpdateEntity
 } from "../api/hooks";
-import { PRIORITY_LEVELS, type Entity, type EntityKind, type Priority } from "../api/types";
+import {
+  PRIORITY_LEVELS,
+  type Entity,
+  type EntityKind,
+  type Priority,
+  type RecurrenceDetails
+} from "../api/types";
 import { useDrawer } from "../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
 import { useModals } from "../state/modals";
@@ -81,8 +90,11 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: projects } = useProjects();
   const { data: related } = useRelatedEntities(id);
   const { data: parentEntity } = useEntity(entity?.parentId ?? undefined);
+  const { data: recurrence } = useRecurrence(entity?.kind === "task" ? id : undefined);
   const update = useUpdateEntity();
   const del = useDeleteEntity();
+  const skipOccurrence = useSkipOccurrence();
+  const stopRecurrence = useStopRecurrence();
   const { open: openModal } = useModals();
   const { open: openDrawer } = useDrawer();
 
@@ -204,6 +216,17 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     onClose();
   }
 
+  async function skipCurrentOccurrence() {
+    if (!recurrence || !confirm("Skip this recurring occurrence?")) return;
+    const result = await skipOccurrence.mutateAsync({ taskId: loadedEntity.id });
+    if (result.next) openDrawer(result.next.id);
+  }
+
+  async function stopCurrentSeries() {
+    if (!recurrence || !confirm("Stop this recurrence series?")) return;
+    await stopRecurrence.mutateAsync({ ruleId: recurrence.rule.id });
+  }
+
   return (
     <>
       <header className="h-12 px-3 border-b border-line flex items-center gap-2 shrink-0">
@@ -315,6 +338,15 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
             onStatusChange={setStatus}
           />
 
+          {entity.kind === "task" && recurrence && (
+            <RecurrencePanel
+              recurrence={recurrence}
+              onSkip={skipCurrentOccurrence}
+              onStop={stopCurrentSeries}
+              busy={skipOccurrence.isPending || stopRecurrence.isPending}
+            />
+          )}
+
           {isNote && parentEntity && (
             <button
               className="w-full text-left flex items-center gap-2 text-xs px-3 py-2 rounded border border-line bg-sidebar/50 hover:border-accent hover:bg-accentSoft/40 transition-colors"
@@ -385,6 +417,55 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
         </div>
       </div>
     </>
+  );
+}
+
+function recurrenceSummary(details: RecurrenceDetails): string {
+  const rule = details.rule;
+  const every = rule.rrule
+    .replace(/^FREQ=/, "")
+    .split(";")
+    .map((part) => part.toLowerCase())
+    .join(" · ");
+  const anchor = rule.anchor === "completion" ? "after completion" : "scheduled";
+  const next = rule.nextOccurrenceAt
+    ? ` · next ${new Date(rule.nextOccurrenceAt).toLocaleDateString()}`
+    : "";
+  return `${every} · ${anchor}${next}`;
+}
+
+function RecurrencePanel({
+  recurrence,
+  onSkip,
+  onStop,
+  busy
+}: {
+  recurrence: RecurrenceDetails;
+  onSkip: () => void;
+  onStop: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="border border-line rounded-md px-3 py-2 bg-sidebar/30 flex items-center gap-2 text-xs">
+      <span className="text-faint shrink-0">Repeat</span>
+      <span className="text-muted truncate">{recurrenceSummary(recurrence)}</span>
+      <button
+        className="ml-auto text-faint hover:text-ink disabled:opacity-40"
+        onClick={onSkip}
+        disabled={busy}
+        title="Skip occurrence"
+      >
+        Skip
+      </button>
+      <button
+        className="text-faint hover:text-danger disabled:opacity-40"
+        onClick={onStop}
+        disabled={busy}
+        title="Stop series"
+      >
+        Stop
+      </button>
+    </div>
   );
 }
 

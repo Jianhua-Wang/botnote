@@ -13,6 +13,11 @@ import {
   getProjectByKey,
   updateProject
 } from "../src/service/projects.js";
+import {
+  createRecurrenceRule,
+  getRecurrenceForTask,
+  skipOccurrence
+} from "../src/service/recurrence.js";
 import { search } from "../src/service/search.js";
 import { tasksRange } from "../src/service/tasks.js";
 import { consumeToken, createToken, listTokens } from "../src/service/tokens.js";
@@ -26,7 +31,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await db.execute(sql`
-    TRUNCATE entities, edges, projects, tokens, sessions, embedding_settings
+    TRUNCATE recurrence_exceptions, recurrence_rules, entities, edges, projects, tokens, sessions, embedding_settings
     RESTART IDENTITY CASCADE
   `);
 });
@@ -325,6 +330,138 @@ describe("botnote service", () => {
     const ids = range.backlog.map((t) => t.id);
     expect(ids).toContain(open.id);
     expect(ids).toContain(cancelled.id);
+  });
+
+  it("creates a recurrence rule and generates the next scheduled occurrence on completion", async () => {
+    const p = await createProject(db, { key: "REC", name: "Recurrence" });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Review recurring task",
+      body: "same body",
+      tags: ["repeat"],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt,
+      priority: "medium"
+    });
+
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+    expect(rule.rrule).toContain("FREQ=DAILY");
+
+    await update(db, task.id, { status: "done" });
+    const details = await getRecurrenceForTask(db, task.id);
+    expect(details?.rule.currentOccurrenceId).not.toBe(task.id);
+    expect(details?.currentOccurrence?.title).toBe(task.title);
+    expect(details?.currentOccurrence?.status).toBe("open");
+    expect(details?.currentOccurrence?.priority).toBe("medium");
+    expect(details?.currentOccurrence?.dueAt?.toISOString()).toBe(
+      new Date(dueAt.getTime() + 24 * 60 * 60 * 1000).toISOString()
+    );
+
+    await update(db, task.id, { status: "done" });
+    const afterRetry = await getRecurrenceForTask(db, task.id);
+    expect(afterRetry?.rule.currentOccurrenceId).toBe(details?.rule.currentOccurrenceId);
+  });
+
+  it("supports repeat-after-completion anchor", async () => {
+    const p = await createProject(db, { key: "RAC", name: "Repeat After Completion" });
+    const dueAt = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Replace maintenance item",
+      body: "",
+      tags: ["maintenance"],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 2,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "completion"
+    });
+    const before = Date.now();
+    await update(db, task.id, { status: "done" });
+    const after = Date.now();
+    const details = await getRecurrenceForTask(db, task.id);
+    const nextDue = details?.currentOccurrence?.dueAt?.getTime() ?? 0;
+
+    expect(nextDue).toBeGreaterThanOrEqual(before + 2 * 24 * 60 * 60 * 1000 - 1000);
+    expect(nextDue).toBeLessThanOrEqual(after + 2 * 24 * 60 * 60 * 1000 + 1000);
+  });
+
+  it("skips recurring occurrence and stops when count is exhausted", async () => {
+    const p = await createProject(db, { key: "RSK", name: "Recurrence Skip" });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Attend recurring meeting",
+      body: "",
+      tags: ["meeting"],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+
+    await createRecurrenceRule(db, task.id, {
+      preset: "weekly",
+      interval: 1,
+      count: 2,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+    const skipped = await skipOccurrence(db, task.id, { actorKind: "human" });
+    expect(skipped.skipped.status).toBe("rejected");
+    expect(skipped.next?.status).toBe("open");
+
+    await update(db, skipped.next!.id, { status: "done" });
+    const details = await getRecurrenceForTask(db, skipped.next!.id);
+    expect(details?.rule.enabled).toBe(false);
+    expect(details?.rule.currentOccurrenceId).toBeNull();
+  });
+
+  it("rejects recurrence rules for tasks without due dates", async () => {
+    const p = await createProject(db, { key: "RNO", name: "Recurrence No Due" });
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Needs a first due date",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+
+    await expect(
+      createRecurrenceRule(db, task.id, {
+        preset: "weekly",
+        interval: 1,
+        timezone: "UTC",
+        allDay: true,
+        anchor: "scheduled"
+      })
+    ).rejects.toThrow("first due date");
   });
 
   it("link creates edge + listChildren via parentId", async () => {

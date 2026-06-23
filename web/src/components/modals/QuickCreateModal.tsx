@@ -1,6 +1,18 @@
 import { useState } from "react";
-import { useEntityList, useProjects, useWriteEntity } from "../../api/hooks";
-import { CREATABLE_KINDS, PRIORITY_LEVELS, type EntityKind, type Priority } from "../../api/types";
+import {
+  useConfigureRecurrence,
+  useEntityList,
+  useProjects,
+  useWriteEntity
+} from "../../api/hooks";
+import {
+  CREATABLE_KINDS,
+  PRIORITY_LEVELS,
+  type EntityKind,
+  type Priority,
+  type RecurrenceAnchor,
+  type RecurrencePreset
+} from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle } from "../../lib/entityTitle";
 import { useModals } from "../../state/modals";
@@ -24,9 +36,13 @@ export function QuickCreateModal({
   const [tagsStr, setTagsStr] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Priority>("none");
+  const [repeat, setRepeat] = useState<RecurrencePreset | "none">("none");
+  const [repeatInterval, setRepeatInterval] = useState(1);
+  const [repeatAnchor, setRepeatAnchor] = useState<RecurrenceAnchor>("scheduled");
   const [pinned, setPinned] = useState(false);
   const [parentId, setParentId] = useState<string>(initialParentId ?? "");
   const write = useWriteEntity();
+  const configureRecurrence = useConfigureRecurrence();
   const { close } = useModals();
   const { open: openDrawer } = useDrawer();
 
@@ -41,7 +57,7 @@ export function QuickCreateModal({
     projectId.length > 0 &&
     (isNote
       ? title.trim().length > 0 || body.trim().length > 0
-      : title.trim().length > 0);
+      : title.trim().length > 0 && (repeat === "none" || dueDate.length > 0));
 
   return (
     <ModalShell title="Quick create" width="max-w-xl">
@@ -73,6 +89,18 @@ export function QuickCreateModal({
                   pinned,
                   parentId: parentId || null
                 });
+          if (kind === "task" && repeat !== "none") {
+            await configureRecurrence.mutateAsync({
+              taskId: entity.id,
+              input: {
+                preset: repeat,
+                interval: repeatInterval,
+                anchor: repeatAnchor,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                allDay: true
+              }
+            });
+          }
           close();
           openDrawer(entity.id);
         }}
@@ -149,6 +177,43 @@ export function QuickCreateModal({
             </>
           )}
         </div>
+        {kind === "task" && (
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_84px_132px] gap-2">
+            <select
+              className="input"
+              value={repeat}
+              onChange={(e) => setRepeat(e.target.value as RecurrencePreset | "none")}
+              title="Repeat"
+            >
+              <option value="none">Repeat: none</option>
+              <option value="hourly">Hourly</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+            <input
+              type="number"
+              min={1}
+              max={999}
+              className="input"
+              value={repeatInterval}
+              disabled={repeat === "none"}
+              onChange={(e) => setRepeatInterval(Math.max(1, Number(e.target.value) || 1))}
+              title="Repeat interval"
+            />
+            <select
+              className="input"
+              value={repeatAnchor}
+              disabled={repeat === "none"}
+              onChange={(e) => setRepeatAnchor(e.target.value as RecurrenceAnchor)}
+              title="Repeat anchor"
+            >
+              <option value="scheduled">Scheduled</option>
+              <option value="completion">Completion</option>
+            </select>
+          </div>
+        )}
         {kind === "task" && priority !== "none" && (
           <div className="flex items-center gap-1.5 text-xxs text-muted">
             <PriorityIcon priority={priority} size={11} />

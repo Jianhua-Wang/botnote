@@ -31,6 +31,13 @@ import {
   revokeSession,
   verifyMasterPassword
 } from "../service/sessions.js";
+import {
+  createRecurrenceRule,
+  getRecurrenceForTask,
+  skipOccurrence,
+  stopRecurrence,
+  updateRecurrenceRule
+} from "../service/recurrence.js";
 import { tasksRange } from "../service/tasks.js";
 import { createToken, listTokens, revokeToken } from "../service/tokens.js";
 import {
@@ -42,17 +49,22 @@ import {
   LinkInput,
   OpeningBriefInput,
   RecentInput,
+  RecurrenceInput,
   SearchInput,
+  SkipOccurrenceInput,
+  StopRecurrenceInput,
   TasksRangeInput,
   UpdateEmbeddingSettingsInput,
   UpdateInput,
   UpdateProjectInput,
+  UpdateRecurrenceInput,
   Uuid
 } from "../service/types.js";
 import { VERSION } from "../version.js";
 import type { ServerContext } from "./server.js";
 
 const IdParams = z.object({ id: Uuid });
+const RuleIdParams = z.object({ id: Uuid });
 const KeyParams = z.object({ key: z.string() });
 const KeySeqParams = z.object({
   key: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
@@ -355,6 +367,94 @@ export async function registerRoutes(
       }
     },
     async (req) => tasksRange(ctx.db, TasksRangeInput.parse(req.body))
+  );
+
+  app.post(
+    "/v1/tasks/:id/recurrence",
+    {
+      schema: {
+        tags: ["recurrence"],
+        summary: "Configure recurrence on a task",
+        params: IdParams,
+        body: RecurrenceInput
+      }
+    },
+    async (req) => {
+      const { id } = IdParams.parse(req.params);
+      const body = RecurrenceInput.parse(req.body);
+      return createRecurrenceRule(ctx.db, id, body);
+    }
+  );
+
+  app.get(
+    "/v1/tasks/:id/recurrence",
+    {
+      schema: {
+        tags: ["recurrence"],
+        summary: "Read recurrence for a task",
+        params: IdParams
+      }
+    },
+    async (req, reply) => {
+      const { id } = IdParams.parse(req.params);
+      const recurrence = await getRecurrenceForTask(ctx.db, id);
+      if (!recurrence) {
+        reply.code(404);
+        return { error: "not_found", path: req.url };
+      }
+      return recurrence;
+    }
+  );
+
+  app.patch(
+    "/v1/recurrences/:id",
+    {
+      schema: {
+        tags: ["recurrence"],
+        summary: "Update a recurrence rule",
+        params: RuleIdParams,
+        body: UpdateRecurrenceInput
+      }
+    },
+    async (req) => {
+      const { id } = RuleIdParams.parse(req.params);
+      const body = UpdateRecurrenceInput.parse(req.body);
+      return updateRecurrenceRule(ctx.db, id, body);
+    }
+  );
+
+  app.post(
+    "/v1/tasks/:id/skip-occurrence",
+    {
+      schema: {
+        tags: ["recurrence"],
+        summary: "Skip the current recurring occurrence and create the next one",
+        params: IdParams,
+        body: SkipOccurrenceInput.optional()
+      }
+    },
+    async (req) => {
+      const { id } = IdParams.parse(req.params);
+      const body = SkipOccurrenceInput.parse(req.body ?? {});
+      return skipOccurrence(ctx.db, id, body);
+    }
+  );
+
+  app.post(
+    "/v1/recurrences/:id/stop",
+    {
+      schema: {
+        tags: ["recurrence"],
+        summary: "Stop a recurrence series",
+        params: RuleIdParams,
+        body: StopRecurrenceInput.optional()
+      }
+    },
+    async (req) => {
+      const { id } = RuleIdParams.parse(req.params);
+      const body = StopRecurrenceInput.parse(req.body ?? {});
+      return stopRecurrence(ctx.db, id, body);
+    }
   );
 
   // ----- entities (write) -----

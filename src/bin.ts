@@ -27,17 +27,19 @@ function configPath(): string {
 
 function readConfig(): BotnoteConfig {
   const p = configPath();
+  const envBaseUrl = process.env.BOTNOTE_URL;
+  const envToken = process.env.BOTNOTE_TOKEN;
   if (!existsSync(p)) {
-    return { baseUrl: process.env.BOTNOTE_URL ?? DEFAULT_BASE_URL };
+    return { baseUrl: envBaseUrl ?? DEFAULT_BASE_URL, token: envToken };
   }
   try {
     const raw = JSON.parse(readFileSync(p, "utf8")) as Partial<BotnoteConfig>;
     return {
-      baseUrl: raw.baseUrl ?? process.env.BOTNOTE_URL ?? DEFAULT_BASE_URL,
-      token: raw.token
+      baseUrl: envBaseUrl ?? raw.baseUrl ?? DEFAULT_BASE_URL,
+      token: envToken ?? raw.token
     };
   } catch {
-    return { baseUrl: process.env.BOTNOTE_URL ?? DEFAULT_BASE_URL };
+    return { baseUrl: envBaseUrl ?? DEFAULT_BASE_URL, token: envToken };
   }
 }
 
@@ -90,13 +92,20 @@ Usage:
   botnote today                            Show today + overdue tasks
   botnote tasks [--status open]            List tasks
   botnote task "<title>" [--project KEY] [--due YYYY-MM-DD] [--priority P]
+                       [--repeat hourly|daily|weekly|monthly|yearly] [--interval N]
+                       [--on MO,WE] [--anchor scheduled|completion]
+                       [--count N] [--until YYYY-MM-DD]
                                            Create a task
   botnote note "<body>" [--project KEY] [--pin]
                                            Create a note (no title)
+  botnote recurrence TASK                  Show recurrence for a task
+  botnote skip TASK [--reason "..."]       Skip current recurring occurrence
+  botnote stop-recurrence TASK             Stop a task's recurrence series
   botnote search "<query>" [--limit 10]    Hybrid search
 
 Env:
   BOTNOTE_URL   override the server base URL (default ${DEFAULT_BASE_URL})
+  BOTNOTE_TOKEN override the saved bearer token
 
 Config: ${configPath()}
 `;
@@ -181,6 +190,25 @@ interface Entity {
   tags: string[];
 }
 
+interface RecurrenceRule {
+  id: string;
+  rrule: string;
+  anchor: string;
+  enabled: boolean;
+  nextOccurrenceAt: string | null;
+}
+
+interface RecurrenceDetails {
+  rule: RecurrenceRule;
+  currentOccurrence: Entity | null;
+}
+
+interface SkipOccurrenceResult {
+  skipped: Entity;
+  next: Entity | null;
+  rule: RecurrenceRule;
+}
+
 interface TasksRangeResult {
   scheduled: Entity[];
   overdue: Entity[];
@@ -263,6 +291,50 @@ async function resolveProjectId(keyOrId?: string): Promise<string | undefined> {
   return hit.id;
 }
 
+async function resolveEntity(identifier: string): Promise<Entity> {
+  if (/^[0-9a-f-]{36}$/i.test(identifier)) {
+    return callApi<Entity>("GET", `/v1/entities/${identifier}`);
+  }
+  const match = /^([A-Z][A-Z0-9_]*)-(\d+)$/i.exec(identifier);
+  if (!match) throw new Error(`task identifier must be a UUID or KEY-123; got ${identifier}`);
+  const key = match[1]!.toUpperCase();
+  const seq = Number(match[2]);
+  return callApi<Entity>("GET", `/v1/projects/by-key/${key}/entities/by-seq/${seq}`);
+}
+
+function splitList(value: unknown): string[] | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function recurrenceBody(args: Args, dueAt: string | null): Record<string, unknown> | null {
+  const repeat = args.flags.repeat as string | undefined;
+  const rrule = args.flags.rrule as string | undefined;
+  if (!repeat && !rrule) return null;
+  if (!dueAt && !args.flags.dtstart) {
+    throw new Error("recurring tasks require --due YYYY-MM-DD or --dtstart ISO");
+  }
+  const body: Record<string, unknown> = {};
+  if (rrule) body.rrule = rrule;
+  else body.preset = repeat;
+  if (args.flags.interval) body.interval = Number(args.flags.interval);
+  const weekdays = splitList(args.flags.on);
+  if (weekdays) body.byWeekday = weekdays.map((d) => d.toUpperCase());
+  const monthDays = splitList(args.flags["month-day"]);
+  if (monthDays) body.byMonthDay = monthDays.map(Number);
+  const months = splitList(args.flags.month);
+  if (months) body.byMonth = months.map(Number);
+  if (args.flags.until) body.until = new Date(`${args.flags.until as string}T23:59:59Z`).toISOString();
+  if (args.flags.count) body.count = Number(args.flags.count);
+  if (args.flags.dtstart) body.dtstart = args.flags.dtstart;
+  if (args.flags.timezone) body.timezone = args.flags.timezone;
+  if (args.flags.anchor) body.anchor = args.flags.anchor;
+  return body;
+}
+
 async function cmdTask(args: Args): Promise<void> {
   const title = args.positional.join(" ").trim();
   if (!title) {
@@ -281,7 +353,59 @@ async function cmdTask(args: Args): Promise<void> {
     dueAt,
     priority
   });
+  const recurrence = recurrenceBody(args, dueAt);
+  if (recurrence) {
+    const rule = await callApi<RecurrenceRule>("POST", `/v1/tasks/${entity.id}/recurrence`, recurrence);
+    console.log(`✓ wrote recurring task ${entity.id}`);
+    console.log(`  recurrence ${rule.rrule} (${rule.anchor})`);
+    return;
+  }
   console.log(`✓ wrote task ${entity.id}`);
+}
+
+async function cmdRecurrence(args: Args): Promise<void> {
+  const identifier = args.positional[0];
+  if (!identifier) {
+    console.error("usage: botnote recurrence TASK");
+    process.exit(1);
+  }
+  const task = await resolveEntity(identifier);
+  const details = await callApi<RecurrenceDetails>("GET", `/v1/tasks/${task.id}/recurrence`);
+  console.log(`rule:    ${details.rule.id}`);
+  console.log(`enabled: ${details.rule.enabled}`);
+  console.log(`rrule:   ${details.rule.rrule}`);
+  console.log(`anchor:  ${details.rule.anchor}`);
+  console.log(`next:    ${details.rule.nextOccurrenceAt ?? "-"}`);
+}
+
+async function cmdSkip(args: Args): Promise<void> {
+  const identifier = args.positional[0];
+  if (!identifier) {
+    console.error('usage: botnote skip TASK [--reason "..."]');
+    process.exit(1);
+  }
+  const task = await resolveEntity(identifier);
+  const result = await callApi<SkipOccurrenceResult>(
+    "POST",
+    `/v1/tasks/${task.id}/skip-occurrence`,
+    { reason: args.flags.reason as string | undefined, actorKind: "human" }
+  );
+  console.log(`✓ skipped ${result.skipped.id}`);
+  console.log(`next: ${result.next ? result.next.id : "-"}`);
+}
+
+async function cmdStopRecurrence(args: Args): Promise<void> {
+  const identifier = args.positional[0];
+  if (!identifier) {
+    console.error("usage: botnote stop-recurrence TASK");
+    process.exit(1);
+  }
+  const task = await resolveEntity(identifier);
+  const details = await callApi<RecurrenceDetails>("GET", `/v1/tasks/${task.id}/recurrence`);
+  const rule = await callApi<RecurrenceRule>("POST", `/v1/recurrences/${details.rule.id}/stop`, {
+    reason: args.flags.reason as string | undefined
+  });
+  console.log(`✓ stopped recurrence ${rule.id}`);
 }
 
 async function cmdNote(args: Args): Promise<void> {
@@ -373,6 +497,12 @@ async function main(): Promise<void> {
       return cmdTasks(args);
     case "task":
       return cmdTask(args);
+    case "recurrence":
+      return cmdRecurrence(args);
+    case "skip":
+      return cmdSkip(args);
+    case "stop-recurrence":
+      return cmdStopRecurrence(args);
     case "note":
       return cmdNote(args);
     case "search":

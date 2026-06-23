@@ -24,6 +24,9 @@ const TASK_STATUSES = [
 ] as const;
 const PRIORITIES = ["urgent", "high", "medium", "low", "none"] as const;
 const EDGE_KINDS = ["blocks", "references", "parent_of"] as const;
+const RECURRENCE_PRESETS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
+const RECURRENCE_ANCHORS = ["scheduled", "completion"] as const;
+const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
 
 function displayTitle(e: { title: string | null; body: string }): string {
   if (e.title && e.title.trim()) return e.title;
@@ -513,7 +516,127 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     }
   );
 
-  // ----- 13. related -----
+  // ----- 13. recurrence -----
+
+  server.registerTool(
+    "configure_recurrence",
+    {
+      title: "Configure Recurrence",
+      description:
+        "Attach a recurrence rule to an existing dated task. Use this only when the user explicitly asks for a repeating task; meetings and calendar-like work should usually use anchor='scheduled', while maintenance routines can use anchor='completion'.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        taskId: z.string().uuid(),
+        rrule: z.string().min(1).max(1000).optional().describe("Raw RRULE such as FREQ=WEEKLY;BYDAY=MO."),
+        preset: z.enum(RECURRENCE_PRESETS).optional(),
+        interval: z.number().int().min(1).max(999).optional(),
+        byWeekday: z.array(z.enum(WEEKDAYS)).optional(),
+        byMonthDay: z.array(z.number().int().min(1).max(31)).optional(),
+        bySetPos: z.number().int().min(-5).max(5).optional(),
+        byMonth: z.array(z.number().int().min(1).max(12)).optional(),
+        until: z.string().datetime().nullable().optional(),
+        count: z.number().int().min(1).max(10000).nullable().optional(),
+        dtstart: z.string().datetime().optional(),
+        timezone: z.string().min(1).max(80).optional(),
+        allDay: z.boolean().optional(),
+        anchor: z.enum(RECURRENCE_ANCHORS).optional()
+      }
+    },
+    async ({ taskId, ...fields }) => {
+      const body = Object.fromEntries(
+        Object.entries(fields).filter(([, v]) => v !== undefined)
+      );
+      const rule = await c.configureRecurrence(taskId, body);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `configured recurrence ${rule.id}\nrrule: ${rule.rrule}\nanchor: ${rule.anchor}\nnext: ${rule.nextOccurrenceAt ?? "-"}`
+          }
+        ]
+      };
+    }
+  );
+
+  server.registerTool(
+    "get_recurrence",
+    {
+      title: "Get Recurrence",
+      description: "Fetch the recurrence rule attached to a task occurrence.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: { taskId: z.string().uuid() }
+    },
+    async ({ taskId }) => {
+      const details = await c.getRecurrence(taskId);
+      return { content: [{ type: "text", text: JSON.stringify(details, null, 2) }] };
+    }
+  );
+
+  server.registerTool(
+    "skip_occurrence",
+    {
+      title: "Skip Recurring Occurrence",
+      description:
+        "Skip the current recurring occurrence without marking it done, then create the next occurrence when the series continues.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false
+      },
+      inputSchema: {
+        taskId: z.string().uuid(),
+        reason: z.string().max(500).optional()
+      }
+    },
+    async ({ taskId, reason }) => {
+      const result = await c.skipOccurrence(taskId, { reason, actorKind: "agent" });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `skipped ${summarizeEntity(result.skipped)}\nnext: ${
+              result.next ? summarizeEntity(result.next) : "-"
+            }`
+          }
+        ]
+      };
+    }
+  );
+
+  server.registerTool(
+    "stop_recurrence",
+    {
+      title: "Stop Recurrence",
+      description: "Disable a recurrence series so no future occurrences are generated.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false
+      },
+      inputSchema: {
+        ruleId: z.string().uuid(),
+        reason: z.string().max(500).optional()
+      }
+    },
+    async ({ ruleId, reason }) => {
+      const rule = await c.stopRecurrence(ruleId, { reason });
+      return { content: [{ type: "text", text: `stopped recurrence ${rule.id}` }] };
+    }
+  );
+
+  // ----- 14. related -----
 
   server.registerTool(
     "related",
@@ -544,7 +667,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     }
   );
 
-  // ----- 14. link -----
+  // ----- 15. link -----
 
   server.registerTool(
     "link",

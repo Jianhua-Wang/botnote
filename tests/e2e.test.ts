@@ -19,7 +19,10 @@ let mcpClient: Client;
 let mcpTransport: StdioClientTransport;
 
 beforeAll(async () => {
-  await db.execute(sql`TRUNCATE entities, edges, projects, tokens, sessions RESTART IDENTITY CASCADE`);
+  await db.execute(sql`
+    TRUNCATE recurrence_exceptions, recurrence_rules, entities, edges, projects, tokens, sessions
+    RESTART IDENTITY CASCADE
+  `);
 
   server = await buildServer({ db, embedding, logLevel: "warn" });
   await server.listen({ port: 0, host: "127.0.0.1" });
@@ -149,6 +152,60 @@ describe("botnote E2E cross-transport", () => {
     const mdText = (mdResp.content as Array<{ text: string }>)[0]?.text ?? "";
     expect(mdText).toContain("NEVER push to main");
     expect(mdText).toContain("pnpm test");
+  });
+
+  it("REST recurrence completion creates the next occurrence", async () => {
+    const projectResp = await fetch(`${baseUrl}/v1/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "R2E", name: "Recurring E2E" })
+    });
+    const project = (await projectResp.json()) as { id: string };
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+
+    const taskResp = await fetch(`${baseUrl}/v1/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: project.id,
+        title: "Run recurring REST smoke",
+        actorKind: "human",
+        dueAt: dueAt.toISOString()
+      })
+    });
+    expect(taskResp.ok).toBe(true);
+    const task = (await taskResp.json()) as { id: string };
+
+    const recurrenceResp = await fetch(`${baseUrl}/v1/tasks/${task.id}/recurrence`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        preset: "daily",
+        interval: 1,
+        timezone: "UTC",
+        allDay: true,
+        anchor: "scheduled"
+      })
+    });
+    expect(recurrenceResp.ok).toBe(true);
+
+    const completeResp = await fetch(`${baseUrl}/v1/entities/${task.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "done" })
+    });
+    expect(completeResp.ok).toBe(true);
+
+    const detailsResp = await fetch(`${baseUrl}/v1/tasks/${task.id}/recurrence`);
+    expect(detailsResp.ok).toBe(true);
+    const details = (await detailsResp.json()) as {
+      currentOccurrence: { id: string; dueAt: string } | null;
+    };
+    expect(details.currentOccurrence?.id).not.toBe(task.id);
+    expect(details.currentOccurrence?.dueAt).toBe(
+      new Date(dueAt.getTime() + 24 * 60 * 60 * 1000).toISOString()
+    );
   });
 
   it("workspace_overview resource lists all projects E2E", async () => {

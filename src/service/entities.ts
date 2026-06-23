@@ -1,29 +1,9 @@
 import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { edges, entities, projects, type Entity } from "../db/schema.js";
+import { normalizeDueAt } from "./dates.js";
+import { advanceRecurrenceOnCompletion } from "./recurrence.js";
 import type { LinkInput, RecentInput, UpdateInput, WriteInput } from "./types.js";
-
-/**
- * Snap an exact-midnight-UTC due date to noon UTC. Date-only intents (e.g.
- * "due 2026-06-03") arriving as `2026-06-03T00:00:00Z` would render as the
- * previous calendar day in any UTC-negative timezone. Noon UTC stays on the
- * intended day across UTC-12..UTC+11. Anything with a non-zero time
- * component is left alone — that's a real datetime, not a calendar date.
- */
-function normalizeDueAt(value: Date | null | undefined): Date | null {
-  if (value == null) return null;
-  if (
-    value.getUTCHours() === 0 &&
-    value.getUTCMinutes() === 0 &&
-    value.getUTCSeconds() === 0 &&
-    value.getUTCMilliseconds() === 0
-  ) {
-    const noon = new Date(value);
-    noon.setUTCHours(12);
-    return noon;
-  }
-  return value;
-}
 
 function normalizeStatus(value: string): string {
   return value === "delayed" || value === "archived" ? "done" : value;
@@ -90,6 +70,7 @@ export async function update(
   // prior status to know whether this is an entry into or exit from 'done',
   // so do a tiny read first — cheaper than a CASE expression on UPDATE and
   // keeps the SQL the same shape as other writes.
+  let enteredDone = false;
   if (normalizedFields.status !== undefined) {
     const prior = await db
       .select({ status: entities.status })
@@ -99,6 +80,7 @@ export async function update(
     if (!prior[0]) throw new Error(`entity ${id} not found`);
     const wasDone = prior[0].status === "done";
     const isDone = normalizedFields.status === "done";
+    enteredDone = isDone && !wasDone;
     if (isDone && !wasDone) set.completedAt = new Date();
     else if (!isDone && wasDone) set.completedAt = null;
   }
@@ -109,6 +91,9 @@ export async function update(
       .insert(edges)
       .values({ fromId: fields.parentId, toId: row.id, kind: "parent_of" })
       .onConflictDoNothing();
+  }
+  if (enteredDone && row.kind === "task") {
+    await advanceRecurrenceOnCompletion(db, row);
   }
   return row;
 }

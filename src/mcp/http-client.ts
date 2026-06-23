@@ -124,6 +124,22 @@ export class BotnoteHttpClient {
   updateEntity(id: string, body: UpdateEntityBody) {
     return this.request<EntityDTO>("PATCH", `/v1/entities/${id}`, body);
   }
+  configureRecurrence(taskId: string, body: RecurrenceBody) {
+    return this.request<RecurrenceRuleDTO>("POST", `/v1/tasks/${taskId}/recurrence`, body);
+  }
+  getRecurrence(taskId: string) {
+    return this.request<RecurrenceDetailsDTO>("GET", `/v1/tasks/${taskId}/recurrence`);
+  }
+  skipOccurrence(taskId: string, body: SkipOccurrenceBody = {}) {
+    return this.request<SkipOccurrenceDTO>(
+      "POST",
+      `/v1/tasks/${taskId}/skip-occurrence`,
+      body
+    );
+  }
+  stopRecurrence(ruleId: string, body: StopRecurrenceBody = {}) {
+    return this.request<RecurrenceRuleDTO>("POST", `/v1/recurrences/${ruleId}/stop`, body);
+  }
   link(fromId: string, body: { toId: string; kind: LinkKind }) {
     return this.request<{ created: boolean }>(
       "POST",
@@ -162,8 +178,39 @@ export interface EntityDTO {
   priority: string;
   pinned: boolean;
   sequenceId: number | null;
+  completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RecurrenceRuleDTO {
+  id: string;
+  seriesId: string;
+  currentOccurrenceId: string | null;
+  enabled: boolean;
+  rrule: string;
+  dtstart: string;
+  timezone: string;
+  allDay: boolean;
+  anchor: string;
+  maxInstancesAhead: number;
+  generatedCount: number;
+  lastOccurrenceAt: string | null;
+  nextOccurrenceAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecurrenceDetailsDTO {
+  rule: RecurrenceRuleDTO;
+  currentOccurrence: EntityDTO | null;
+}
+
+export interface SkipOccurrenceDTO {
+  skipped: EntityDTO;
+  next: EntityDTO | null;
+  rule: RecurrenceRuleDTO;
 }
 
 export interface SearchHitDTO {
@@ -230,6 +277,31 @@ export interface UpdateEntityBody {
   dueAt?: string | null;
   priority?: string;
   pinned?: boolean;
+}
+
+export interface RecurrenceBody {
+  rrule?: string;
+  preset?: "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+  interval?: number;
+  byWeekday?: Array<"MO" | "TU" | "WE" | "TH" | "FR" | "SA" | "SU">;
+  byMonthDay?: number[];
+  bySetPos?: number;
+  byMonth?: number[];
+  until?: string | null;
+  count?: number | null;
+  dtstart?: string;
+  timezone?: string;
+  allDay?: boolean;
+  anchor?: "scheduled" | "completion";
+}
+
+export interface SkipOccurrenceBody {
+  reason?: string;
+  actorKind?: string;
+}
+
+export interface StopRecurrenceBody {
+  reason?: string;
 }
 
 export interface RecentBody {

@@ -4,6 +4,7 @@ import type {
   CreateProjectInput,
   EntityKind,
   RecentInput,
+  RecurrenceInput,
   SearchInput,
   TasksRangeInput,
   Token,
@@ -131,6 +132,60 @@ export function useTasksRange(input: TasksRangeInput, opts: { poll?: boolean } =
     queryKey: ["tasks-range", input],
     queryFn: () => api.tasksRange(input),
     refetchInterval: opts.poll === false ? false : POLL_INTERVAL
+  });
+}
+
+export function useRecurrence(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ["recurrence", taskId],
+    queryFn: () => api.getRecurrence(taskId!),
+    enabled: Boolean(taskId),
+    retry: false
+  });
+}
+
+export function useConfigureRecurrence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, input }: { taskId: string; input: RecurrenceInput }) =>
+      api.configureRecurrence(taskId, input),
+    onSuccess: (rule) => {
+      qc.invalidateQueries({ queryKey: ["entity", rule.currentOccurrenceId ?? undefined] });
+      qc.invalidateQueries({ queryKey: ["recurrence"] });
+      qc.invalidateQueries({ queryKey: ["tasks-range"] });
+      qc.invalidateQueries({ queryKey: ["recent"] });
+      qc.invalidateQueries({ queryKey: ["entity-list"] });
+    }
+  });
+}
+
+export function useSkipOccurrence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, reason }: { taskId: string; reason?: string }) =>
+      api.skipOccurrence(taskId, reason),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["entity", result.skipped.id] });
+      if (result.next) qc.invalidateQueries({ queryKey: ["entity", result.next.id] });
+      qc.invalidateQueries({ queryKey: ["recurrence"] });
+      qc.invalidateQueries({ queryKey: ["tasks-range"] });
+      qc.invalidateQueries({ queryKey: ["recent"] });
+      qc.invalidateQueries({ queryKey: ["entity-list"] });
+    }
+  });
+}
+
+export function useStopRecurrence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ruleId, reason }: { ruleId: string; reason?: string }) =>
+      api.stopRecurrence(ruleId, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["recurrence"] });
+      qc.invalidateQueries({ queryKey: ["tasks-range"] });
+      qc.invalidateQueries({ queryKey: ["recent"] });
+      qc.invalidateQueries({ queryKey: ["entity-list"] });
+    }
   });
 }
 

@@ -34,6 +34,7 @@ Argument: `<task-key-or-project-key>`.
    - task key/title
    - status
    - due date and priority when present
+   - recurrence cadence when the task is recurring and `mcp__botnote__get_recurrence` is available
    - one-line next action if it is obvious from the task body
 
 6. Treat botnote as working memory while doing the work.

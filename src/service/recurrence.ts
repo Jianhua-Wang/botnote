@@ -1,0 +1,457 @@
+import { and, eq, or } from "drizzle-orm";
+import rrulePkg from "rrule";
+import type { Database } from "../db/client.js";
+import {
+  entities,
+  recurrenceExceptions,
+  recurrenceRules,
+  type Entity,
+  type RecurrenceRule
+} from "../db/schema.js";
+import { normalizeDueAt } from "./dates.js";
+import type { RecurrenceInput, StopRecurrenceInput, UpdateRecurrenceInput } from "./types.js";
+
+const { RRule } = rrulePkg;
+
+type WeekdayKey = "MO" | "TU" | "WE" | "TH" | "FR" | "SA" | "SU";
+type Frequency = NonNullable<RecurrenceInput["preset"]>;
+
+const WEEKDAYS: Record<WeekdayKey, typeof RRule.MO> = {
+  MO: RRule.MO,
+  TU: RRule.TU,
+  WE: RRule.WE,
+  TH: RRule.TH,
+  FR: RRule.FR,
+  SA: RRule.SA,
+  SU: RRule.SU
+};
+
+const FREQUENCIES: Record<Frequency, number> = {
+  hourly: RRule.HOURLY,
+  daily: RRule.DAILY,
+  weekly: RRule.WEEKLY,
+  monthly: RRule.MONTHLY,
+  yearly: RRule.YEARLY
+};
+
+interface RecurrenceMarker {
+  ruleId: string;
+  seriesId: string;
+  role: "occurrence";
+  occurrenceAt: string;
+  occurrenceIndex: number;
+}
+
+interface RecurrenceMetadata {
+  recurrence?: Partial<RecurrenceMarker>;
+}
+
+export interface RecurrenceDetails {
+  rule: RecurrenceRule;
+  currentOccurrence: Entity | null;
+}
+
+function metadataObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return { ...(value as Record<string, unknown>) };
+}
+
+function recurrenceMarker(e: Entity): Partial<RecurrenceMarker> | null {
+  const metadata = metadataObject(e.metadata) as RecurrenceMetadata;
+  if (!metadata.recurrence || typeof metadata.recurrence !== "object") return null;
+  return metadata.recurrence;
+}
+
+function withRecurrenceMetadata(
+  e: Entity,
+  marker: RecurrenceMarker
+): Record<string, unknown> {
+  return {
+    ...metadataObject(e.metadata),
+    recurrence: marker
+  };
+}
+
+function normalizeRRuleText(raw: string): string {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const rruleLine = lines.find((line) => line.toUpperCase().startsWith("RRULE:")) ?? lines[0];
+  if (!rruleLine) throw new Error("recurrence rule is empty");
+  return rruleLine.replace(/^RRULE:/i, "");
+}
+
+function rruleLine(rule: InstanceType<typeof RRule>): string {
+  const line = rule
+    .toString()
+    .split(/\r?\n/)
+    .find((part) => part.startsWith("RRULE:"));
+  if (!line) throw new Error("rrule did not produce an RRULE line");
+  return line.slice("RRULE:".length);
+}
+
+function buildRRuleFromInput(input: RecurrenceInput, dtstart: Date): string {
+  if (input.rrule) return normalizeRRuleText(input.rrule);
+  if (!input.preset) throw new Error("recurrence preset is required");
+
+  const options: ConstructorParameters<typeof RRule>[0] = {
+    freq: FREQUENCIES[input.preset],
+    interval: input.interval,
+    dtstart
+  };
+  if (input.byWeekday?.length) {
+    options.byweekday = input.byWeekday.map((day) => WEEKDAYS[day]);
+  }
+  if (input.byMonthDay?.length) options.bymonthday = input.byMonthDay;
+  if (input.bySetPos != null) options.bysetpos = input.bySetPos;
+  if (input.byMonth?.length) options.bymonth = input.byMonth;
+  if (input.until) options.until = input.until;
+  if (input.count) options.count = input.count;
+
+  return rruleLine(new RRule(options));
+}
+
+function buildRRule(rule: Pick<RecurrenceRule, "rrule" | "dtstart">, dtstart = rule.dtstart) {
+  const parsed = RRule.parseString(rule.rrule);
+  return new RRule({ ...parsed, dtstart });
+}
+
+function maxDate(a: Date, b: Date): Date {
+  return a.getTime() >= b.getTime() ? a : b;
+}
+
+function countLimit(rule: RecurrenceRule): number | null {
+  return buildRRule(rule).options.count ?? null;
+}
+
+function computeNextOccurrenceAt(
+  rule: RecurrenceRule,
+  occurrence: Entity,
+  completedAt: Date
+): Date | null {
+  const count = countLimit(rule);
+  if (count != null && rule.generatedCount >= count) return null;
+
+  const anchor = rule.anchor === "completion" ? "completion" : "scheduled";
+  const dtstart = anchor === "completion" ? completedAt : rule.dtstart;
+  const rrule = buildRRule(rule, dtstart);
+  const scheduledBase = occurrence.dueAt ?? rule.dtstart;
+  const cursor = anchor === "completion" ? completedAt : maxDate(scheduledBase, completedAt);
+  const next = rrule.after(cursor, false);
+  return next ? normalizeDueAt(next) : null;
+}
+
+async function fetchEntity(db: Database["db"], id: string): Promise<Entity> {
+  const rows = await db.select().from(entities).where(eq(entities.id, id)).limit(1);
+  const row = rows[0];
+  if (!row) throw new Error(`entity ${id} not found`);
+  return row;
+}
+
+async function findRuleForTask(
+  db: Database["db"],
+  task: Entity,
+  includeDisabled = true
+): Promise<RecurrenceRule | null> {
+  const marker = recurrenceMarker(task);
+  const cond = marker?.ruleId
+    ? eq(recurrenceRules.id, marker.ruleId)
+    : or(eq(recurrenceRules.currentOccurrenceId, task.id), eq(recurrenceRules.seriesId, task.id))!;
+  const where = includeDisabled ? cond : and(cond, eq(recurrenceRules.enabled, true));
+  const rows = await db.select().from(recurrenceRules).where(where).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getRecurrenceForTask(
+  db: Database["db"],
+  taskId: string
+): Promise<RecurrenceDetails | null> {
+  const task = await fetchEntity(db, taskId);
+  const rule = await findRuleForTask(db, task);
+  if (!rule) return null;
+  const currentOccurrence = rule.currentOccurrenceId
+    ? await fetchEntity(db, rule.currentOccurrenceId).catch(() => null)
+    : null;
+  return { rule, currentOccurrence };
+}
+
+export async function createRecurrenceRule(
+  db: Database["db"],
+  taskId: string,
+  input: RecurrenceInput
+): Promise<RecurrenceRule> {
+  const task = await fetchEntity(db, taskId);
+  if (task.kind !== "task") throw new Error("recurrence can only be attached to tasks");
+  if (!task.dueAt) throw new Error("recurring tasks require a first due date");
+  if (task.status === "done" || task.status === "rejected") {
+    throw new Error("recurrence cannot be attached to a terminal task");
+  }
+
+  const existingRule = await findRuleForTask(db, task);
+  const seriesId = existingRule?.seriesId ?? recurrenceMarker(task)?.seriesId ?? task.id;
+  const dtstart = input.dtstart ? normalizeDueAt(input.dtstart)! : task.dueAt;
+  const rrule = buildRRuleFromInput(input, dtstart);
+  const nextOccurrenceAt = buildRRule({ rrule, dtstart }).after(dtstart, false);
+
+  let rule: RecurrenceRule;
+  if (existingRule) {
+    const [updated] = await db
+      .update(recurrenceRules)
+      .set({
+        currentOccurrenceId: task.id,
+        enabled: true,
+        rrule,
+        dtstart,
+        timezone: input.timezone,
+        allDay: input.allDay,
+        anchor: input.anchor,
+        maxInstancesAhead: 1,
+        nextOccurrenceAt: nextOccurrenceAt ? normalizeDueAt(nextOccurrenceAt) : null,
+        endedAt: null
+      })
+      .where(eq(recurrenceRules.id, existingRule.id))
+      .returning();
+    if (!updated) throw new Error(`recurrence rule ${existingRule.id} not found`);
+    rule = updated;
+  } else {
+    const [inserted] = await db
+      .insert(recurrenceRules)
+      .values({
+        seriesId,
+        currentOccurrenceId: task.id,
+        enabled: true,
+        rrule,
+        dtstart,
+        timezone: input.timezone,
+        allDay: input.allDay,
+        anchor: input.anchor,
+        maxInstancesAhead: 1,
+        generatedCount: 1,
+        lastOccurrenceAt: null,
+        nextOccurrenceAt: nextOccurrenceAt ? normalizeDueAt(nextOccurrenceAt) : null,
+        endedAt: null
+      })
+      .returning();
+    if (!inserted) throw new Error("recurrence rule insert returned no row");
+    rule = inserted;
+  }
+
+  await db
+    .update(entities)
+    .set({
+      metadata: withRecurrenceMetadata(task, {
+        ruleId: rule.id,
+        seriesId: rule.seriesId,
+        role: "occurrence",
+        occurrenceAt: (task.dueAt ?? rule.dtstart).toISOString(),
+        occurrenceIndex: 1
+      })
+    })
+    .where(eq(entities.id, task.id));
+
+  return rule;
+}
+
+export async function updateRecurrenceRule(
+  db: Database["db"],
+  ruleId: string,
+  input: UpdateRecurrenceInput
+): Promise<RecurrenceRule> {
+  const rows = await db.select().from(recurrenceRules).where(eq(recurrenceRules.id, ruleId)).limit(1);
+  const current = rows[0];
+  if (!current) throw new Error(`recurrence rule ${ruleId} not found`);
+  const currentOccurrence = current.currentOccurrenceId
+    ? await fetchEntity(db, current.currentOccurrenceId)
+    : null;
+  const dtstart = input.dtstart
+    ? normalizeDueAt(input.dtstart)!
+    : currentOccurrence?.dueAt ?? current.dtstart;
+  const nextRRuleInput: RecurrenceInput = {
+    rrule: input.rrule ?? current.rrule,
+    preset: input.preset,
+    interval: input.interval ?? 1,
+    byWeekday: input.byWeekday,
+    byMonthDay: input.byMonthDay,
+    bySetPos: input.bySetPos,
+    byMonth: input.byMonth,
+    until: input.until,
+    count: input.count,
+    dtstart,
+    timezone: input.timezone ?? current.timezone,
+    allDay: input.allDay ?? current.allDay,
+    anchor: input.anchor ?? (current.anchor === "completion" ? "completion" : "scheduled")
+  };
+  const rrule = input.rrule || input.preset ? buildRRuleFromInput(nextRRuleInput, dtstart) : current.rrule;
+  const nextOccurrenceAt = buildRRule({ rrule, dtstart }).after(dtstart, false);
+
+  const [updated] = await db
+    .update(recurrenceRules)
+    .set({
+      enabled: input.enabled ?? current.enabled,
+      rrule,
+      dtstart,
+      timezone: input.timezone ?? current.timezone,
+      allDay: input.allDay ?? current.allDay,
+      anchor: input.anchor ?? current.anchor,
+      nextOccurrenceAt: nextOccurrenceAt ? normalizeDueAt(nextOccurrenceAt) : null,
+      endedAt: input.enabled === true ? null : current.endedAt
+    })
+    .where(eq(recurrenceRules.id, ruleId))
+    .returning();
+  if (!updated) throw new Error(`recurrence rule ${ruleId} not found`);
+  return updated;
+}
+
+async function insertNextOccurrence(
+  db: Database["db"],
+  rule: RecurrenceRule,
+  occurrence: Entity,
+  nextDueAt: Date
+): Promise<Entity> {
+  const occurrenceIndex = rule.generatedCount + 1;
+  const idempotencyKey = `recurrence:${rule.id}:${nextDueAt.toISOString()}`;
+  const metadata = {
+    ...metadataObject(occurrence.metadata),
+    recurrence: {
+      ruleId: rule.id,
+      seriesId: rule.seriesId,
+      role: "occurrence",
+      occurrenceAt: nextDueAt.toISOString(),
+      occurrenceIndex
+    } satisfies RecurrenceMarker
+  };
+
+  const values = {
+    kind: "task",
+    projectId: occurrence.projectId,
+    title: occurrence.title,
+    body: occurrence.body,
+    tags: occurrence.tags,
+    status: "open",
+    parentId: occurrence.parentId,
+    actorKind: "system",
+    metadata,
+    dueAt: nextDueAt,
+    priority: occurrence.priority,
+    pinned: false,
+    completedAt: null,
+    idempotencyKey
+  };
+  const inserted = await db
+    .insert(entities)
+    .values(values)
+    .onConflictDoNothing()
+    .returning();
+  if (inserted[0]) return inserted[0];
+  const rows = await db.select().from(entities).where(eq(entities.idempotencyKey, idempotencyKey));
+  const existing = rows[0];
+  if (!existing) throw new Error("recurrence idempotent insert returned no row");
+  return existing;
+}
+
+async function advanceRuleFromOccurrence(
+  db: Database["db"],
+  rule: RecurrenceRule,
+  occurrence: Entity,
+  completedAt: Date
+): Promise<Entity | null> {
+  if (!rule.enabled) return null;
+  const nextDueAt = computeNextOccurrenceAt(rule, occurrence, completedAt);
+  if (!nextDueAt) {
+    await db
+      .update(recurrenceRules)
+      .set({
+        enabled: false,
+        currentOccurrenceId: null,
+        lastOccurrenceAt: occurrence.dueAt ?? rule.dtstart,
+        nextOccurrenceAt: null,
+        endedAt: completedAt
+      })
+      .where(eq(recurrenceRules.id, rule.id));
+    return null;
+  }
+
+  const next = await insertNextOccurrence(db, rule, occurrence, nextDueAt);
+  await db
+    .update(recurrenceRules)
+    .set({
+      currentOccurrenceId: next.id,
+      generatedCount: Math.max(rule.generatedCount + 1, rule.generatedCount),
+      lastOccurrenceAt: occurrence.dueAt ?? rule.dtstart,
+      nextOccurrenceAt: nextDueAt
+    })
+    .where(eq(recurrenceRules.id, rule.id));
+  return next;
+}
+
+export async function advanceRecurrenceOnCompletion(
+  db: Database["db"],
+  occurrence: Entity,
+  completedAt = occurrence.completedAt ?? new Date()
+): Promise<Entity | null> {
+  if (occurrence.kind !== "task") return null;
+  const rule = await findRuleForTask(db, occurrence, false);
+  if (!rule) return null;
+  if (rule.currentOccurrenceId && rule.currentOccurrenceId !== occurrence.id) return null;
+  return advanceRuleFromOccurrence(db, rule, occurrence, completedAt);
+}
+
+export async function skipOccurrence(
+  db: Database["db"],
+  taskId: string,
+  input: { reason?: string; actorKind?: string } = {}
+): Promise<{ skipped: Entity; next: Entity | null; rule: RecurrenceRule }> {
+  const task = await fetchEntity(db, taskId);
+  if (task.kind !== "task") throw new Error("only tasks can be skipped");
+  const rule = await findRuleForTask(db, task, false);
+  if (!rule) throw new Error("task is not an active recurring occurrence");
+  if (rule.currentOccurrenceId && rule.currentOccurrenceId !== task.id) {
+    throw new Error("only the current recurring occurrence can be skipped");
+  }
+
+  await db.insert(recurrenceExceptions).values({
+    ruleId: rule.id,
+    occurrenceAt: task.dueAt ?? rule.dtstart,
+    action: "skipped",
+    entityId: task.id,
+    metadata: { reason: input.reason ?? null, actorKind: input.actorKind ?? "human" }
+  });
+
+  const [skipped] = await db
+    .update(entities)
+    .set({
+      status: "rejected",
+      updatedAt: new Date(),
+      metadata: {
+        ...metadataObject(task.metadata),
+        recurrence: recurrenceMarker(task),
+        skippedAt: new Date().toISOString(),
+        skipReason: input.reason ?? null
+      }
+    })
+    .where(eq(entities.id, task.id))
+    .returning();
+  if (!skipped) throw new Error(`entity ${task.id} not found`);
+
+  const next = await advanceRuleFromOccurrence(db, rule, skipped, new Date());
+  return { skipped, next, rule };
+}
+
+export async function stopRecurrence(
+  db: Database["db"],
+  ruleId: string,
+  _input: StopRecurrenceInput = {}
+): Promise<RecurrenceRule> {
+  const [updated] = await db
+    .update(recurrenceRules)
+    .set({
+      enabled: false,
+      nextOccurrenceAt: null,
+      endedAt: new Date()
+    })
+    .where(eq(recurrenceRules.id, ruleId))
+    .returning();
+  if (!updated) throw new Error(`recurrence rule ${ruleId} not found`);
+  return updated;
+}

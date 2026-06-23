@@ -20,6 +20,7 @@ When the user signals something is finished:
    - Do not create a task silently.
 
 3. Mark an existing task done. Call `mcp__botnote__update_entity` with the task's `id` and `status: "done"`.
+   - If the task is recurring, completing it may generate the next occurrence. When recurrence matters to the user's next step, call `mcp__botnote__get_recurrence` after completion and mention the next due date if one exists.
 
 4. Capture a closing note only when it adds useful information. If the user described what was done in any detail, call `mcp__botnote__remember` with:
    - `body`: a 1-3 sentence summary of what was done and any gotchas worth remembering.

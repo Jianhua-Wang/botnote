@@ -61,6 +61,56 @@ export interface TasksRangeResult {
   backlog: Entity[];
 }
 
+export type RecurrencePreset = "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+export type RecurrenceAnchor = "scheduled" | "completion";
+export type RecurrenceWeekday = "MO" | "TU" | "WE" | "TH" | "FR" | "SA" | "SU";
+
+export interface RecurrenceInput {
+  rrule?: string;
+  preset?: RecurrencePreset;
+  interval?: number;
+  byWeekday?: RecurrenceWeekday[];
+  byMonthDay?: number[];
+  bySetPos?: number;
+  byMonth?: number[];
+  until?: string | null;
+  count?: number | null;
+  dtstart?: string;
+  timezone?: string;
+  allDay?: boolean;
+  anchor?: RecurrenceAnchor;
+}
+
+export interface RecurrenceRule {
+  id: string;
+  seriesId: string;
+  currentOccurrenceId: string | null;
+  enabled: boolean;
+  rrule: string;
+  dtstart: string;
+  timezone: string;
+  allDay: boolean;
+  anchor: RecurrenceAnchor;
+  maxInstancesAhead: number;
+  generatedCount: number;
+  lastOccurrenceAt: string | null;
+  nextOccurrenceAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecurrenceDetails {
+  rule: RecurrenceRule;
+  currentOccurrence: Entity | null;
+}
+
+export interface SkipOccurrenceResult {
+  skipped: Entity;
+  next: Entity | null;
+  rule: RecurrenceRule;
+}
+
 export interface SearchHit {
   entity: Entity;
   score: number;
