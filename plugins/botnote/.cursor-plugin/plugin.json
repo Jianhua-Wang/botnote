@@ -1,6 +1,6 @@
 {
   "name": "botnote",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Agent-native tasks, notes, memory, and project context for Cursor.",
   "author": {
     "name": "Jianhua Wang"
@@ -16,7 +16,7 @@
     "agents"
   ],
   "skills": "./skills/",
-  "mcpServers": ".mcp.json",
+  "mcpServers": "./.cursor-plugin/.mcp.json",
   "userConfig": {
     "botnote_url": {
       "type": "string",

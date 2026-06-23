@@ -1,6 +1,6 @@
 {
   "name": "botnote",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Agent-native tasks, notes, memory, and project context for Codex.",
   "author": {
     "name": "Jianhua Wang"
@@ -16,7 +16,19 @@
     "agents"
   ],
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
+  "mcpServers": {
+    "botnote": {
+      "command": "bash",
+      "args": [
+        "scripts/run-mcp.sh"
+      ],
+      "cwd": ".",
+      "env": {
+        "BOTNOTE_URL": "${user_config.botnote_url}",
+        "BOTNOTE_TOKEN": "${user_config.botnote_token}"
+      }
+    }
+  },
   "interface": {
     "displayName": "botnote",
     "shortDescription": "Tasks, notes, memory, and project context",
