@@ -4,8 +4,8 @@ import { useUpdateEntity } from "../../api/hooks";
 import type { Entity, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
-import { PriorityIcon } from "../tasks/icons";
-import { isTaskOverdue } from "../tasks/utils";
+import { PriorityIcon, RecurrenceIcon } from "../tasks/icons";
+import { isRecurring, isTaskOverdue } from "../tasks/utils";
 import { StatusPickerButton } from "../tasks/StatusPickerButton";
 import { useModals } from "../../state/modals";
 
@@ -144,6 +144,9 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
         >
           {displayTitle(task)}
         </span>
+        {isRecurring(task) && (
+          <RecurrenceIcon size={11} className="text-faint mt-0.5" />
+        )}
         <PriorityIcon priority={task.priority} size={11} />
       </div>
       <div className="mt-1.5 flex items-center gap-2 text-xxs text-muted">

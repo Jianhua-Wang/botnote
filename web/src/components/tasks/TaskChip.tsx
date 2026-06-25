@@ -1,9 +1,9 @@
 import type { Entity, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
-import { PriorityIcon } from "./icons";
+import { PriorityIcon, RecurrenceIcon } from "./icons";
 import { StatusPickerButton } from "./StatusPickerButton";
-import { isTaskOverdue } from "./utils";
+import { isRecurring, isTaskOverdue } from "./utils";
 
 export function TaskChip({ task, project }: { task: Entity; project?: Project }) {
   const drawer = useDrawer();
@@ -48,6 +48,7 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
       >
         {displayTitle(task)}
       </span>
+      {isRecurring(task) && <RecurrenceIcon size={11} className="text-faint" />}
       {task.priority !== "none" && <PriorityIcon priority={task.priority} size={11} />}
     </div>
   );

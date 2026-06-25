@@ -84,6 +84,18 @@ export function isTaskOverdue(t: Entity, now = new Date()): boolean {
   return new Date(t.dueAt).getTime() < startOfDay(now).getTime();
 }
 
+/**
+ * A task belongs to a recurring series if it carries the recurrence marker the
+ * backend writes in src/service/recurrence.ts (withRecurrenceMetadata when a
+ * rule is attached, and inline on each generated occurrence). Every occurrence
+ * — including the first task a rule is attached to — has
+ * metadata.recurrence.role === "occurrence".
+ */
+export function isRecurring(t: Entity): boolean {
+  const meta = t.metadata as { recurrence?: { role?: string } } | null | undefined;
+  return meta?.recurrence?.role === "occurrence";
+}
+
 export function groupTasksByDay(
   tasks: Entity[]
 ): Map<string, Entity[]> {

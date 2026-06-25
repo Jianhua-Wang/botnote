@@ -89,6 +89,54 @@ export function PriorityIcon({ priority, size = 14 }: { priority: Priority; size
   );
 }
 
+export function RecurrenceIcon({
+  size = 12,
+  className = ""
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 14 14"
+      fill="none"
+      className={`shrink-0 ${className}`}
+      aria-hidden="true"
+    >
+      <path
+        d="M2.5 7a4.5 4.5 0 0 1 7.7-3.2L11.5 5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11.5 2v3h-3"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11.5 7a4.5 4.5 0 0 1-7.7 3.2L2.5 9"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M2.5 12V9h3"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export const PRIORITY_LABEL: Record<Priority, string> = {
   urgent: "Urgent",
   high: "High",

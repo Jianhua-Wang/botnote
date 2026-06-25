@@ -3,10 +3,10 @@ import { useDeleteEntity, useUpdateEntity } from "../../api/hooks";
 import type { Entity, Priority, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
-import { PriorityIcon, PRIORITY_LABEL } from "./icons";
+import { PriorityIcon, PRIORITY_LABEL, RecurrenceIcon } from "./icons";
 import { PopoverMenu } from "./PopoverMenu";
 import { StatusPickerButton } from "./StatusPickerButton";
-import { isTaskOverdue } from "./utils";
+import { isRecurring, isTaskOverdue } from "./utils";
 
 const PRIORITY_OPTIONS: Priority[] = ["urgent", "high", "medium", "low", "none"];
 
@@ -27,6 +27,7 @@ export function TaskRow({
 
   const idLabel = project && task.sequenceId ? `${project.key}-${task.sequenceId}` : null;
   const overdue = isTaskOverdue(task);
+  const recurring = isRecurring(task);
   const visibleDate = task.status === "done" ? (task.completedAt ?? task.updatedAt) : task.dueAt;
   const visibleDateLabel = task.status === "done" ? "Completed" : "Due";
 
@@ -63,6 +64,12 @@ export function TaskRow({
 
       {showProject && project && compact && (
         <span className="font-mono text-xxs text-faint shrink-0">{project.key}</span>
+      )}
+
+      {recurring && (
+        <span className="shrink-0 text-faint" title="Recurring task">
+          <RecurrenceIcon size={12} />
+        </span>
       )}
 
       {visibleDate && (
