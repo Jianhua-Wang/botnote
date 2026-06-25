@@ -107,6 +107,7 @@ BOTNOTE_TEST_DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote_tes
 | `POST` | `/v1/recurrences/:id/stop` | Stop recurrence series |
 | `POST` | `/v1/notes` | Create note |
 | `GET` | `/v1/entities/:id` | Fetch entity |
+| `GET` | `/v1/projects/by-key/:key/entities/by-seq/:seq` | Fetch entity by identifier (e.g. `DEMO-12`) |
 | `PATCH` | `/v1/entities/:id` | Update entity |
 | `DELETE` | `/v1/entities/:id` | Delete entity |
 | `GET` | `/v1/entities/:id/related` | List related entities |
@@ -114,9 +115,15 @@ BOTNOTE_TEST_DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote_tes
 | `POST` | `/v1/recent` | Recent activity |
 | `POST` | `/v1/search` | Hybrid search |
 | `POST` | `/v1/tasks/range` | Scheduled, overdue, and backlog tasks |
+| `GET` | `/v1/settings/embedding` | Embedding provider/model/key status + vector coverage |
+| `PATCH` | `/v1/settings/embedding` | Update embedding provider/model/key settings |
+| `POST` | `/v1/settings/embedding/backfill` | Queue missing embeddings for existing rows |
 | `GET` | `/v1/tokens` | List API tokens |
 | `POST` | `/v1/tokens` | Create API token |
 | `DELETE` | `/v1/tokens/:id` | Revoke API token |
+| `POST` | `/v1/auth/login` | Master-password login; sets httpOnly session cookie |
+| `POST` | `/v1/auth/logout` | Clear session cookie and revoke the session |
+| `GET` | `/v1/auth/whoami` | Confirm auth state and how the caller authenticated |
 | `GET` | `/health` | Health check |
 
 Schemas: see `/docs` (Swagger UI) or `/docs/json` (OpenAPI 3).
@@ -357,7 +364,12 @@ Each MCP tool call inside a project should be preceded by `opening_brief({ proje
 
 ## Status
 
-v0 / M1 — complete. See `AGENTS.md` for codebase conventions and the `BOT` project in botnote for ongoing work.
+Actively developed and self-hosted at <https://botnote.net>. The shipped
+surface covers projects, tasks, and notes with hybrid search (BM25 + optional
+vector embeddings), recurring tasks, a web UI (list / board / calendar views),
+the REST API and MCP server documented above, and the editor plugin for Claude
+Code, Codex, and Cursor. See `AGENTS.md` for codebase conventions and the `BOT`
+project in botnote for ongoing work.
 
 ## License
 
