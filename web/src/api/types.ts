@@ -276,3 +276,12 @@ export interface SearchInput {
   kind?: EntityKind | null;
   limit?: number;
 }
+
+export interface WorkspaceSettings {
+  timezone: string;
+  updatedAt: string;
+}
+
+export interface UpdateWorkspaceSettingsInput {
+  timezone?: string;
+}

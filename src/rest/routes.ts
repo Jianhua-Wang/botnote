@@ -27,6 +27,10 @@ import {
   updateEmbeddingSettings
 } from "../service/embedding_settings.js";
 import {
+  getWorkspaceSettings,
+  updateWorkspaceSettings
+} from "../service/workspace_settings.js";
+import {
   createSession,
   revokeSession,
   verifyMasterPassword
@@ -59,6 +63,7 @@ import {
   UpdateInput,
   UpdateProjectInput,
   UpdateRecurrenceInput,
+  UpdateWorkspaceSettingsInput,
   Uuid
 } from "../service/types.js";
 import { VERSION } from "../version.js";
@@ -107,6 +112,14 @@ function publicToken(t: Token) {
     plaintext: t.plaintext,
     lastUsedAt: t.lastUsedAt,
     createdAt: t.createdAt
+  };
+}
+
+async function workspaceSettingsResponse(db: ServerContext["db"]) {
+  const settings = await getWorkspaceSettings(db);
+  return {
+    timezone: settings.timezone,
+    updatedAt: settings.updatedAt
   };
 }
 
@@ -208,6 +221,34 @@ export async function registerRoutes(
         ...queued,
         settings: await embeddingSettingsResponse(ctx)
       };
+    }
+  );
+
+  app.get(
+    "/v1/settings/workspace",
+    {
+      schema: {
+        tags: ["settings"],
+        summary: "Read workspace settings (timezone)"
+      }
+    },
+    async () => workspaceSettingsResponse(ctx.db)
+  );
+
+  app.patch(
+    "/v1/settings/workspace",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+      schema: {
+        tags: ["settings"],
+        summary: "Update workspace settings (timezone)",
+        body: UpdateWorkspaceSettingsInput
+      }
+    },
+    async (req) => {
+      const body = UpdateWorkspaceSettingsInput.parse(req.body);
+      await updateWorkspaceSettings(ctx.db, body);
+      return workspaceSettingsResponse(ctx.db);
     }
   );
 

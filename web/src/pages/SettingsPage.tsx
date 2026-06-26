@@ -29,7 +29,9 @@ import {
   useHealth,
   useRevokeToken,
   useTokens,
-  useUpdateEmbeddingSettings
+  useUpdateEmbeddingSettings,
+  useUpdateWorkspaceSettings,
+  useWorkspaceSettings
 } from "../api/hooks";
 import type { CreatedToken, EmbeddingProvider, EmbeddingStatusReason } from "../api/types";
 
@@ -138,6 +140,7 @@ function AccountSection() {
         title="Account"
         blurb="Browser session uses a master-password login. Agents (CLI / MCP) authenticate with bearer tokens, generated under API tokens."
       />
+      <WorkspaceTimezoneCard />
       <div className="border border-line rounded-md bg-surface px-4 py-3 flex items-center justify-between">
         <div className="text-xs text-muted">
           Sign out of this browser. Other devices and any active bearer tokens
@@ -152,6 +155,84 @@ function AccountSection() {
         </button>
       </div>
     </>
+  );
+}
+
+function WorkspaceTimezoneCard() {
+  const { data } = useWorkspaceSettings();
+  const update = useUpdateWorkspaceSettings();
+  const [timezone, setTimezone] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+
+  // Populate from IANA list, guard if unavailable (old browsers).
+  const tzOptions: string[] = (() => {
+    try {
+      return (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
+    } catch {
+      return [];
+    }
+  })();
+
+  useEffect(() => {
+    if (data) setTimezone(data.timezone);
+  }, [data]);
+
+  async function onSave(e: React.FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+    await update.mutateAsync({ timezone });
+    setMessage("Workspace timezone saved.");
+  }
+
+  return (
+    <div className="border border-line rounded-md bg-surface px-4 py-4 space-y-3">
+      <div>
+        <div className="text-sm font-semibold text-ink">Workspace timezone</div>
+        <p className="text-xs text-muted mt-0.5 leading-relaxed">
+          Used to compute all-day recurring task occurrence dates on the correct local calendar day.
+        </p>
+      </div>
+      <form onSubmit={onSave} className="flex items-end gap-3">
+        <label className="flex-1 space-y-1">
+          <span className="block text-xxs uppercase tracking-wider text-muted">Timezone</span>
+          {tzOptions.length > 0 ? (
+            <select
+              className="input"
+              value={timezone}
+              onChange={(e) => { setTimezone(e.target.value); setMessage(null); }}
+            >
+              {tzOptions.map((tz) => (
+                <option key={tz} value={tz}>{tz}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="input font-mono"
+              value={timezone}
+              onChange={(e) => { setTimezone(e.target.value); setMessage(null); }}
+              placeholder="UTC"
+            />
+          )}
+        </label>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={update.isPending || !timezone}
+        >
+          <Check size={11} /> {update.isPending ? "Saving..." : "Save"}
+        </button>
+      </form>
+      {message && (
+        <div className="text-xs text-accentText bg-accentSoft/50 border border-accent/20 rounded-md px-3 py-2">
+          {message}
+        </div>
+      )}
+      {update.error && (
+        <div className="text-xs text-danger">
+          {update.error instanceof Error ? update.error.message : String(update.error)}
+        </div>
+      )}
+    </div>
   );
 }
 

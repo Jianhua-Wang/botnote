@@ -11,6 +11,7 @@ import type {
   UpdateEmbeddingSettingsInput,
   UpdateEntityInput,
   UpdateProjectInput,
+  UpdateWorkspaceSettingsInput,
   WriteEntityInput
 } from "./types";
 
@@ -132,6 +133,23 @@ export function useBackfillEmbeddings() {
     mutationFn: (limit?: number) => api.backfillEmbeddings(limit),
     onSuccess: (result) => {
       qc.setQueryData(["settings", "embedding"], result.settings);
+    }
+  });
+}
+
+export function useWorkspaceSettings() {
+  return useQuery({
+    queryKey: ["settings", "workspace"],
+    queryFn: api.getWorkspaceSettings
+  });
+}
+
+export function useUpdateWorkspaceSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateWorkspaceSettingsInput) => api.updateWorkspaceSettings(input),
+    onSuccess: (settings) => {
+      qc.setQueryData(["settings", "workspace"], settings);
     }
   });
 }

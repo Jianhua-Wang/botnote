@@ -220,6 +220,13 @@ export const embeddingSettings = pgTable("embedding_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
 
+export const workspaceSettings = pgTable("workspace_settings", {
+  id: text("id").primaryKey().default("default"),
+  timezone: text("timezone").notNull().default("UTC"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});
+
 // Browser-facing session cookies. The plaintext is stored in an httpOnly
 // cookie; the row stores sha256(plaintext). On login the user posts the master
 // password (env BOTNOTE_PASSWORD) and we mint a row + set the cookie.
@@ -246,4 +253,5 @@ export type RecurrenceRule = typeof recurrenceRules.$inferSelect;
 export type RecurrenceException = typeof recurrenceExceptions.$inferSelect;
 export type Token = typeof tokens.$inferSelect;
 export type EmbeddingSettings = typeof embeddingSettings.$inferSelect;
+export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;
 export type Session = typeof sessions.$inferSelect;

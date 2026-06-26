@@ -21,6 +21,8 @@ import type {
   UpdateEmbeddingSettingsInput,
   UpdateEntityInput,
   UpdateProjectInput,
+  WorkspaceSettings,
+  UpdateWorkspaceSettingsInput,
   WriteEntityInput
 } from "./types";
 
@@ -148,6 +150,14 @@ export const api = {
     request<EmbeddingBackfillResponse>("/v1/settings/embedding/backfill", {
       method: "POST",
       body: JSON.stringify(limit == null ? {} : { limit })
+    }),
+
+  getWorkspaceSettings: () =>
+    request<WorkspaceSettings>("/v1/settings/workspace"),
+  updateWorkspaceSettings: (input: UpdateWorkspaceSettingsInput) =>
+    request<WorkspaceSettings>("/v1/settings/workspace", {
+      method: "PATCH",
+      body: JSON.stringify(input)
     }),
 
   tasksRange: (input: TasksRangeInput) =>

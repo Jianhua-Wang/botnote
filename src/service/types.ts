@@ -112,7 +112,7 @@ const RecurrenceFields = z.object({
   until: z.coerce.date().nullable().optional(),
   count: z.number().int().min(1).max(10000).nullable().optional(),
   dtstart: z.coerce.date().optional(),
-  timezone: z.string().min(1).max(80).default("UTC"),
+  timezone: z.string().min(1).max(80).optional(),
   allDay: z.boolean().default(true),
   anchor: RecurrenceAnchorEnum.default("scheduled")
 });
@@ -238,6 +238,11 @@ export const UpdateEmbeddingSettingsInput = z.object({
   apiKey: z.string().max(1000).nullable().optional()
 });
 export type UpdateEmbeddingSettingsInput = z.infer<typeof UpdateEmbeddingSettingsInput>;
+
+export const UpdateWorkspaceSettingsInput = z.object({
+  timezone: z.string().min(1).max(80).optional()
+});
+export type UpdateWorkspaceSettingsInput = z.infer<typeof UpdateWorkspaceSettingsInput>;
 
 export const EmbeddingBackfillInput = z.object({
   limit: z.number().int().min(1).max(100000).optional()

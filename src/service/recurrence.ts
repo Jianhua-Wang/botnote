@@ -8,8 +8,9 @@ import {
   type Entity,
   type RecurrenceRule
 } from "../db/schema.js";
-import { normalizeDueAt } from "./dates.js";
+import { allDayDueAtInZone, normalizeDueAt } from "./dates.js";
 import type { RecurrenceInput, StopRecurrenceInput, UpdateRecurrenceInput } from "./types.js";
+import { getWorkspaceSettings } from "./workspace_settings.js";
 
 const { RRule } = rrulePkg;
 
@@ -121,6 +122,23 @@ function maxDate(a: Date, b: Date): Date {
   return a.getTime() >= b.getTime() ? a : b;
 }
 
+/**
+ * Normalize a computed occurrence date for storage.
+ * - All-day rules: resolve the calendar day as seen in the rule's timezone,
+ *   then snap to noon UTC (so the intended local calendar day is preserved
+ *   across all UTC-offset clients).
+ * - Timed rules: use normalizeDueAt (exact-midnight-UTC -> noon-UTC heuristic).
+ */
+function normalizeOccurrenceDueAt(
+  rule: Pick<RecurrenceRule, "allDay" | "timezone">,
+  date: Date
+): Date {
+  if (rule.allDay) {
+    return allDayDueAtInZone(date, rule.timezone) ?? normalizeDueAt(date) ?? date;
+  }
+  return normalizeDueAt(date) ?? date;
+}
+
 function countLimit(rule: RecurrenceRule): number | null {
   return buildRRule(rule).options.count ?? null;
 }
@@ -139,12 +157,12 @@ function computeNextOccurrenceAt(
   const scheduledBase = occurrence.dueAt ?? rule.dtstart;
   const cursor = anchor === "completion" ? completedAt : maxDate(scheduledBase, completedAt);
   const next = rrule.after(cursor, false);
-  return next ? normalizeDueAt(next) : null;
+  return next ? normalizeOccurrenceDueAt(rule, next) : null;
 }
 
 function computeNextScheduledAfter(rule: RecurrenceRule, after: Date): Date | null {
   const next = buildRRule(rule, rule.dtstart).after(after, false);
-  return next ? normalizeDueAt(next) : null;
+  return next ? normalizeOccurrenceDueAt(rule, next) : null;
 }
 
 async function fetchEntity(db: Database["db"], id: string): Promise<Entity> {
@@ -193,11 +211,20 @@ export async function createRecurrenceRule(
     throw new Error("recurrence cannot be attached to a terminal task");
   }
 
+  // Resolve timezone: explicit input wins; otherwise fall back to workspace tz.
+  const timezone = input.timezone ?? (await getWorkspaceSettings(db)).timezone;
+
   const existingRule = await findRuleForTask(db, task);
   const seriesId = existingRule?.seriesId ?? recurrenceMarker(task)?.seriesId ?? task.id;
   const dtstart = input.dtstart ? normalizeDueAt(input.dtstart)! : task.dueAt;
   const rrule = buildRRuleFromInput(input, dtstart);
-  const nextOccurrenceAt = buildRRule({ rrule, dtstart }).after(dtstart, false);
+  const nextOccurrenceRaw = buildRRule({ rrule, dtstart }).after(dtstart, false);
+
+  // Build a partial rule shape for normalizeOccurrenceDueAt before the DB row exists.
+  const ruleShape = { allDay: input.allDay ?? true, timezone };
+  const nextOccurrenceAt = nextOccurrenceRaw
+    ? normalizeOccurrenceDueAt(ruleShape, nextOccurrenceRaw)
+    : null;
 
   let rule: RecurrenceRule;
   if (existingRule) {
@@ -208,11 +235,11 @@ export async function createRecurrenceRule(
         enabled: true,
         rrule,
         dtstart,
-        timezone: input.timezone,
+        timezone,
         allDay: input.allDay,
         anchor: input.anchor,
         maxInstancesAhead: 1,
-        nextOccurrenceAt: nextOccurrenceAt ? normalizeDueAt(nextOccurrenceAt) : null,
+        nextOccurrenceAt,
         endedAt: null
       })
       .where(eq(recurrenceRules.id, existingRule.id))
@@ -228,13 +255,13 @@ export async function createRecurrenceRule(
         enabled: true,
         rrule,
         dtstart,
-        timezone: input.timezone,
+        timezone,
         allDay: input.allDay,
         anchor: input.anchor,
         maxInstancesAhead: 1,
         generatedCount: 1,
         lastOccurrenceAt: null,
-        nextOccurrenceAt: nextOccurrenceAt ? normalizeDueAt(nextOccurrenceAt) : null,
+        nextOccurrenceAt,
         endedAt: null
       })
       .returning();
@@ -288,7 +315,13 @@ export async function updateRecurrenceRule(
     anchor: input.anchor ?? (current.anchor === "completion" ? "completion" : "scheduled")
   };
   const rrule = input.rrule || input.preset ? buildRRuleFromInput(nextRRuleInput, dtstart) : current.rrule;
-  const nextOccurrenceAt = buildRRule({ rrule, dtstart }).after(dtstart, false);
+  const nextOccurrenceRaw = buildRRule({ rrule, dtstart }).after(dtstart, false);
+  const resolvedAllDay = input.allDay ?? current.allDay;
+  const resolvedTimezone = input.timezone ?? current.timezone;
+  const ruleShape = { allDay: resolvedAllDay, timezone: resolvedTimezone };
+  const nextOccurrenceAt = nextOccurrenceRaw
+    ? normalizeOccurrenceDueAt(ruleShape, nextOccurrenceRaw)
+    : null;
 
   const [updated] = await db
     .update(recurrenceRules)
@@ -296,10 +329,10 @@ export async function updateRecurrenceRule(
       enabled: input.enabled ?? current.enabled,
       rrule,
       dtstart,
-      timezone: input.timezone ?? current.timezone,
-      allDay: input.allDay ?? current.allDay,
+      timezone: resolvedTimezone,
+      allDay: resolvedAllDay,
       anchor: input.anchor ?? current.anchor,
-      nextOccurrenceAt: nextOccurrenceAt ? normalizeDueAt(nextOccurrenceAt) : null,
+      nextOccurrenceAt,
       endedAt: input.enabled === true ? null : current.endedAt
     })
     .where(eq(recurrenceRules.id, ruleId))
@@ -430,7 +463,7 @@ export async function materializeScheduledRecurrences(
         break;
       }
 
-      const nextDueAt = normalizeDueAt(rule.nextOccurrenceAt)!;
+      const nextDueAt = normalizeOccurrenceDueAt(rule, rule.nextOccurrenceAt!);
       const next = await insertNextOccurrence(db, rule, template, nextDueAt);
       created.push(next);
 

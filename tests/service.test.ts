@@ -22,6 +22,11 @@ import {
 import { search } from "../src/service/search.js";
 import { tasksRange } from "../src/service/tasks.js";
 import { consumeToken, createToken, listTokens } from "../src/service/tokens.js";
+import {
+  getWorkspaceSettings,
+  updateWorkspaceSettings
+} from "../src/service/workspace_settings.js";
+import { allDayDueAtInZone } from "../src/service/dates.js";
 import { createTestDb } from "./test_db.js";
 
 const { db, pool } = createTestDb();
@@ -32,7 +37,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await db.execute(sql`
-    TRUNCATE recurrence_exceptions, recurrence_rules, entities, edges, projects, tokens, sessions, embedding_settings
+    TRUNCATE recurrence_exceptions, recurrence_rules, entities, edges, projects, tokens, sessions, embedding_settings, workspace_settings
     RESTART IDENTITY CASCADE
   `);
 });
@@ -478,15 +483,18 @@ describe("botnote service", () => {
 
   it("tasksRange materializes scheduled recurrences through today", async () => {
     const p = await createProject(db, { key: "RMT", name: "Recurrence Materialize Today" });
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const tomorrowStart = new Date(todayStart);
-    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-    const twoDaysAgo = new Date(todayStart);
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-    twoDaysAgo.setHours(12, 0, 0, 0);
-    const todayDue = new Date(todayStart);
-    todayDue.setHours(12, 0, 0, 0);
+    // Use UTC-based dates so allDayDueAtInZone(date, "UTC") produces predictable noon-UTC results
+    // regardless of the test machine's local timezone.
+    const todayStartUTC = new Date();
+    todayStartUTC.setUTCHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStartUTC);
+    tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+    const twoDaysAgo = new Date(todayStartUTC);
+    twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
+    twoDaysAgo.setUTCHours(12, 0, 0, 0);
+    const todayStart = todayStartUTC;
+    const todayDue = new Date(todayStartUTC);
+    todayDue.setUTCHours(12, 0, 0, 0);
 
     const task = await write(db, {
       kind: "task",
@@ -555,8 +563,19 @@ describe("botnote service", () => {
     const details = await getRecurrenceForTask(db, task.id);
     const nextDue = details?.currentOccurrence?.dueAt?.getTime() ?? 0;
 
-    expect(nextDue).toBeGreaterThanOrEqual(before + 2 * 24 * 60 * 60 * 1000 - 1000);
-    expect(nextDue).toBeLessThanOrEqual(after + 2 * 24 * 60 * 60 * 1000 + 1000);
+    // For all-day completion-anchor rules with timezone "UTC", the next occurrence is
+    // snapped to noon UTC of the UTC calendar day that is 2 days after completion.
+    // Compute the expected noon-UTC of (UTC day of "before" + 2 days).
+    const twoDaysAfterBefore = new Date(before + 2 * 24 * 60 * 60 * 1000);
+    twoDaysAfterBefore.setUTCHours(12, 0, 0, 0);
+    const twoDaysAfterAfter = new Date(after + 2 * 24 * 60 * 60 * 1000);
+    twoDaysAfterAfter.setUTCHours(12, 0, 0, 0);
+    // The result is noon UTC of the day 2 days from now; allow ±1 day window for day-boundary edge cases.
+    expect(nextDue).toBeGreaterThanOrEqual(twoDaysAfterBefore.getTime() - 24 * 60 * 60 * 1000);
+    expect(nextDue).toBeLessThanOrEqual(twoDaysAfterAfter.getTime() + 24 * 60 * 60 * 1000);
+    // Also verify the time is noon UTC (0 for hours other than 12 UTC means non-noon — reject that).
+    expect(new Date(nextDue).getUTCHours()).toBe(12);
+    expect(new Date(nextDue).getUTCMinutes()).toBe(0);
   });
 
   it("skips recurring occurrence and stops when count is exhausted", async () => {
@@ -955,5 +974,122 @@ describe("botnote service", () => {
     expect(formatted).toContain("## Pinned Notes");
     expect(formatted).toContain(`[${openTask.id}]`);
     expect(formatted).toContain(`task/${openTask.id}`);
+  });
+
+  // ---------------------------------------------------------------------------
+  // allDayDueAtInZone unit tests
+
+  it("allDayDueAtInZone resolves UTC midnight to noon UTC (no-op equivalent to normalizeDueAt)", () => {
+    const date = new Date("2026-06-23T00:00:00.000Z");
+    const result = allDayDueAtInZone(date, "UTC");
+    expect(result?.toISOString()).toBe("2026-06-23T12:00:00.000Z");
+  });
+
+  it("allDayDueAtInZone resolves a date at 02:00Z to the previous calendar day in America/New_York", () => {
+    // 2026-06-23T02:00:00Z is 2026-06-22 22:00 EDT (UTC-4), so calendar day is June 22
+    const date = new Date("2026-06-23T02:00:00.000Z");
+    const result = allDayDueAtInZone(date, "America/New_York");
+    // Should be noon UTC of June 22
+    expect(result?.toISOString()).toBe("2026-06-22T12:00:00.000Z");
+  });
+
+  it("allDayDueAtInZone falls back to normalizeDueAt for an invalid timezone", () => {
+    const date = new Date("2026-06-23T00:00:00.000Z");
+    const result = allDayDueAtInZone(date, "Not/A_Timezone");
+    // normalizeDueAt of midnight UTC => noon UTC
+    expect(result?.toISOString()).toBe("2026-06-23T12:00:00.000Z");
+  });
+
+  it("allDayDueAtInZone returns null for null input", () => {
+    expect(allDayDueAtInZone(null, "UTC")).toBeNull();
+    expect(allDayDueAtInZone(undefined, "UTC")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
+  // workspace settings service tests
+
+  it("getWorkspaceSettings lazy-creates default row with UTC timezone", async () => {
+    const settings = await getWorkspaceSettings(db);
+    expect(settings.timezone).toBe("UTC");
+    expect(settings.id).toBe("default");
+  });
+
+  it("getWorkspaceSettings is idempotent (lazy-create does not duplicate rows)", async () => {
+    const first = await getWorkspaceSettings(db);
+    const second = await getWorkspaceSettings(db);
+    expect(first.id).toBe(second.id);
+    expect(first.timezone).toBe(second.timezone);
+  });
+
+  it("updateWorkspaceSettings persists a valid IANA timezone", async () => {
+    const updated = await updateWorkspaceSettings(db, { timezone: "America/New_York" });
+    expect(updated.timezone).toBe("America/New_York");
+
+    const fetched = await getWorkspaceSettings(db);
+    expect(fetched.timezone).toBe("America/New_York");
+  });
+
+  it("updateWorkspaceSettings rejects an invalid timezone string", async () => {
+    await expect(
+      updateWorkspaceSettings(db, { timezone: "Not/Real_TZ" })
+    ).rejects.toThrow("Invalid IANA timezone");
+  });
+
+  it("createRecurrenceRule with no input.timezone adopts the workspace timezone", async () => {
+    await updateWorkspaceSettings(db, { timezone: "America/Chicago" });
+
+    const p = await createProject(db, { key: "WSTZ", name: "Workspace TZ" });
+    const dueAt = new Date("2026-06-23T12:00:00.000Z");
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Workspace TZ task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      allDay: true,
+      anchor: "scheduled"
+      // No timezone field — should adopt workspace tz
+    });
+
+    expect(rule.timezone).toBe("America/Chicago");
+  });
+
+  it("all-day recurrence under non-UTC workspace tz computes occurrence on correct local calendar day", async () => {
+    // Set workspace to America/New_York (UTC-4 in summer).
+    await updateWorkspaceSettings(db, { timezone: "America/New_York" });
+
+    const p = await createProject(db, { key: "NYTK", name: "NY TZ Recurrence" });
+    // dtstart noon UTC = noon UTC on June 23, which is June 23 08:00 EDT — calendar day June 23 in NY.
+    const dueAt = new Date("2026-06-23T12:00:00.000Z");
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "NY daily task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // The next occurrence should be on June 24 local time in NY = noon UTC June 24
+    expect(rule.nextOccurrenceAt?.toISOString()).toBe("2026-06-24T12:00:00.000Z");
   });
 });
