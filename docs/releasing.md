@@ -1,0 +1,100 @@
+# Release — botnote (npm + plugins)
+
+How to cut a new botnote release. Publishing is **CI-driven**: pushing a `v*`
+tag makes GitHub Actions test, build, and publish to npm. You do the version
+bump and push locally; CI does the publish.
+
+> npm publish uses **OIDC trusted publishing** (`id-token: write` in
+> `.github/workflows/publish-npm.yml`), so **no `NPM_TOKEN` is needed** — not in
+> CI secrets, not in your `~/.npmrc`. A local `npm whoami` 401 is irrelevant.
+
+## What a release contains
+
+A release bumps one version number across the package and every plugin manifest:
+
+| File | Field(s) |
+|------|----------|
+| `package.json` | `version` |
+| `.claude-plugin/marketplace.json` | `metadata.version`, `plugins[0].version` |
+| `.cursor-plugin/marketplace.json` | `metadata.version`, `plugins[0].version` |
+| `plugins/botnote/.claude-plugin/plugin.json` | `version` |
+| `plugins/botnote/.codex-plugin/plugin.json` | `version` |
+| `plugins/botnote/.cursor-plugin/plugin.json` | `version` |
+
+`scripts/sync-plugin-versions.mjs` copies `package.json`'s version into the five
+plugin manifests; `scripts/check-plugin-versions.mjs` fails CI if any drift.
+Both run automatically via the `version` lifecycle script (see below). The
+runtime `VERSION` constant is read from `package.json` at boot (`src/version.ts`).
+
+## Cut a release
+
+Working tree must be clean — `pnpm version` refuses a dirty tree. Run on `main`:
+
+```bash
+cd /Users/jianhua/botnote
+git checkout main && git pull
+
+# Bump: patch | minor | major. This runs the `version` lifecycle script
+# (sync + check plugin versions, git-add them), commits "Release x.y.z",
+# and creates the vx.y.z tag.
+pnpm version patch -m "Release %s"
+
+git push origin main          # → CI (ci.yml): typecheck, test, build
+git push origin v0.1.28       # → publish (publish-npm.yml): same gates + npm publish
+```
+
+`pnpm bump:patch` / `bump:minor` / `bump:major` are shortcuts for
+`pnpm version <level>`, but they don't set the commit message — pass
+`-m "Release %s"` yourself to keep the `Release x.y.z` convention. Tags are
+always `v<version>` (npm default).
+
+## What CI does
+
+Tag push `v*` → `.github/workflows/publish-npm.yml`:
+
+1. spin up Postgres, install root + web deps
+2. typecheck server + web
+3. check plugin versions
+4. migrate the test DB, run the full test suite
+5. `pnpm build`
+6. `npm publish --access public` (OIDC, no token)
+
+Branch push to `main` → `.github/workflows/ci.yml`: the same gates **minus**
+publish.
+
+Because publish runs the full test suite first, a broken commit fails CI and
+**does not publish** — a release is safe to retry after a fix + new tag.
+
+## Verify
+
+```bash
+gh run list  --repo Jianhua-Wang/botnote --limit 5
+gh run watch <run-id> --repo Jianhua-Wang/botnote --exit-status
+npm view botnote version          # should show the new version
+```
+
+Plugins resolve the daemon via `npx -y botnote@<version>`, so users pick up the
+new version automatically once npm shows it.
+
+## Releasing while `main` has uncommitted WIP
+
+`pnpm version` needs a clean tree. If `main` holds work you don't want to ship,
+cut the release from a clean worktree and fast-forward `main`:
+
+```bash
+# In a clean worktree sitting at the same commit as main:
+pnpm version patch -m "Release %s"                  # commit + tag here
+
+git -C /Users/jianhua/botnote merge --ff-only <branch>   # moves the 6 manifest files only
+git -C /Users/jianhua/botnote push origin main
+git -C /Users/jianhua/botnote push origin v0.1.28
+```
+
+The version commit touches only the six manifest files, so the fast-forward
+won't disturb unrelated WIP in `main`'s working tree.
+
+## Live site vs npm
+
+Publishing to npm is **separate** from the running site at
+<https://botnote.net>. A version-only bump needs no redeploy. To ship code
+changes to the live daemon, follow `docs/deployment.md` (build + restart).
