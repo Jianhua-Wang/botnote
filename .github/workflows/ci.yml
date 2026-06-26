@@ -81,6 +81,9 @@ jobs:
       - name: Typecheck web
         run: pnpm --dir web typecheck
 
+      - name: Run web tests
+        run: pnpm --dir web test
+
       - name: Check plugin versions
         run: pnpm check:plugin-versions
 
