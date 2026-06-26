@@ -2,8 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   BotnoteHttpClient,
+  BotnoteHttpError,
   type EntityDTO,
   type LinkKind,
+  type VirtualOccurrenceDTO,
   serializeEntity
 } from "./http-client.js";
 import { VERSION } from "../version.js";
@@ -29,12 +31,32 @@ const RECURRENCE_PRESETS = ["hourly", "daily", "weekly", "monthly", "yearly"] as
 const RECURRENCE_ANCHORS = ["scheduled", "completion"] as const;
 const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
 const PROJECT_STATUSES = ["planned", "active", "watching", "paused", "archived"] as const;
-const EntityIdRef = z
+/** Accepts a full UUID, a unique UUID prefix (≥8 hex chars), or a human-readable KEY-SEQ such as BOT-55. */
+const EntityRef = z
   .string()
-  .min(8)
-  .max(36)
-  .regex(/^[0-9a-fA-F-]+$/)
-  .describe("Full entity UUID or a unique UUID prefix such as the first 8 hex characters.");
+  .min(1)
+  .max(40)
+  .describe("UUID, unique UUID prefix, or human-readable KEY-SEQ such as BOT-55.");
+
+/**
+ * Resolve an entity reference to a UUID (or pass through for the backend to handle).
+ * If `ref` matches the KEY-SEQ pattern (e.g. BOT-55), it calls getEntityByKey and
+ * returns the resolved UUID. Otherwise it passes `ref` through unchanged so the
+ * backend can resolve UUID / prefix as before.
+ */
+async function resolveEntityRef(
+  c: BotnoteHttpClient,
+  ref: string
+): Promise<string> {
+  const keySeqMatch = /^([A-Z][A-Z0-9_]*)-(\d+)$/.exec(ref);
+  if (keySeqMatch) {
+    const projectKey = keySeqMatch[1]!;
+    const sequenceId = parseInt(keySeqMatch[2]!, 10);
+    const entity = await c.getEntityByKey(projectKey, sequenceId);
+    return entity.id;
+  }
+  return ref;
+}
 
 function displayTitle(e: { title: string | null; body: string }): string {
   if (e.title && e.title.trim()) return e.title;
@@ -45,7 +67,40 @@ function displayTitle(e: { title: string | null; body: string }): string {
 
 function summarizeEntity(e: EntityDTO): string {
   const tagPart = e.tags.length ? ` [${e.tags.join(", ")}]` : "";
-  return `${e.kind}/${e.id} · id: ${e.id} · ${displayTitle(e)}${tagPart}`;
+  const base = `${e.kind}/${e.id} · id: ${e.id} · ${displayTitle(e)}${tagPart}`;
+  if (e.kind !== "task") return base;
+  // Compact task suffix: status, optional priority, and due/completedAt date.
+  const parts: string[] = [e.status];
+  if (e.priority && e.priority !== "none") parts.push(e.priority);
+  if (e.status === "done" && e.completedAt) {
+    parts.push(`done ${e.completedAt.slice(0, 10)}`);
+  } else if (e.dueAt) {
+    parts.push(`due ${e.dueAt.slice(0, 10)}`);
+  }
+  return `${base} (${parts.join(", ")})`;
+}
+
+/**
+ * Format a caught error from a write-tool handler into a structured isError
+ * response. For BotnoteHttpError produces a human-readable hint keyed to the
+ * status code; for everything else falls back to the error message.
+ */
+function formatToolError(err: unknown): { isError: true; content: Array<{ type: "text"; text: string }> } {
+  let text: string;
+  if (err instanceof BotnoteHttpError) {
+    const body = err.body?.trim() || err.statusText;
+    if (err.status === 404) {
+      text = `not found: ${body}`;
+    } else if (err.status === 400 || err.status === 422) {
+      text = `invalid request: ${body}`;
+    } else {
+      text = `HTTP ${err.status} ${err.statusText}: ${body}`;
+    }
+  } else {
+    const e = err as Error | undefined;
+    text = String(e?.message ?? err);
+  }
+  return { isError: true, content: [{ type: "text", text }] };
 }
 
 const ProjectKey = z
@@ -339,18 +394,19 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     "get_entity",
     {
       title: "Get Entity",
-      description: "Fetch a single task or note by its UUID or unique UUID prefix.",
+      description: "Fetch a single task or note by its UUID, unique UUID prefix, or human-readable KEY-SEQ (e.g. BOT-55).",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false
       },
-      inputSchema: { id: EntityIdRef }
+      inputSchema: { id: EntityRef }
     },
     async ({ id }) => {
       try {
-        const entity = await c.getEntity(id);
+        const resolvedId = await resolveEntityRef(c, id);
+        const entity = await c.getEntity(resolvedId);
         return { content: [{ type: "text", text: JSON.stringify(serializeEntity(entity), null, 2) }] };
       } catch {
         return { isError: true, content: [{ type: "text", text: `entity ${id} not found` }] };
@@ -419,7 +475,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         body: z.string().default(""),
         tags: z.array(z.string()).default([]),
         status: z.enum(TASK_STATUSES).default("open"),
-        parentId: z.string().uuid().optional().describe("Link this task under another entity."),
+        parentId: EntityRef.optional().describe("Link this task under another entity. Accepts UUID, UUID prefix, or KEY-SEQ such as BOT-55."),
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
         dueAt: z.string().datetime().optional().describe("ISO datetime."),
         priority: z.enum(PRIORITIES).default("none"),
@@ -427,19 +483,26 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       }
     },
     async (input) => {
-      const entity = await c.createTask({
-        projectId: input.projectId ?? null,
-        title: input.title,
-        body: input.body,
-        tags: input.tags,
-        status: input.status,
-        parentId: input.parentId ?? null,
-        actorKind: input.actorKind,
-        dueAt: input.dueAt ?? null,
-        priority: input.priority,
-        idempotencyKey: input.idempotencyKey
-      });
-      return { content: [{ type: "text", text: `created task ${summarizeEntity(entity)}\nid: ${entity.id}` }] };
+      try {
+        const resolvedParentId = input.parentId
+          ? await resolveEntityRef(c, input.parentId)
+          : null;
+        const entity = await c.createTask({
+          projectId: input.projectId ?? null,
+          title: input.title,
+          body: input.body,
+          tags: input.tags,
+          status: input.status,
+          parentId: resolvedParentId,
+          actorKind: input.actorKind,
+          dueAt: input.dueAt ?? null,
+          priority: input.priority,
+          idempotencyKey: input.idempotencyKey
+        });
+        return { content: [{ type: "text", text: `created task ${summarizeEntity(entity)}\nid: ${entity.id}` }] };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
     }
   );
 
@@ -470,24 +533,31 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         title: z.string().max(500).optional().describe("Optional; first body line is used as fallback."),
         body: z.string().default(""),
         tags: z.array(z.string()).default([]),
-        parentId: z.string().uuid().optional().describe("Link this note under a task or other entity."),
+        parentId: EntityRef.optional().describe("Link this note under a task or other entity. Accepts UUID, UUID prefix, or KEY-SEQ such as BOT-55."),
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
         pinned: z.boolean().default(false).describe("Pin to project opening brief (must-read context)."),
         idempotencyKey: z.string().min(1).max(200).optional()
       }
     },
     async (input) => {
-      const entity = await c.remember({
-        projectId: input.projectId ?? null,
-        title: input.title ?? null,
-        body: input.body,
-        tags: input.tags,
-        parentId: input.parentId ?? null,
-        actorKind: input.actorKind,
-        pinned: input.pinned,
-        idempotencyKey: input.idempotencyKey
-      });
-      return { content: [{ type: "text", text: `remembered ${summarizeEntity(entity)}\nid: ${entity.id}` }] };
+      try {
+        const resolvedParentId = input.parentId
+          ? await resolveEntityRef(c, input.parentId)
+          : null;
+        const entity = await c.remember({
+          projectId: input.projectId ?? null,
+          title: input.title ?? null,
+          body: input.body,
+          tags: input.tags,
+          parentId: resolvedParentId,
+          actorKind: input.actorKind,
+          pinned: input.pinned,
+          idempotencyKey: input.idempotencyKey
+        });
+        return { content: [{ type: "text", text: `remembered ${summarizeEntity(entity)}\nid: ${entity.id}` }] };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
     }
   );
 
@@ -514,17 +584,23 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         openWorldHint: false
       },
       inputSchema: {
-        id: EntityIdRef,
+        id: EntityRef,
         title: z
           .string()
           .max(500)
           .nullable()
           .optional()
           .describe("Pass null to clear the title (notes only)."),
-        body: z.string().optional(),
+        body: z.string().optional().describe("Replace the entire body. Mutually exclusive with bodyAppend."),
+        bodyAppend: z
+          .string()
+          .optional()
+          .describe(
+            "Atomically append text to the existing body, separated by a blank line when the current body is non-empty. Mutually exclusive with body."
+          ),
         tags: z.array(z.string()).optional(),
         status: z.enum(TASK_STATUSES).optional(),
-        parentId: z.string().uuid().nullable().optional().describe("Re-link or unlink (null) parent."),
+        parentId: EntityRef.nullable().optional().describe("Re-link or unlink (null) parent. Accepts UUID, UUID prefix, or KEY-SEQ such as BOT-55."),
         dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear."),
         priority: z.enum(PRIORITIES).optional(),
         pinned: z.boolean().optional().describe("Pin or unpin from project opening brief."),
@@ -536,12 +612,20 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           )
       }
     },
-    async ({ id, ...fields }) => {
-      const defined: Record<string, unknown> = Object.fromEntries(
-        Object.entries(fields).filter(([, v]) => v !== undefined)
-      );
-      const updated = await c.updateEntity(id, defined);
-      return { content: [{ type: "text", text: `updated ${summarizeEntity(updated)}` }] };
+    async ({ id, parentId, ...fields }) => {
+      try {
+        const resolvedId = await resolveEntityRef(c, id);
+        const resolvedParentId =
+          parentId === null ? null : parentId !== undefined ? await resolveEntityRef(c, parentId) : undefined;
+        const defined: Record<string, unknown> = Object.fromEntries(
+          Object.entries(fields).filter(([, v]) => v !== undefined)
+        );
+        if (resolvedParentId !== undefined) defined.parentId = resolvedParentId;
+        const updated = await c.updateEntity(resolvedId, defined);
+        return { content: [{ type: "text", text: `updated ${summarizeEntity(updated)}` }] };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
     }
   );
 
@@ -560,7 +644,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         openWorldHint: false
       },
       inputSchema: {
-        taskId: z.string().uuid(),
+        taskId: EntityRef.describe("Task UUID, unique UUID prefix, or KEY-SEQ such as BOT-55."),
         rrule: z.string().min(1).max(1000).optional().describe("Raw RRULE such as FREQ=WEEKLY;BYDAY=MO."),
         preset: z.enum(RECURRENCE_PRESETS).optional(),
         interval: z.number().int().min(1).max(999).optional(),
@@ -577,18 +661,23 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       }
     },
     async ({ taskId, ...fields }) => {
-      const body = Object.fromEntries(
-        Object.entries(fields).filter(([, v]) => v !== undefined)
-      );
-      const rule = await c.configureRecurrence(taskId, body);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `configured recurrence ${rule.id}\nrrule: ${rule.rrule}\nanchor: ${rule.anchor}\nnext: ${rule.nextOccurrenceAt ?? "-"}`
-          }
-        ]
-      };
+      try {
+        const resolvedTaskId = await resolveEntityRef(c, taskId);
+        const body = Object.fromEntries(
+          Object.entries(fields).filter(([, v]) => v !== undefined)
+        );
+        const rule = await c.configureRecurrence(resolvedTaskId, body);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `configured recurrence ${rule.id}\nrrule: ${rule.rrule}\nanchor: ${rule.anchor}\nnext: ${rule.nextOccurrenceAt ?? "-"}`
+            }
+          ]
+        };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
     }
   );
 
@@ -603,10 +692,11 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         idempotentHint: true,
         openWorldHint: false
       },
-      inputSchema: { taskId: z.string().uuid() }
+      inputSchema: { taskId: EntityRef.describe("Task UUID, unique UUID prefix, or KEY-SEQ such as BOT-55.") }
     },
     async ({ taskId }) => {
-      const details = await c.getRecurrence(taskId);
+      const resolvedTaskId = await resolveEntityRef(c, taskId);
+      const details = await c.getRecurrence(resolvedTaskId);
       const serialized = {
         ...details,
         currentOccurrence: details.currentOccurrence
@@ -630,22 +720,27 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         openWorldHint: false
       },
       inputSchema: {
-        taskId: z.string().uuid(),
+        taskId: EntityRef.describe("Task UUID, unique UUID prefix, or KEY-SEQ such as BOT-55."),
         reason: z.string().max(500).optional()
       }
     },
     async ({ taskId, reason }) => {
-      const result = await c.skipOccurrence(taskId, { reason, actorKind: "agent" });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `skipped ${summarizeEntity(result.skipped)}\nnext: ${
-              result.next ? summarizeEntity(result.next) : "-"
-            }`
-          }
-        ]
-      };
+      try {
+        const resolvedTaskId = await resolveEntityRef(c, taskId);
+        const result = await c.skipOccurrence(resolvedTaskId, { reason, actorKind: "agent" });
+        return {
+          content: [
+            {
+              type: "text",
+              text: `skipped ${summarizeEntity(result.skipped)}\nnext: ${
+                result.next ? summarizeEntity(result.next) : "-"
+              }`
+            }
+          ]
+        };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
     }
   );
 
@@ -666,8 +761,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       }
     },
     async ({ ruleId, reason }) => {
-      const rule = await c.stopRecurrence(ruleId, { reason });
-      return { content: [{ type: "text", text: `stopped recurrence ${rule.id}` }] };
+      try {
+        const rule = await c.stopRecurrence(ruleId, { reason });
+        return { content: [{ type: "text", text: `stopped recurrence ${rule.id}` }] };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
     }
   );
 
@@ -700,18 +799,22 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       }
     },
     async ({ ruleId, ...fields }) => {
-      const body = Object.fromEntries(
-        Object.entries(fields).filter(([, v]) => v !== undefined)
-      );
-      const rule = await c.splitRecurrence(ruleId, body);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `split into recurrence ${rule.id}\nrrule: ${rule.rrule}\nanchor: ${rule.anchor}\nnext: ${rule.nextOccurrenceAt ?? "-"}`
-          }
-        ]
-      };
+      try {
+        const body = Object.fromEntries(
+          Object.entries(fields).filter(([, v]) => v !== undefined)
+        );
+        const rule = await c.splitRecurrence(ruleId, body);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `split into recurrence ${rule.id}\nrrule: ${rule.rrule}\nanchor: ${rule.anchor}\nnext: ${rule.nextOccurrenceAt ?? "-"}`
+            }
+          ]
+        };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
     }
   );
 
@@ -729,10 +832,11 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         idempotentHint: true,
         openWorldHint: false
       },
-      inputSchema: { id: EntityIdRef }
+      inputSchema: { id: EntityRef }
     },
     async ({ id }) => {
-      const rows = await c.listRelated(id);
+      const resolvedId = await resolveEntityRef(c, id);
+      const rows = await c.listRelated(resolvedId);
       return {
         content: [
           {
@@ -761,23 +865,264 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         openWorldHint: false
       },
       inputSchema: {
-        fromId: z.string().uuid(),
-        toId: z.string().uuid(),
+        fromId: EntityRef.describe("Source entity: UUID, UUID prefix, or KEY-SEQ such as BOT-55."),
+        toId: EntityRef.describe("Target entity: UUID, UUID prefix, or KEY-SEQ such as BOT-55."),
         kind: z.enum(EDGE_KINDS)
       }
     },
     async ({ fromId, toId, kind }) => {
-      const result = await c.link(fromId, { toId, kind: kind as LinkKind });
-      return {
-        content: [
-          {
-            type: "text",
-            text: result.created
-              ? `linked ${fromId} -[${kind}]-> ${toId}`
-              : `link already exists`
+      try {
+        const resolvedFromId = await resolveEntityRef(c, fromId);
+        const resolvedToId = await resolveEntityRef(c, toId);
+        const result = await c.link(resolvedFromId, { toId: resolvedToId, kind: kind as LinkKind });
+        return {
+          content: [
+            {
+              type: "text",
+              text: result.created
+                ? `linked ${fromId} -[${kind}]-> ${toId}`
+                : `link already exists`
+            }
+          ]
+        };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  // ----- 16. list_tasks -----
+
+  server.registerTool(
+    "list_tasks",
+    {
+      title: "List Tasks",
+      description:
+        "Return tasks split into Overdue / Scheduled / Backlog buckets for a given date range. Scheduled includes tasks whose display date falls in [from, to). Overdue is unfinished work before the range start (or before now when from is omitted). Backlog is undated tasks (when includeBacklog is true).",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        projectId: z.string().uuid().optional().describe("Scope to a single project UUID."),
+        projectIds: z.array(z.string().uuid()).optional().describe("Scope to multiple project UUIDs."),
+        from: z.string().datetime().optional().describe("Range start (ISO datetime, inclusive)."),
+        to: z.string().datetime().optional().describe("Range end (ISO datetime, exclusive)."),
+        includeBacklog: z.boolean().default(true).describe("Include undated tasks."),
+        includeDone: z.boolean().default(false).describe("Include completed tasks."),
+        includeVirtualRecurrences: z.boolean().default(false).describe("Include ephemeral future ghost occurrences for recurring tasks.")
+      }
+    },
+    async ({ projectId, projectIds, from, to, includeBacklog, includeDone, includeVirtualRecurrences }) => {
+      // Merge projectId into projectIds for the REST call
+      const ids: string[] = [];
+      if (projectId) ids.push(projectId);
+      if (projectIds) ids.push(...projectIds);
+
+      const result = await c.tasksRange({
+        from: from ?? null,
+        to: to ?? null,
+        projectIds: ids.length ? ids : null,
+        includeBacklog,
+        includeDone,
+        includeVirtualRecurrences
+      });
+
+      const lines: string[] = [];
+
+      if (result.overdue.length) {
+        lines.push("## Overdue");
+        for (const e of result.overdue) lines.push(`- ${summarizeEntity(serializeEntity(e))}`);
+      }
+
+      if (result.scheduled.length) {
+        lines.push("## Scheduled");
+        for (const e of result.scheduled) lines.push(`- ${summarizeEntity(serializeEntity(e))}`);
+      }
+
+      if (result.backlog.length) {
+        lines.push("## Backlog");
+        for (const e of result.backlog) lines.push(`- ${summarizeEntity(serializeEntity(e))}`);
+      }
+
+      if (result.virtualOccurrences.length) {
+        lines.push("## Virtual Occurrences (upcoming, not yet materialized)");
+        for (const v of result.virtualOccurrences as VirtualOccurrenceDTO[]) {
+          lines.push(`- ${v.title ?? "(untitled)"} · ${v.dueAt.slice(0, 10)} [virtual]`);
+        }
+      }
+
+      const text = lines.length
+        ? lines.join("\n")
+        : "no tasks";
+
+      return { content: [{ type: "text", text }] };
+    }
+  );
+
+  // ----- 17. list_tags -----
+
+  server.registerTool(
+    "list_tags",
+    {
+      title: "List Tags",
+      description:
+        "Return distinct tags across all entities, ordered by usage count (most-used first). Optionally scope to a single project. Useful for discovering existing tag vocabulary before creating tasks or notes.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        projectId: z.string().uuid().optional().describe("Scope to a single project UUID.")
+      }
+    },
+    async ({ projectId }) => {
+      const tags = await c.listTags(projectId ?? null);
+      const text = tags.length
+        ? tags.map((t) => `${t.tag} (${t.count})`).join("\n")
+        : "no tags";
+      return { content: [{ type: "text", text }] };
+    }
+  );
+
+  // ----- 18. get_links -----
+
+  server.registerTool(
+    "get_links",
+    {
+      title: "Get Links",
+      description:
+        "Read typed graph edges for an entity. direction='outgoing' returns edges where the entity is the source; direction='incoming' returns edges where the entity is the target; direction='both' (default) returns all. Filter by kind when you only need a specific edge type (blocks, references, or parent_of).",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        id: EntityRef,
+        kind: z.enum(EDGE_KINDS).optional().describe("Edge type filter: blocks, references, or parent_of."),
+        direction: z.enum(["outgoing", "incoming", "both"]).default("both").describe("Edge direction relative to the given entity.")
+      }
+    },
+    async ({ id, kind, direction }) => {
+      const resolvedId = await resolveEntityRef(c, id);
+      const links = await c.getLinks(resolvedId, { kind: kind ?? null, direction });
+      const text = links.length
+        ? links
+            .map(
+              (l) =>
+                `- [${l.kind} ▸ ${l.direction}] ${summarizeEntity(serializeEntity(l.entity))}`
+            )
+            .join("\n")
+        : "no links";
+      return { content: [{ type: "text", text }] };
+    }
+  );
+
+  // ----- 19. update_entities (batch) -----
+
+  const UpdateEntityItem = z.object({
+    id: EntityRef,
+    title: z.string().max(500).nullable().optional().describe("Pass null to clear the title (notes only)."),
+    body: z.string().optional().describe("Replace the entire body. Mutually exclusive with bodyAppend."),
+    bodyAppend: z.string().optional().describe("Atomically append text to the body. Mutually exclusive with body."),
+    tags: z.array(z.string()).optional(),
+    status: z.enum(TASK_STATUSES).optional(),
+    parentId: EntityRef.nullable().optional().describe("Re-link or unlink (null) parent."),
+    dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear."),
+    priority: z.enum(PRIORITIES).optional(),
+    pinned: z.boolean().optional(),
+    recurrenceScope: z.enum(["this", "future"]).optional()
+  });
+
+  server.registerTool(
+    "update_entities",
+    {
+      title: "Batch Update Entities",
+      description:
+        "Apply per-item patches to multiple tasks or notes in a single call. Each item specifies an entity ref (UUID, UUID prefix, or KEY-SEQ like BOT-55) and the fields to change — same as update_entity. A per-item failure does NOT abort the rest; partial success is reported. Returns one line per item plus a final tally.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false
+      },
+      inputSchema: {
+        items: z
+          .array(UpdateEntityItem)
+          .min(1)
+          .max(50)
+          .describe("List of entities to update (1–50 items).")
+      }
+    },
+    async ({ items }) => {
+      try {
+        const lines: string[] = [];
+        let okCount = 0;
+        let failCount = 0;
+
+        for (const item of items) {
+          const { id, parentId, ...fields } = item;
+          try {
+            const resolvedId = await resolveEntityRef(c, id);
+            const resolvedParentId =
+              parentId === null ? null : parentId !== undefined ? await resolveEntityRef(c, parentId) : undefined;
+            const defined: Record<string, unknown> = Object.fromEntries(
+              Object.entries(fields).filter(([, v]) => v !== undefined)
+            );
+            if (resolvedParentId !== undefined) defined.parentId = resolvedParentId;
+            const updated = await c.updateEntity(resolvedId, defined);
+            lines.push(`✓ ${summarizeEntity(updated)}`);
+            okCount++;
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            lines.push(`✗ ${id}: ${msg}`);
+            failCount++;
           }
-        ]
-      };
+        }
+
+        lines.push(`\n${okCount} ok, ${failCount} failed`);
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  // ----- 20. context -----
+
+  server.registerTool(
+    "context",
+    {
+      title: "Server Context",
+      description:
+        "Return the current server time, workspace timezone, botnote version, and project list. Call this tool first to resolve relative dates ('tomorrow', 'next Monday') and to pick the correct project UUID before creating tasks.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {}
+    },
+    async () => {
+      const ctx = await c.getContext();
+      const projectLines = ctx.projects.map(
+        (p) => `  ${p.key} — ${p.name} [${p.status}]`
+      );
+      const text = [
+        `now: ${ctx.now}`,
+        `timezone: ${ctx.timezone}`,
+        `version: ${ctx.version}`,
+        `projects:`,
+        ...projectLines
+      ].join("\n");
+      return { content: [{ type: "text", text }] };
     }
   );
 

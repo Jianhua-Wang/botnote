@@ -5,8 +5,10 @@ import type { Entity, Token } from "../db/schema.js";
 import {
   get,
   getByKey,
+  getLinks,
   link,
   listRelated,
+  listTags,
   recent,
   remove,
   update,
@@ -51,8 +53,10 @@ import {
   CreateTaskInput,
   CreateTokenInput,
   EmbeddingBackfillInput,
+  GetLinksInput,
   LinkInput,
   ListProjectsInput,
+  ListTagsInput,
   OpeningBriefInput,
   RecentInput,
   RecurrenceInput,
@@ -251,6 +255,30 @@ export async function registerRoutes(
       const body = UpdateWorkspaceSettingsInput.parse(req.body);
       await updateWorkspaceSettings(ctx.db, body);
       return workspaceSettingsResponse(ctx.db);
+    }
+  );
+
+  // ----- context -----
+
+  app.get(
+    "/v1/context",
+    {
+      schema: {
+        tags: ["context"],
+        summary: "Server time, workspace timezone, version, and project list for agent date-math"
+      }
+    },
+    async () => {
+      const [settings, projects] = await Promise.all([
+        getWorkspaceSettings(ctx.db),
+        listProjects(ctx.db, { includeArchived: false })
+      ]);
+      return {
+        now: new Date().toISOString(),
+        timezone: settings.timezone,
+        version: VERSION,
+        projects: projects.map((p) => ({ key: p.key, name: p.name, status: p.status }))
+      };
     }
   );
 
@@ -647,7 +675,7 @@ export async function registerRoutes(
       const updated = await update(ctx.db, id, fields);
       if (
         ctx.embedding.isEnabled() &&
-        (fields.body !== undefined || fields.title !== undefined)
+        (fields.body !== undefined || fields.bodyAppend !== undefined || fields.title !== undefined)
       ) {
         ctx.embedding.enqueue(updated.id, `${updated.title ?? ""}\n${updated.body}`);
       }
@@ -686,6 +714,54 @@ export async function registerRoutes(
       const { id } = IdParams.parse(req.params);
       const body = LinkBody.parse(req.body);
       return link(ctx.db, { fromId: id, toId: body.toId, kind: body.kind });
+    }
+  );
+
+  const GetLinksQuery = z.object({
+    kind: z.enum(["blocks", "references", "parent_of"]).optional(),
+    direction: z.enum(["outgoing", "incoming", "both"]).optional()
+  });
+
+  app.get(
+    "/v1/entities/:id/links",
+    {
+      schema: {
+        tags: ["entities"],
+        summary: "Read typed graph edges for an entity (blocks / references / parent_of)",
+        params: IdParams,
+        querystring: GetLinksQuery
+      }
+    },
+    async (req) => {
+      const { id } = IdParams.parse(req.params);
+      const query = GetLinksQuery.parse(req.query);
+      const input = GetLinksInput.parse({ id, kind: query.kind, direction: query.direction ?? "both" });
+      const links = await getLinks(ctx.db, input);
+      return links.map((l) => ({
+        kind: l.kind,
+        direction: l.direction,
+        entity: serializeEntity(l.entity)
+      }));
+    }
+  );
+
+  const ListTagsQuery = z.object({
+    projectId: Uuid.optional()
+  });
+
+  app.get(
+    "/v1/tags",
+    {
+      schema: {
+        tags: ["entities"],
+        summary: "List distinct tags with counts across entities",
+        querystring: ListTagsQuery
+      }
+    },
+    async (req) => {
+      const query = ListTagsQuery.parse(req.query);
+      const input = ListTagsInput.parse({ projectId: query.projectId ?? null });
+      return listTags(ctx.db, input);
     }
   );
 

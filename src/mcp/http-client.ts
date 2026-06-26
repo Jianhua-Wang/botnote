@@ -153,6 +153,25 @@ export class BotnoteHttpClient {
       body
     );
   }
+  tasksRange(body: TasksRangeBody) {
+    return this.request<TasksRangeResultDTO>("POST", "/v1/tasks/range", body);
+  }
+  listTags(projectId?: string | null) {
+    const params = new URLSearchParams();
+    if (projectId) params.set("projectId", projectId);
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request<TagCountDTO[]>("GET", `/v1/tags${suffix}`);
+  }
+  getLinks(id: string, opts: { kind?: string | null; direction?: string } = {}) {
+    const params = new URLSearchParams();
+    if (opts.kind) params.set("kind", opts.kind);
+    if (opts.direction) params.set("direction", opts.direction);
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request<LinkResultDTO[]>("GET", `/v1/entities/${id}/links${suffix}`);
+  }
+  getContext() {
+    return this.request<ContextDTO>("GET", "/v1/context");
+  }
 }
 
 // ----- Serialization helpers -----
@@ -304,6 +323,7 @@ export interface CreateNoteBody {
 export interface UpdateEntityBody {
   title?: string | null;
   body?: string;
+  bodyAppend?: string;
   tags?: string[];
   status?: string;
   parentId?: string | null;
@@ -354,4 +374,54 @@ export interface SearchBody {
   projectId?: string | null;
   kind?: string;
   limit?: number;
+}
+
+export interface TasksRangeBody {
+  from?: string | null;
+  to?: string | null;
+  projectId?: string | null;
+  projectIds?: string[] | null;
+  includeBacklog?: boolean;
+  includeDone?: boolean;
+  includeVirtualRecurrences?: boolean;
+}
+
+export interface VirtualOccurrenceDTO {
+  virtual: true;
+  id: string;
+  ruleId: string;
+  seriesId: string;
+  occurrenceAt: string;
+  dueAt: string;
+  title: string | null;
+  projectId: string | null;
+  priority: string;
+  allDay: boolean;
+  timezone: string;
+  rrule: string;
+}
+
+export interface TasksRangeResultDTO {
+  scheduled: EntityDTO[];
+  overdue: EntityDTO[];
+  backlog: EntityDTO[];
+  virtualOccurrences: VirtualOccurrenceDTO[];
+}
+
+export interface TagCountDTO {
+  tag: string;
+  count: number;
+}
+
+export interface LinkResultDTO {
+  kind: string;
+  direction: "outgoing" | "incoming";
+  entity: EntityDTO;
+}
+
+export interface ContextDTO {
+  now: string;
+  timezone: string;
+  version: string;
+  projects: Array<{ key: string; name: string; status: string }>;
 }

@@ -6,7 +6,7 @@ import {
   getEmbeddingSettings,
   updateEmbeddingSettings
 } from "../src/service/embedding_settings.js";
-import { get, link, recent, setBodyVec, update, write } from "../src/service/entities.js";
+import { get, getLinks, link, listTags, recent, setBodyVec, update, write } from "../src/service/entities.js";
 import { formatOpeningBrief, openingBrief } from "../src/service/opening_brief.js";
 import {
   createProject,
@@ -2188,6 +2188,206 @@ describe("botnote service", () => {
     await expect(splitRecurrence(db, rule.id, { preset: "weekly" })).rejects.toThrow(/active/);
   });
 
+  // ---------------------------------------------------------------------------
+  // listTags service tests
+
+  it("listTags returns distinct tags ordered by count desc then tag asc", async () => {
+    const p = await createProject(db, { key: "LTAG", name: "List Tags" });
+    await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Task 1",
+      body: "",
+      tags: ["alpha", "beta"],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Task 2",
+      body: "",
+      tags: ["alpha", "gamma"],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+
+    const tags = await listTags(db, { projectId: p.id });
+    // alpha appears twice, beta and gamma once
+    expect(tags[0]?.tag).toBe("alpha");
+    expect(tags[0]?.count).toBe(2);
+    // beta and gamma both have count=1, sorted alphabetically
+    const rest = tags.slice(1).map((t) => t.tag);
+    expect(rest).toEqual(["beta", "gamma"]);
+    expect(tags.slice(1).every((t) => t.count === 1)).toBe(true);
+  });
+
+  it("listTags scopes to projectId when provided", async () => {
+    const p1 = await createProject(db, { key: "TLP1", name: "Tags Project 1" });
+    const p2 = await createProject(db, { key: "TLP2", name: "Tags Project 2" });
+    await write(db, {
+      kind: "note",
+      projectId: p1.id,
+      title: "P1 note",
+      body: "",
+      tags: ["p1-only"],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    await write(db, {
+      kind: "note",
+      projectId: p2.id,
+      title: "P2 note",
+      body: "",
+      tags: ["p2-only"],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+
+    const tagsP1 = await listTags(db, { projectId: p1.id });
+    expect(tagsP1.map((t) => t.tag)).toEqual(["p1-only"]);
+
+    const tagsAll = await listTags(db, { projectId: null });
+    const tagNames = tagsAll.map((t) => t.tag);
+    expect(tagNames).toContain("p1-only");
+    expect(tagNames).toContain("p2-only");
+  });
+
+  it("listTags returns empty array when no tags exist", async () => {
+    const p = await createProject(db, { key: "TLZ", name: "Tags Zero" });
+    await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "No tags task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const tags = await listTags(db, { projectId: p.id });
+    expect(tags).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // getLinks service tests
+
+  it("getLinks returns outgoing edges correctly", async () => {
+    const p = await createProject(db, { key: "GLO", name: "Get Links Outgoing" });
+    const taskA = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Task A",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const taskB = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Task B",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    await link(db, { fromId: taskA.id, toId: taskB.id, kind: "blocks" });
+
+    const outgoing = await getLinks(db, { id: taskA.id, kind: null, direction: "outgoing" });
+    expect(outgoing).toHaveLength(1);
+    expect(outgoing[0]?.kind).toBe("blocks");
+    expect(outgoing[0]?.direction).toBe("outgoing");
+    expect(outgoing[0]?.entity.id).toBe(taskB.id);
+
+    const incoming = await getLinks(db, { id: taskA.id, kind: null, direction: "incoming" });
+    expect(incoming).toHaveLength(0);
+  });
+
+  it("getLinks returns incoming edges correctly", async () => {
+    const p = await createProject(db, { key: "GLI", name: "Get Links Incoming" });
+    const taskA = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Blocker",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const taskB = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Blocked",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    await link(db, { fromId: taskA.id, toId: taskB.id, kind: "references" });
+
+    const incoming = await getLinks(db, { id: taskB.id, kind: null, direction: "incoming" });
+    expect(incoming).toHaveLength(1);
+    expect(incoming[0]?.kind).toBe("references");
+    expect(incoming[0]?.direction).toBe("incoming");
+    expect(incoming[0]?.entity.id).toBe(taskA.id);
+  });
+
+  it("getLinks returns both directions and supports kind filter", async () => {
+    const p = await createProject(db, { key: "GLB", name: "Get Links Both" });
+    const hub = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Hub task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const child = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Child note",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const ref = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Ref note",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    await link(db, { fromId: hub.id, toId: child.id, kind: "parent_of" });
+    await link(db, { fromId: ref.id, toId: hub.id, kind: "references" });
+
+    const both = await getLinks(db, { id: hub.id, kind: null, direction: "both" });
+    expect(both.length).toBe(2);
+    const directions = both.map((l) => l.direction).sort();
+    expect(directions).toEqual(["incoming", "outgoing"]);
+
+    // Filter by kind=parent_of → only outgoing
+    const filtered = await getLinks(db, { id: hub.id, kind: "parent_of", direction: "both" });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.kind).toBe("parent_of");
+    expect(filtered[0]?.direction).toBe("outgoing");
+  });
+
   it("splitRecurrence rolls back when the new cadence has no occurrence after the fork", async () => {
     const p = await createProject(db, { key: "SPN", name: "Split No Occurrence" });
     const dueAt = new Date();
@@ -2227,5 +2427,49 @@ describe("botnote service", () => {
       .from(recurrenceRules)
       .where(eq(recurrenceRules.seriesId, rule.seriesId));
     expect(rows).toHaveLength(1);
+  });
+
+  it("update bodyAppend appends to non-empty body with blank line separator", async () => {
+    const p = await createProject(db, { key: "BAP1", name: "BodyAppend Test 1" });
+    const entity = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Append note",
+      body: "initial content",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+
+    const updated = await update(db, entity.id, { bodyAppend: "second paragraph" });
+    expect(updated.body).toBe("initial content\n\nsecond paragraph");
+  });
+
+  it("update bodyAppend appends to empty body without leading blank line", async () => {
+    const p = await createProject(db, { key: "BAP2", name: "BodyAppend Test 2" });
+    const entity = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Empty body note",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+
+    const updated = await update(db, entity.id, { bodyAppend: "first content" });
+    expect(updated.body).toBe("first content");
+  });
+
+  it("update rejects when both body and bodyAppend are provided", async () => {
+    const { UpdateInput } = await import("../src/service/types.js");
+    const result = UpdateInput.safeParse({ body: "full body", bodyAppend: "extra" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msg = result.error.issues[0]?.message ?? "";
+      expect(msg).toContain("mutually exclusive");
+    }
   });
 });

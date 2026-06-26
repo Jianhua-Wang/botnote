@@ -2,6 +2,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type Project } from "../db/schema.js";
 import { getProject } from "./projects.js";
+import { DEFAULT_WORKSPACE_TIMEZONE, getWorkspaceSettings } from "./workspace_settings.js";
 import type { OpeningBriefInput } from "./types.js";
 
 export interface OpeningBrief {
@@ -11,6 +12,7 @@ export interface OpeningBrief {
   openTasks: Entity[];
   recent: Entity[];
   generatedAt: Date;
+  timezone: string;
 }
 
 export async function openingBrief(
@@ -23,7 +25,8 @@ export async function openingBrief(
     ? eq(entities.projectId, input.projectId)
     : isNull(entities.projectId);
 
-  const [pinnedNotes, openTasks, recentRows] = await Promise.all([
+  const [settings, pinnedNotes, openTasks, recentRows] = await Promise.all([
+    getWorkspaceSettings(db).catch(() => ({ timezone: DEFAULT_WORKSPACE_TIMEZONE })),
     db
       .select()
       .from(entities)
@@ -50,7 +53,8 @@ export async function openingBrief(
     pinnedNotes,
     openTasks,
     recent: recentRows,
-    generatedAt: new Date()
+    generatedAt: new Date(),
+    timezone: settings.timezone
   };
 }
 
@@ -68,6 +72,9 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
   } else {
     lines.push(`# Workspace`);
   }
+  lines.push("");
+  // One-line temporal context so agents can resolve relative dates immediately.
+  lines.push(`_Server time: ${brief.generatedAt.toISOString()} · timezone: ${brief.timezone}_`);
   lines.push("");
 
   if (brief.agentsMd) {

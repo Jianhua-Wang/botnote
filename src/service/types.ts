@@ -86,18 +86,23 @@ export const GetByKeyInput = z.object({
 });
 export type GetByKeyInput = z.infer<typeof GetByKeyInput>;
 
-export const UpdateInput = z.object({
-  title: z.string().max(500).nullable().optional(),
-  body: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  status: TaskStatusEnum.optional(),
-  metadata: z.record(z.unknown()).optional(),
-  parentId: Uuid.nullable().optional(),
-  dueAt: z.coerce.date().nullable().optional(),
-  priority: PriorityEnum.optional(),
-  pinned: z.boolean().optional(),
-  recurrenceScope: z.enum(["this", "future"]).optional()
-});
+export const UpdateInput = z
+  .object({
+    title: z.string().max(500).nullable().optional(),
+    body: z.string().optional(),
+    bodyAppend: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    status: TaskStatusEnum.optional(),
+    metadata: z.record(z.unknown()).optional(),
+    parentId: Uuid.nullable().optional(),
+    dueAt: z.coerce.date().nullable().optional(),
+    priority: PriorityEnum.optional(),
+    pinned: z.boolean().optional(),
+    recurrenceScope: z.enum(["this", "future"]).optional()
+  })
+  .refine((v) => !(v.body !== undefined && v.bodyAppend !== undefined), {
+    message: "body and bodyAppend are mutually exclusive"
+  });
 export type UpdateInput = z.infer<typeof UpdateInput>;
 
 const PositiveInterval = z.number().int().min(1).max(999);
@@ -277,3 +282,15 @@ export const EmbeddingBackfillInput = z.object({
   limit: z.number().int().min(1).max(100000).optional()
 });
 export type EmbeddingBackfillInput = z.infer<typeof EmbeddingBackfillInput>;
+
+export const ListTagsInput = z.object({
+  projectId: Uuid.nullish()
+});
+export type ListTagsInput = z.infer<typeof ListTagsInput>;
+
+export const GetLinksInput = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(EDGE_KINDS).nullish(),
+  direction: z.enum(["outgoing", "incoming", "both"]).default("both")
+});
+export type GetLinksInput = z.infer<typeof GetLinksInput>;

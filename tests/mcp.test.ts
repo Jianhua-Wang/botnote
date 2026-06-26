@@ -66,14 +66,18 @@ describe("botnote MCP", () => {
     const tools = await client.listTools();
     expect(tools.tools.map((t) => t.name).sort()).toEqual([
       "configure_recurrence",
+      "context",
       "create_project",
       "create_task",
       "get_entity",
       "get_entity_by_key",
+      "get_links",
       "get_project",
       "get_recurrence",
       "link",
       "list_projects",
+      "list_tags",
+      "list_tasks",
       "opening_brief",
       "recent",
       "related",
@@ -82,6 +86,7 @@ describe("botnote MCP", () => {
       "skip_occurrence",
       "split_recurrence",
       "stop_recurrence",
+      "update_entities",
       "update_entity",
       "update_project"
     ]);
@@ -573,5 +578,499 @@ describe("botnote MCP", () => {
     });
     const skipText = (skipResp.content as Array<{ text: string }>)[0]?.text ?? "";
     assertNoInternalFields(skipText, "skip_occurrence");
+  });
+
+  it("list_tasks returns overdue / scheduled / backlog buckets", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "LTT", name: "List Tasks Test" }
+    });
+    const cpText = (cpResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    const projectId = cpText.match(/id: ([0-9a-f-]{36})/)?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    // Backlog (no due date)
+    await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Backlog task", actorKind: "agent" }
+    });
+
+    // Overdue (due in the past)
+    await client.callTool({
+      name: "create_task",
+      arguments: {
+        projectId,
+        title: "Overdue task",
+        actorKind: "agent",
+        dueAt: "2020-01-01T12:00:00.000Z"
+      }
+    });
+
+    // Scheduled (due in the future)
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+    await client.callTool({
+      name: "create_task",
+      arguments: {
+        projectId,
+        title: "Scheduled task",
+        actorKind: "agent",
+        dueAt: tomorrow.toISOString()
+      }
+    });
+
+    // Query with a future window so the scheduled task lands in it
+    const from = new Date().toISOString();
+    const to = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+
+    const listResp = await client.callTool({
+      name: "list_tasks",
+      arguments: { projectId, from, to, includeBacklog: true, includeDone: false }
+    });
+    const listText = (listResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(listText).toContain("## Overdue");
+    expect(listText).toContain("Overdue task");
+    expect(listText).toContain("## Scheduled");
+    expect(listText).toContain("Scheduled task");
+    expect(listText).toContain("## Backlog");
+    expect(listText).toContain("Backlog task");
+    assertNoInternalFields(listText, "list_tasks");
+  });
+
+  it("list_tasks returns 'no tasks' when empty", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "LTE", name: "List Tasks Empty" }
+    });
+    const projectId = (cpResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const from = "2099-01-01T00:00:00.000Z";
+    const to = "2099-01-02T00:00:00.000Z";
+    const listResp = await client.callTool({
+      name: "list_tasks",
+      arguments: { projectId, from, to, includeBacklog: false }
+    });
+    const listText = (listResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(listText).toBe("no tasks");
+  });
+
+  it("list_tags returns tag counts and is scoped by projectId", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "LTAG", name: "List Tags Test" }
+    });
+    const projectId = (cpResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Tagged task 1", tags: ["alpha", "beta"], actorKind: "agent" }
+    });
+    await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Tagged task 2", tags: ["alpha", "gamma"], actorKind: "agent" }
+    });
+
+    const tagsResp = await client.callTool({
+      name: "list_tags",
+      arguments: { projectId }
+    });
+    const tagsText = (tagsResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    // alpha appears twice, so it should be first
+    expect(tagsText).toContain("alpha (2)");
+    expect(tagsText).toContain("beta (1)");
+    expect(tagsText).toContain("gamma (1)");
+    // alpha (2) should appear before beta (1) and gamma (1)
+    expect(tagsText.indexOf("alpha")).toBeLessThan(tagsText.indexOf("beta"));
+  });
+
+  it("list_tags returns 'no tags' when empty", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "LTGE", name: "List Tags Empty" }
+    });
+    const projectId = (cpResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const tagsResp = await client.callTool({
+      name: "list_tags",
+      arguments: { projectId }
+    });
+    const tagsText = (tagsResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(tagsText).toBe("no tags");
+  });
+
+  it("get_links returns typed edges by direction and kind", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "GLK", name: "Get Links Test" }
+    });
+    const projectId = (cpResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const taskAResp = await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Task A (blocker)", actorKind: "agent" }
+    });
+    const taskAId = (taskAResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(taskAId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const taskBResp = await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Task B (blocked)", actorKind: "agent" }
+    });
+    const taskBId = (taskBResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(taskBId).toMatch(/^[0-9a-f-]{36}$/);
+
+    // Link A -[blocks]-> B
+    await client.callTool({
+      name: "link",
+      arguments: { fromId: taskAId, toId: taskBId, kind: "blocks" }
+    });
+
+    // get_links on A (outgoing) should return B
+    const outResp = await client.callTool({
+      name: "get_links",
+      arguments: { id: taskAId, direction: "outgoing" }
+    });
+    const outText = (outResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(outText).toContain("blocks ▸ outgoing");
+    expect(outText).toContain("Task B");
+    assertNoInternalFields(outText, "get_links outgoing");
+
+    // get_links on B (incoming) should return A
+    const inResp = await client.callTool({
+      name: "get_links",
+      arguments: { id: taskBId, direction: "incoming" }
+    });
+    const inText = (inResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(inText).toContain("blocks ▸ incoming");
+    expect(inText).toContain("Task A");
+
+    // get_links on B with kind=references should return "no links"
+    const noResp = await client.callTool({
+      name: "get_links",
+      arguments: { id: taskBId, direction: "outgoing", kind: "references" }
+    });
+    const noText = (noResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(noText).toBe("no links");
+  });
+
+  it("resolves KEY-SEQ refs in update_entity and link", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "KSEQ", name: "Key-seq Resolution Test" }
+    });
+    const cpText = (cpResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    const projectId = cpText.match(/id: ([0-9a-f-]{36})/)?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    // Create two tasks; they will get sequenceId 1 and 2 in project KSEQ
+    const t1Resp = await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Key-seq task alpha", actorKind: "agent" }
+    });
+    const t1Id = (t1Resp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(t1Id).toMatch(/^[0-9a-f-]{36}$/);
+
+    const t2Resp = await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Key-seq task beta", actorKind: "agent" }
+    });
+    const t2Id = (t2Resp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(t2Id).toMatch(/^[0-9a-f-]{36}$/);
+
+    // Resolve the sequence IDs assigned to the two tasks
+    const seq1Resp = await client.callTool({
+      name: "get_entity",
+      arguments: { id: t1Id! }
+    });
+    const seq1Json = JSON.parse(
+      (seq1Resp.content as Array<{ text: string }>)[0]?.text ?? "{}"
+    ) as { sequenceId: number };
+    const seq1 = seq1Json.sequenceId;
+    expect(seq1).toBeGreaterThan(0);
+
+    const seq2Resp = await client.callTool({
+      name: "get_entity",
+      arguments: { id: t2Id! }
+    });
+    const seq2Json = JSON.parse(
+      (seq2Resp.content as Array<{ text: string }>)[0]?.text ?? "{}"
+    ) as { sequenceId: number };
+    const seq2 = seq2Json.sequenceId;
+
+    // update_entity using KEY-SEQ ref
+    const keySeq1 = `KSEQ-${seq1}`;
+    const updateResp = await client.callTool({
+      name: "update_entity",
+      arguments: { id: keySeq1, title: "Key-seq task alpha (updated via KEY-SEQ)" }
+    });
+    const updateText = (updateResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(updateText).toContain("alpha (updated via KEY-SEQ)");
+
+    // link using KEY-SEQ refs for both fromId and toId
+    const keySeq2 = `KSEQ-${seq2}`;
+    const linkResp = await client.callTool({
+      name: "link",
+      arguments: { fromId: keySeq1, toId: keySeq2, kind: "blocks" }
+    });
+    const linkText = (linkResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(linkText).toMatch(/linked .+ -\[blocks\]-> .+/);
+
+    // Confirm the link resolves via get_links with the UUID
+    const linksResp = await client.callTool({
+      name: "get_links",
+      arguments: { id: t1Id!, direction: "outgoing" }
+    });
+    const linksText = (linksResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(linksText).toContain("blocks ▸ outgoing");
+    expect(linksText).toContain("beta");
+  });
+
+  it("update_entity bodyAppend appends atomically", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "BAPP", name: "BodyAppend Test" }
+    });
+    const projectId = (cpResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    // Create a task with initial body
+    const taskResp = await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Append test task", body: "initial content", actorKind: "agent" }
+    });
+    const taskId = (taskResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
+
+    // Append to non-empty body — should separate with blank line
+    await client.callTool({
+      name: "update_entity",
+      arguments: { id: taskId!, bodyAppend: "appended text" }
+    });
+
+    const afterAppend = await client.callTool({
+      name: "get_entity",
+      arguments: { id: taskId! }
+    });
+    const afterJson = JSON.parse(
+      (afterAppend.content as Array<{ text: string }>)[0]?.text ?? "{}"
+    ) as { body: string };
+    expect(afterJson.body).toBe("initial content\n\nappended text");
+
+    // Append to empty body — should NOT prepend blank line
+    const emptyTaskResp = await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Empty body task", body: "", actorKind: "agent" }
+    });
+    const emptyTaskId = (emptyTaskResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    await client.callTool({
+      name: "update_entity",
+      arguments: { id: emptyTaskId!, bodyAppend: "first append" }
+    });
+    const emptyAfter = await client.callTool({
+      name: "get_entity",
+      arguments: { id: emptyTaskId! }
+    });
+    const emptyJson = JSON.parse(
+      (emptyAfter.content as Array<{ text: string }>)[0]?.text ?? "{}"
+    ) as { body: string };
+    expect(emptyJson.body).toBe("first append");
+  });
+
+  it("summarizeEntity includes status and due date for tasks", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "SUMM", name: "Summarize Test" }
+    });
+    const projectId = (cpResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    // Create a task with dueAt and priority
+    const dueAt = "2099-12-25T12:00:00.000Z";
+    const taskResp = await client.callTool({
+      name: "create_task",
+      arguments: {
+        projectId,
+        title: "Summarize test task",
+        actorKind: "agent",
+        dueAt,
+        priority: "high",
+        status: "open"
+      }
+    });
+    const taskId = (taskResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
+
+    // recent should include status, priority, and due date in the summary
+    const recentResp = await client.callTool({
+      name: "recent",
+      arguments: { projectId, limit: 5 }
+    });
+    const recentText = (recentResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(recentText).toContain("open");
+    expect(recentText).toContain("high");
+    expect(recentText).toContain("due 2099-12-25");
+
+    // list_tasks also uses summarizeEntity
+    const listResp = await client.callTool({
+      name: "list_tasks",
+      arguments: {
+        projectId,
+        from: new Date().toISOString(),
+        to: "2100-01-01T00:00:00.000Z",
+        includeBacklog: false
+      }
+    });
+    const listText = (listResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(listText).toContain("open");
+    expect(listText).toContain("high");
+    expect(listText).toContain("due 2099-12-25");
+
+    // Mark task done and verify completedAt shows instead of dueAt
+    await client.callTool({
+      name: "update_entity",
+      arguments: { id: taskId!, status: "done" }
+    });
+    const doneResp = await client.callTool({
+      name: "recent",
+      arguments: { projectId, limit: 5 }
+    });
+    const doneText = (doneResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(doneText).toContain("done");
+    // completedAt should be today's date
+    const todayPrefix = new Date().toISOString().slice(0, 10);
+    expect(doneText).toContain(`done ${todayPrefix}`);
+  });
+
+  it("update_entity with non-existent id returns structured isError", async () => {
+    const resp = await client.callTool({
+      name: "update_entity",
+      arguments: { id: "00000000-0000-0000-0000-000000000000", title: "will fail" }
+    });
+    // Should return isError true rather than throwing an unhandled exception
+    expect(resp.isError).toBe(true);
+    const text = (resp.content as Array<{ text: string }>)[0]?.text ?? "";
+    // The REST backend throws an unhandled error resulting in HTTP 500; the
+    // MCP layer must still catch it and return a structured error (not throw).
+    expect(text).toBeTruthy();
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  it("context tool returns now, timezone, version, and projects", async () => {
+    const resp = await client.callTool({ name: "context", arguments: {} });
+    expect(resp.isError).toBeFalsy();
+    const text = (resp.content as Array<{ text: string }>)[0]?.text ?? "";
+    // now: should be an ISO datetime
+    expect(text).toMatch(/^now: \d{4}-\d{2}-\d{2}T/m);
+    // timezone: should be present
+    expect(text).toMatch(/^timezone: /m);
+    // version: should be present
+    expect(text).toMatch(/^version: /m);
+    // projects: header present
+    expect(text).toContain("projects:");
+  });
+
+  it("opening_brief includes server time and timezone line", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "OBRTZ", name: "Opening Brief TZ Test" }
+    });
+    const projectId = (cpResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const briefResp = await client.callTool({
+      name: "opening_brief",
+      arguments: { projectId }
+    });
+    const briefText = (briefResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    // Should contain Server time with ISO datetime
+    expect(briefText).toMatch(/Server time: \d{4}-\d{2}-\d{2}T/);
+    // Should contain timezone label
+    expect(briefText).toMatch(/timezone: /);
+  });
+
+  it("update_entities batch tool applies partial success", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "BTCH", name: "Batch Update Test" }
+    });
+    const projectId = (cpResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const t1 = await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Batch task 1", actorKind: "agent" }
+    });
+    const t1Id = (t1.content as Array<{ text: string }>)[0]?.text.match(/id: ([0-9a-f-]{36})/)?.[1];
+
+    const t2 = await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Batch task 2", actorKind: "agent" }
+    });
+    const t2Id = (t2.content as Array<{ text: string }>)[0]?.text.match(/id: ([0-9a-f-]{36})/)?.[1];
+
+    expect(t1Id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(t2Id).toMatch(/^[0-9a-f-]{36}$/);
+
+    // Batch update: two valid + one bad id
+    const batchResp = await client.callTool({
+      name: "update_entities",
+      arguments: {
+        items: [
+          { id: t1Id!, status: "done" },
+          { id: t2Id!, title: "Batch task 2 (updated)" },
+          { id: "00000000-0000-0000-0000-000000000000", status: "done" }
+        ]
+      }
+    });
+    const batchText = (batchResp.content as Array<{ text: string }>)[0]?.text ?? "";
+
+    // Two successes, one failure
+    expect(batchText).toContain("2 ok, 1 failed");
+    expect(batchText).toMatch(/✓ .+Batch task 1/);
+    expect(batchText).toMatch(/✓ .+Batch task 2 \(updated\)/);
+    expect(batchText).toMatch(/✗ 00000000-0000-0000-0000-000000000000:/);
+
+    // Verify the good ones were actually updated
+    const check1 = await client.callTool({ name: "get_entity", arguments: { id: t1Id! } });
+    const json1 = JSON.parse((check1.content as Array<{ text: string }>)[0]?.text ?? "{}") as { status: string };
+    expect(json1.status).toBe("done");
+
+    const check2 = await client.callTool({ name: "get_entity", arguments: { id: t2Id! } });
+    const json2 = JSON.parse((check2.content as Array<{ text: string }>)[0]?.text ?? "{}") as { title: string };
+    expect(json2.title).toBe("Batch task 2 (updated)");
   });
 });

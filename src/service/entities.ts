@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { edges, entities, projects, type Entity } from "../db/schema.js";
+import { edges, entities, projects, type Entity, type EdgeKind } from "../db/schema.js";
 import { normalizeDueAt } from "./dates.js";
 import {
   advanceRecurrenceOnCompletion,
@@ -10,7 +10,7 @@ import {
   upsertModifiedExceptionBaseline,
   type ContentFieldKey
 } from "./recurrence.js";
-import type { LinkInput, RecentInput, UpdateInput, WriteInput } from "./types.js";
+import type { GetLinksInput, LinkInput, ListTagsInput, RecentInput, UpdateInput, WriteInput } from "./types.js";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -108,6 +108,8 @@ export async function update(
   const set: Record<string, unknown> = { ...normalizedFields, updatedAt: new Date() };
   // recurrenceScope is not a DB column — remove it before the UPDATE
   delete set.recurrenceScope;
+  // bodyAppend is handled via a SQL expression below — remove it from the plain set
+  delete set.bodyAppend;
   if (fields.dueAt !== undefined) {
     set.dueAt = normalizeDueAt(fields.dueAt);
   }
@@ -153,6 +155,12 @@ export async function update(
         priority: prior[0].priority
       };
     }
+  }
+
+  // Apply bodyAppend atomically: separate from existing content with a blank
+  // line only when current body is non-empty; no read-back needed.
+  if (fields.bodyAppend !== undefined) {
+    set.body = sql`CASE WHEN ${entities.body} = '' THEN ${fields.bodyAppend} ELSE ${entities.body} || ${"\n\n"} || ${fields.bodyAppend} END`;
   }
 
   const [row] = await db.update(entities).set(set).where(eq(entities.id, entityId)).returning();
@@ -311,4 +319,107 @@ export async function setBodyVec(
   await db.execute(
     sql`UPDATE entities SET body_vec = ${`[${vec.join(",")}]`}::vector WHERE id = ${id}`
   );
+}
+
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+/**
+ * Return distinct tags across entities.tags (unnested) with their occurrence
+ * counts, ordered by count DESC then tag ASC.  Pass projectId to scope to one
+ * project; omit (or pass null/undefined) for workspace-wide results.
+ */
+export async function listTags(
+  db: Database["db"],
+  input: ListTagsInput
+): Promise<TagCount[]> {
+  const projectFilter = input.projectId
+    ? sql`AND project_id = ${input.projectId}::uuid`
+    : sql``;
+
+  const rows = await db.execute<{ tag: string; count: string }>(sql`
+    SELECT tag, COUNT(*)::int AS count
+    FROM entities, unnest(tags) AS tag
+    WHERE true ${projectFilter}
+    GROUP BY tag
+    ORDER BY count DESC, tag ASC
+  `);
+  return rows.rows.map((r) => ({ tag: r.tag, count: Number(r.count) }));
+}
+
+export interface LinkResult {
+  kind: EdgeKind;
+  direction: "outgoing" | "incoming";
+  entity: Entity;
+}
+
+/**
+ * Read graph edges for an entity by kind and/or direction.
+ * direction='outgoing' → edges where fromId = id
+ * direction='incoming' → edges where toId = id
+ * direction='both'     → union of both directions (default)
+ * Returns the OTHER endpoint entity alongside the edge kind and direction.
+ */
+export async function getLinks(
+  db: Database["db"],
+  input: GetLinksInput
+): Promise<LinkResult[]> {
+  const { id, kind, direction } = input;
+  const results: LinkResult[] = [];
+
+  if (direction === "outgoing" || direction === "both") {
+    const kindCond = kind ? sql` AND e.kind = ${kind}` : sql``;
+    const rows = await db.execute<{
+      kind: string;
+      to_id: string;
+    }>(sql`
+      SELECT e.kind, e.to_id
+      FROM edges e
+      WHERE e.from_id = ${id}::uuid${kindCond}
+    `);
+    if (rows.rows.length > 0) {
+      const toIds = rows.rows.map((r) => r.to_id);
+      const entityRows = await db
+        .select()
+        .from(entities)
+        .where(inArray(entities.id, toIds));
+      const entityById = new Map(entityRows.map((en) => [en.id, en]));
+      for (const row of rows.rows) {
+        const entity = entityById.get(row.to_id);
+        if (entity) {
+          results.push({ kind: row.kind as EdgeKind, direction: "outgoing", entity });
+        }
+      }
+    }
+  }
+
+  if (direction === "incoming" || direction === "both") {
+    const kindCond = kind ? sql` AND e.kind = ${kind}` : sql``;
+    const rows = await db.execute<{
+      kind: string;
+      from_id: string;
+    }>(sql`
+      SELECT e.kind, e.from_id
+      FROM edges e
+      WHERE e.to_id = ${id}::uuid${kindCond}
+    `);
+    if (rows.rows.length > 0) {
+      const fromIds = rows.rows.map((r) => r.from_id);
+      const entityRows = await db
+        .select()
+        .from(entities)
+        .where(inArray(entities.id, fromIds));
+      const entityById = new Map(entityRows.map((en) => [en.id, en]));
+      for (const row of rows.rows) {
+        const entity = entityById.get(row.from_id);
+        if (entity) {
+          results.push({ kind: row.kind as EdgeKind, direction: "incoming", entity });
+        }
+      }
+    }
+  }
+
+  return results;
 }
