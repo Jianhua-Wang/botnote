@@ -17,6 +17,7 @@ import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  useConfigureRecurrence,
   useDeleteEntity,
   useEntity,
   useProjects,
@@ -31,7 +32,11 @@ import {
   type Entity,
   type EntityKind,
   type Priority,
-  type RecurrenceDetails
+  type RecurrenceAnchor,
+  type RecurrenceDetails,
+  type RecurrenceInput,
+  type RecurrencePreset,
+  type RecurrenceWeekday
 } from "../api/types";
 import { useDrawer } from "../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
@@ -48,6 +53,22 @@ import {
 import { StatusPickerButton } from "./tasks/StatusPickerButton";
 
 const AUTOSAVE_DELAY_MS = 600;
+const RECURRENCE_PRESETS: RecurrencePreset[] = ["hourly", "daily", "weekly", "monthly", "yearly"];
+const RECURRENCE_WEEKDAYS: RecurrenceWeekday[] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+const RECURRENCE_LABEL: Record<RecurrencePreset, string> = {
+  hourly: "Hourly",
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+  yearly: "Yearly"
+};
+const RECURRENCE_UNIT: Record<RecurrencePreset, string> = {
+  hourly: "hour",
+  daily: "day",
+  weekly: "week",
+  monthly: "month",
+  yearly: "year"
+};
 
 export function EntityDrawer() {
   const { openId, close } = useDrawer();
@@ -93,6 +114,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: recurrence } = useRecurrence(entity?.kind === "task" ? id : undefined);
   const update = useUpdateEntity();
   const del = useDeleteEntity();
+  const configureRecurrence = useConfigureRecurrence();
   const skipOccurrence = useSkipOccurrence();
   const stopRecurrence = useStopRecurrence();
   const { open: openModal } = useModals();
@@ -227,6 +249,18 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     await stopRecurrence.mutateAsync({ ruleId: recurrence.rule.id });
   }
 
+  async function saveRecurrence(input: RecurrenceInput, firstDueDate: string) {
+    if (!firstDueDate) throw new Error("First due date is required");
+    const currentDueDate = loadedEntity.dueAt ? loadedEntity.dueAt.slice(0, 10) : "";
+    if (firstDueDate !== currentDueDate) {
+      await update.mutateAsync({
+        id: loadedEntity.id,
+        fields: { dueAt: new Date(`${firstDueDate}T12:00:00Z`).toISOString() }
+      });
+    }
+    await configureRecurrence.mutateAsync({ taskId: loadedEntity.id, input });
+  }
+
   return (
     <>
       <header className="h-12 px-3 border-b border-line flex items-center gap-2 shrink-0">
@@ -336,16 +370,17 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
             actorKind={entity.actorKind}
             task={loadedEntity.kind === "task" ? { ...loadedEntity, status } : undefined}
             onStatusChange={setStatus}
+            recurrence={recurrence}
+            recurrenceBusy={
+              update.isPending ||
+              configureRecurrence.isPending ||
+              skipOccurrence.isPending ||
+              stopRecurrence.isPending
+            }
+            onSaveRecurrence={saveRecurrence}
+            onSkipOccurrence={skipCurrentOccurrence}
+            onStopRecurrence={stopCurrentSeries}
           />
-
-          {entity.kind === "task" && recurrence && (
-            <RecurrencePanel
-              recurrence={recurrence}
-              onSkip={skipCurrentOccurrence}
-              onStop={stopCurrentSeries}
-              busy={skipOccurrence.isPending || stopRecurrence.isPending}
-            />
-          )}
 
           {isNote && parentEntity && (
             <button
@@ -422,50 +457,304 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
 
 function recurrenceSummary(details: RecurrenceDetails): string {
   const rule = details.rule;
-  const every = rule.rrule
-    .replace(/^FREQ=/, "")
-    .split(";")
-    .map((part) => part.toLowerCase())
-    .join(" · ");
+  const parsed = parseRRule(rule.rrule);
+  const preset = parsed.preset ?? "daily";
+  const interval = parsed.interval ?? 1;
+  const cadence =
+    interval > 1
+      ? `Every ${interval} ${RECURRENCE_UNIT[preset]}s`
+      : RECURRENCE_LABEL[preset];
+  const weekdays = parsed.byWeekday.length ? ` · ${parsed.byWeekday.join(", ")}` : "";
   const anchor = rule.anchor === "completion" ? "after completion" : "scheduled";
+  const stopped = rule.enabled ? "" : " · stopped";
   const next = rule.nextOccurrenceAt
     ? ` · next ${new Date(rule.nextOccurrenceAt).toLocaleDateString()}`
     : "";
-  return `${every} · ${anchor}${next}`;
+  return `${cadence}${weekdays} · ${anchor}${next}${stopped}`;
 }
 
-function RecurrencePanel({
+interface RecurrenceFormState {
+  preset: RecurrencePreset | "none";
+  interval: number;
+  anchor: RecurrenceAnchor;
+  byWeekday: RecurrenceWeekday[];
+  count: string;
+  until: string;
+}
+
+function parseRRule(rrule: string): {
+  preset?: RecurrencePreset;
+  interval?: number;
+  byWeekday: RecurrenceWeekday[];
+  count?: number;
+  until?: string;
+} {
+  const parts = new Map(
+    rrule
+      .replace(/^RRULE:/i, "")
+      .split(";")
+      .map((part) => part.split("="))
+      .filter((part): part is [string, string] => part.length === 2)
+      .map(([key, value]) => [key.toUpperCase(), value])
+  );
+  const freq = parts.get("FREQ")?.toLowerCase();
+  const preset = RECURRENCE_PRESETS.includes(freq as RecurrencePreset)
+    ? (freq as RecurrencePreset)
+    : undefined;
+  const intervalRaw = Number(parts.get("INTERVAL") ?? 1);
+  const countRaw = Number(parts.get("COUNT"));
+  const byWeekday = (parts.get("BYDAY") ?? "")
+    .split(",")
+    .filter((day): day is RecurrenceWeekday =>
+      RECURRENCE_WEEKDAYS.includes(day as RecurrenceWeekday)
+    );
+  return {
+    preset,
+    interval: Number.isFinite(intervalRaw) && intervalRaw > 0 ? intervalRaw : 1,
+    byWeekday,
+    count: Number.isFinite(countRaw) && countRaw > 0 ? countRaw : undefined,
+    until: formatRRuleUntil(parts.get("UNTIL"))
+  };
+}
+
+function formatRRuleUntil(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const ymd = value.match(/^(\d{4})(\d{2})(\d{2})/);
+  if (ymd) return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString().slice(0, 10);
+}
+
+function initialRecurrenceForm(recurrence?: RecurrenceDetails): RecurrenceFormState {
+  const parsed = recurrence ? parseRRule(recurrence.rule.rrule) : undefined;
+  return {
+    preset: recurrence ? parsed?.preset ?? "weekly" : "none",
+    interval: parsed?.interval ?? 1,
+    anchor: recurrence?.rule.anchor ?? "scheduled",
+    byWeekday: parsed?.byWeekday ?? [],
+    count: parsed?.count ? String(parsed.count) : "",
+    until: parsed?.until ?? ""
+  };
+}
+
+function RepeatMetaValue({
+  isEditing,
+  task,
+  dueDate,
   recurrence,
+  onSave,
   onSkip,
   onStop,
   busy
 }: {
-  recurrence: RecurrenceDetails;
-  onSkip: () => void;
-  onStop: () => void;
+  isEditing: boolean;
+  task?: Entity;
+  dueDate: string;
+  recurrence?: RecurrenceDetails;
+  onSave?: (input: RecurrenceInput, firstDueDate: string) => Promise<void>;
+  onSkip?: () => void;
+  onStop?: () => void;
   busy: boolean;
 }) {
+  const [form, setForm] = useState<RecurrenceFormState>(() =>
+    initialRecurrenceForm(recurrence)
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setForm(initialRecurrenceForm(recurrence));
+    setError(null);
+  }, [
+    isEditing,
+    task?.id,
+    task?.dueAt,
+    recurrence?.rule.id,
+    recurrence?.rule.rrule,
+    recurrence?.rule.anchor
+  ]);
+
+  if (!task) return null;
+
+  const terminal = ["done", "rejected"].includes(task.status);
+  const canSkip =
+    Boolean(recurrence?.rule.enabled) && recurrence?.rule.currentOccurrenceId === task.id;
+  const canStop = Boolean(recurrence?.rule.enabled);
+  const repeatEnabled = form.preset !== "none";
+  const canSave = Boolean(onSave) && dueDate.length > 0 && repeatEnabled && form.interval >= 1;
+
+  function updateForm(patch: Partial<RecurrenceFormState>) {
+    setForm((current) => ({ ...current, ...patch }));
+    setError(null);
+  }
+
+  function toggleWeekday(day: RecurrenceWeekday) {
+    const set = new Set(form.byWeekday);
+    if (set.has(day)) set.delete(day);
+    else set.add(day);
+    updateForm({ byWeekday: RECURRENCE_WEEKDAYS.filter((d) => set.has(d)) });
+  }
+
+  async function save() {
+    if (form.preset === "none") {
+      setError(null);
+      return;
+    }
+    if (!dueDate) {
+      setError("Set due date first");
+      return;
+    }
+    if (form.count && form.until) {
+      setError("Use count or until");
+      return;
+    }
+    const input: RecurrenceInput = {
+      preset: form.preset,
+      interval: form.interval,
+      anchor: form.anchor,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      allDay: true
+    };
+    if (form.preset === "weekly" && form.byWeekday.length > 0) {
+      input.byWeekday = form.byWeekday;
+    }
+    if (form.count) input.count = Number(form.count);
+    if (form.until) input.until = new Date(`${form.until}T23:59:59Z`).toISOString();
+    try {
+      await onSave?.(input, dueDate);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save repeat");
+    }
+  }
+
+  if (!isEditing || terminal) {
+    return (
+      <span className="min-w-0 flex items-center gap-2">
+        <span className={recurrence ? "text-muted truncate" : "text-faint"}>
+          {recurrence ? recurrenceSummary(recurrence) : "None"}
+        </span>
+        {canSkip && onSkip && (
+          <button
+            className="text-faint hover:text-ink disabled:opacity-40 shrink-0"
+            onClick={onSkip}
+            disabled={busy}
+            title="Skip occurrence"
+          >
+            Skip
+          </button>
+        )}
+      </span>
+    );
+  }
+
   return (
-    <div className="border border-line rounded-md px-3 py-2 bg-sidebar/30 flex items-center gap-2 text-xs">
-      <span className="text-faint shrink-0">Repeat</span>
-      <span className="text-muted truncate">{recurrenceSummary(recurrence)}</span>
-      <button
-        className="ml-auto text-faint hover:text-ink disabled:opacity-40"
-        onClick={onSkip}
-        disabled={busy}
-        title="Skip occurrence"
-      >
-        Skip
-      </button>
-      <button
-        className="text-faint hover:text-danger disabled:opacity-40"
-        onClick={onStop}
-        disabled={busy}
-        title="Stop series"
-      >
-        Stop
-      </button>
-    </div>
+    <span className="min-w-0 flex flex-col gap-1">
+      <span className="flex flex-wrap items-center gap-1.5">
+        <select
+          className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+          value={form.preset}
+          onChange={(e) => updateForm({ preset: e.target.value as RecurrencePreset | "none" })}
+          title="Repeat"
+        >
+          <option value="none">None</option>
+          {RECURRENCE_PRESETS.map((preset) => (
+            <option key={preset} value={preset}>
+              {RECURRENCE_LABEL[preset]}
+            </option>
+          ))}
+        </select>
+        {repeatEnabled && (
+          <>
+            <input
+              type="number"
+              min={1}
+              max={999}
+              className="w-14 bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 focus:outline-none focus:ring-1 focus:ring-accent"
+              value={form.interval}
+              onChange={(e) => updateForm({ interval: Math.max(1, Number(e.target.value) || 1) })}
+              title="Interval"
+            />
+            <select
+              className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+              value={form.anchor}
+              onChange={(e) => updateForm({ anchor: e.target.value as RecurrenceAnchor })}
+              title="Anchor"
+          >
+              <option value="scheduled">Scheduled</option>
+              <option value="completion">Completion</option>
+            </select>
+            <button
+              className="text-accent hover:underline disabled:opacity-40"
+              onClick={save}
+              disabled={busy || !canSave}
+            >
+              Save
+            </button>
+          </>
+        )}
+        {canStop && onStop && (
+          <button
+            className="text-faint hover:text-danger disabled:opacity-40"
+            onClick={onStop}
+            disabled={busy}
+            title="Stop series"
+          >
+            Stop
+          </button>
+        )}
+      </span>
+      {repeatEnabled && form.preset === "weekly" && (
+        <span className="flex flex-wrap gap-1">
+          {RECURRENCE_WEEKDAYS.map((day) => (
+            <button
+              key={day}
+              type="button"
+              className={`px-1.5 py-0.5 rounded border text-[10px] ${
+                form.byWeekday.includes(day)
+                  ? "border-accent bg-accentSoft text-accent"
+                  : "border-line bg-surface text-muted hover:text-ink"
+              }`}
+              onClick={() => toggleWeekday(day)}
+            >
+              {day}
+            </button>
+          ))}
+        </span>
+      )}
+      {repeatEnabled && (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <input
+            type="number"
+            min={1}
+            max={10000}
+            className="w-20 bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 focus:outline-none focus:ring-1 focus:ring-accent"
+            value={form.count}
+            onChange={(e) =>
+              updateForm({
+                count: e.target.value,
+                until: e.target.value ? "" : form.until
+              })
+            }
+            placeholder="Count"
+            title="Count"
+          />
+          <input
+            type="date"
+            className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+            value={form.until}
+            onChange={(e) =>
+              updateForm({
+                until: e.target.value,
+                count: e.target.value ? "" : form.count
+              })
+            }
+            title="Until"
+          />
+          {!dueDate && <span className="text-faint text-xxs">Set due date first</span>}
+          {error && <span className="text-danger text-xxs truncate">{error}</span>}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -484,7 +773,12 @@ function MetaRow({
   createdAt,
   actorKind,
   task,
-  onStatusChange
+  onStatusChange,
+  recurrence,
+  recurrenceBusy,
+  onSaveRecurrence,
+  onSkipOccurrence,
+  onStopRecurrence
 }: {
   isEditing: boolean;
   isTask: boolean;
@@ -501,6 +795,11 @@ function MetaRow({
   actorKind: string;
   task?: Entity;
   onStatusChange?: (status: string) => void;
+  recurrence?: RecurrenceDetails;
+  recurrenceBusy?: boolean;
+  onSaveRecurrence?: (input: RecurrenceInput, firstDueDate: string) => Promise<void>;
+  onSkipOccurrence?: () => void;
+  onStopRecurrence?: () => void;
 }) {
   return (
     <div className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 items-center text-xs">
@@ -557,6 +856,22 @@ function MetaRow({
               </span>
             )}
           </span>
+
+          {(recurrence || (isEditing && task && !["done", "rejected"].includes(status))) && (
+            <>
+              <span className="text-faint">Repeat</span>
+              <RepeatMetaValue
+                isEditing={isEditing}
+                task={task}
+                dueDate={dueDate}
+                recurrence={recurrence}
+                busy={Boolean(recurrenceBusy)}
+                onSave={onSaveRecurrence}
+                onSkip={onSkipOccurrence}
+                onStop={onStopRecurrence}
+              />
+            </>
+          )}
 
           <span className="text-faint">Priority</span>
           <span className="flex items-center gap-1.5">
