@@ -3,7 +3,8 @@ import { z } from "zod";
 import {
   BotnoteHttpClient,
   type EntityDTO,
-  type LinkKind
+  type LinkKind,
+  serializeEntity
 } from "./http-client.js";
 import { VERSION } from "../version.js";
 
@@ -350,7 +351,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     async ({ id }) => {
       try {
         const entity = await c.getEntity(id);
-        return { content: [{ type: "text", text: JSON.stringify(entity, null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(serializeEntity(entity), null, 2) }] };
       } catch {
         return { isError: true, content: [{ type: "text", text: `entity ${id} not found` }] };
       }
@@ -379,7 +380,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     async ({ projectKey, sequenceId }) => {
       try {
         const entity = await c.getEntityByKey(projectKey, sequenceId);
-        return { content: [{ type: "text", text: JSON.stringify(entity, null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify(serializeEntity(entity), null, 2) }] };
       } catch {
         return {
           isError: true,
@@ -600,7 +601,13 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     },
     async ({ taskId }) => {
       const details = await c.getRecurrence(taskId);
-      return { content: [{ type: "text", text: JSON.stringify(details, null, 2) }] };
+      const serialized = {
+        ...details,
+        currentOccurrence: details.currentOccurrence
+          ? serializeEntity(details.currentOccurrence)
+          : null
+      };
+      return { content: [{ type: "text", text: JSON.stringify(serialized, null, 2) }] };
     }
   );
 

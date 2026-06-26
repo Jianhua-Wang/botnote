@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
-import type { Token } from "../db/schema.js";
+import type { Entity, Token } from "../db/schema.js";
 import {
   get,
   getByKey,
@@ -83,6 +83,21 @@ const KeySeqParams = z.object({
 });
 const OpeningBriefBody = OpeningBriefInput.omit({ projectId: true }).optional();
 const LinkBody = LinkInput.omit({ fromId: true });
+
+/**
+ * Strip `bodyVec` and `bodyTsv` from an entity before sending it over the wire.
+ * Both fields are internal-only: `bodyVec` is the 384-dim embedding used by
+ * hybrid search, and `bodyTsv` is the tsvector used by BM25 — neither is
+ * useful to REST consumers (web or agent) and both add significant token noise.
+ */
+function serializeEntity(e: Entity) {
+  const { bodyVec: _bv, bodyTsv: _bt, ...rest } = e;
+  return rest;
+}
+
+function serializeEntities(rows: Entity[]) {
+  return rows.map(serializeEntity);
+}
 
 function publicToken(t: Token) {
   return {
@@ -275,7 +290,13 @@ export async function registerRoutes(
       const bodyOpts = OpeningBriefBody.parse(req.body);
       const input = OpeningBriefInput.parse({ projectId: id, recentLimit: bodyOpts?.recentLimit });
       const brief = await openingBrief(ctx.db, input);
-      return { ...brief, markdown: formatOpeningBrief(brief) };
+      return {
+        ...brief,
+        pinnedNotes: serializeEntities(brief.pinnedNotes),
+        openTasks: serializeEntities(brief.openTasks),
+        recent: serializeEntities(brief.recent),
+        markdown: formatOpeningBrief(brief)
+      };
     }
   );
 
@@ -295,7 +316,13 @@ export async function registerRoutes(
     async (req) => {
       const input = OpeningBriefInput.parse(req.body ?? {});
       const brief = await openingBrief(ctx.db, input);
-      return { ...brief, markdown: formatOpeningBrief(brief) };
+      return {
+        ...brief,
+        pinnedNotes: serializeEntities(brief.pinnedNotes),
+        openTasks: serializeEntities(brief.openTasks),
+        recent: serializeEntities(brief.recent),
+        markdown: formatOpeningBrief(brief)
+      };
     }
   );
 
@@ -308,7 +335,7 @@ export async function registerRoutes(
       const { id } = EntityIdParams.parse(req.params);
       const e = await get(ctx.db, id);
       if (!e) return reply.code(404).send({ error: "not_found" });
-      return e;
+      return serializeEntity(e);
     }
   );
 
@@ -325,7 +352,7 @@ export async function registerRoutes(
       const { key, seq } = KeySeqParams.parse(req.params);
       const e = await getByKey(ctx.db, key, seq);
       if (!e) return reply.code(404).send({ error: "not_found" });
-      return e;
+      return serializeEntity(e);
     }
   );
 
@@ -340,7 +367,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
-      return listRelated(ctx.db, id);
+      return serializeEntities(await listRelated(ctx.db, id));
     }
   );
 
@@ -353,7 +380,7 @@ export async function registerRoutes(
         body: RecentInput.optional()
       }
     },
-    async (req) => recent(ctx.db, RecentInput.parse(req.body ?? {}))
+    async (req) => serializeEntities(await recent(ctx.db, RecentInput.parse(req.body ?? {})))
   );
 
   app.post(
@@ -371,7 +398,10 @@ export async function registerRoutes(
       const body = SearchInput.parse(req.body);
       const queryEmbedding = await ctx.embedding.embedQuery(body.query);
       const hits = await search(ctx.db, body, queryEmbedding ? { queryEmbedding } : {});
-      return { hits, embeddingUsed: queryEmbedding != null };
+      return {
+        hits: hits.map((h) => ({ ...h, entity: serializeEntity(h.entity) })),
+        embeddingUsed: queryEmbedding != null
+      };
     }
   );
 
@@ -386,7 +416,14 @@ export async function registerRoutes(
         body: TasksRangeInput
       }
     },
-    async (req) => tasksRange(ctx.db, TasksRangeInput.parse(req.body))
+    async (req) => {
+      const result = await tasksRange(ctx.db, TasksRangeInput.parse(req.body));
+      return {
+        scheduled: serializeEntities(result.scheduled),
+        overdue: serializeEntities(result.overdue),
+        backlog: serializeEntities(result.backlog)
+      };
+    }
   );
 
   app.post(
@@ -422,7 +459,12 @@ export async function registerRoutes(
         reply.code(404);
         return { error: "not_found", path: req.url };
       }
-      return recurrence;
+      return {
+        ...recurrence,
+        currentOccurrence: recurrence.currentOccurrence
+          ? serializeEntity(recurrence.currentOccurrence)
+          : null
+      };
     }
   );
 
@@ -456,7 +498,12 @@ export async function registerRoutes(
     async (req) => {
       const { id } = IdParams.parse(req.params);
       const body = SkipOccurrenceInput.parse(req.body ?? {});
-      return skipOccurrence(ctx.db, id, body);
+      const result = await skipOccurrence(ctx.db, id, body);
+      return {
+        ...result,
+        skipped: serializeEntity(result.skipped),
+        next: result.next ? serializeEntity(result.next) : null
+      };
     }
   );
 
@@ -494,7 +541,7 @@ export async function registerRoutes(
       if (ctx.embedding.isEnabled()) {
         ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
       }
-      return entity;
+      return serializeEntity(entity);
     }
   );
 
@@ -519,7 +566,7 @@ export async function registerRoutes(
       if (ctx.embedding.isEnabled()) {
         ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
       }
-      return entity;
+      return serializeEntity(entity);
     }
   );
 
@@ -543,7 +590,7 @@ export async function registerRoutes(
       ) {
         ctx.embedding.enqueue(updated.id, `${updated.title ?? ""}\n${updated.body}`);
       }
-      return updated;
+      return serializeEntity(updated);
     }
   );
 

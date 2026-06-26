@@ -48,6 +48,19 @@ afterAll(async () => {
   await pool.end();
 }, 10000);
 
+/**
+ * Assert that no internal embedding/tsvector field names appear as JSON keys
+ * in an MCP response. We check for the patterns `"bodyVec":` and `"body_vec":`
+ * (with the leading quote and trailing colon) so we match JSON object keys
+ * rather than incidental string values in body text.
+ */
+function assertNoInternalFields(text: string, label: string): void {
+  const forbidden = ['"bodyVec":', '"bodyTsv":', '"body_vec":', '"body_tsv":'];
+  for (const field of forbidden) {
+    expect(text, `${label} should not contain JSON key ${field}`).not.toContain(field);
+  }
+}
+
 describe("botnote MCP", () => {
   it("lists current tools + workspace resource", async () => {
     const tools = await client.listTools();
@@ -130,6 +143,7 @@ describe("botnote MCP", () => {
     });
     const getText = (getResp.content as Array<{ text: string }>)[0]?.text ?? "";
     expect(getText).toContain("Adopt MCP 2025-03-26 annotations");
+    assertNoInternalFields(getText, "get_entity");
 
     const shortId = noteId!.slice(0, 8);
     const getByPrefixResp = await client.callTool({
@@ -364,5 +378,138 @@ describe("botnote MCP", () => {
     const contents = result.contents as Array<{ text: string }>;
     expect(contents[0]?.text).toMatch(/# botnote workspace/);
     expect(contents[0]?.text).toMatch(/## Projects/);
+  });
+
+  it("strips bodyVec and bodyTsv from all entity-returning tools", async () => {
+    // Set up a project and entity to exercise every entity-returning tool.
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "STRIP", name: "Strip Fields Test" }
+    });
+    const cpText = (cpResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    const projectId = cpText.match(/id: ([0-9a-f-]{36})/)?.[1];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const dueAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+
+    // create_task — text format, just check the text response
+    const taskResp = await client.callTool({
+      name: "create_task",
+      arguments: {
+        projectId,
+        title: "Strip test task",
+        body: "checking that embedding fields are stripped from responses",
+        actorKind: "agent",
+        dueAt: dueAt.toISOString(),
+        idempotencyKey: "strip-task-1"
+      }
+    });
+    const taskText = (taskResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    const taskId = taskText.match(/id: ([0-9a-f-]{36})/)?.[1];
+    expect(taskId).toMatch(/^[0-9a-f-]{36}$/);
+    assertNoInternalFields(taskText, "create_task");
+
+    // remember — text format
+    const noteResp = await client.callTool({
+      name: "remember",
+      arguments: {
+        projectId,
+        title: "Strip test note",
+        body: "also checking that tsvector fields are absent from responses",
+        actorKind: "agent",
+        idempotencyKey: "strip-note-1"
+      }
+    });
+    const noteText = (noteResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    const noteId = noteText.match(/id: ([0-9a-f-]{36})/)?.[1];
+    assertNoInternalFields(noteText, "remember");
+
+    // get_entity — JSON format (main risk)
+    const getResp = await client.callTool({ name: "get_entity", arguments: { id: taskId! } });
+    const getEntityText = (getResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    assertNoInternalFields(getEntityText, "get_entity");
+
+    // get_entity_by_key — JSON format
+    const getByKeyResp = await client.callTool({
+      name: "get_entity_by_key",
+      arguments: { projectKey: "STRIP", sequenceId: 1 }
+    });
+    const getByKeyText = (getByKeyResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    assertNoInternalFields(getByKeyText, "get_entity_by_key");
+
+    // update_entity — text format
+    const updateResp = await client.callTool({
+      name: "update_entity",
+      arguments: { id: taskId!, body: "updated body text" }
+    });
+    const updateText = (updateResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    assertNoInternalFields(updateText, "update_entity");
+
+    // related — text format (list of summarized entities)
+    const relatedResp = await client.callTool({
+      name: "related",
+      arguments: { id: projectId! }
+    });
+    const relatedText = (relatedResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    assertNoInternalFields(relatedText, "related");
+
+    // recent — text format
+    const recentResp = await client.callTool({
+      name: "recent",
+      arguments: { projectId, limit: 5 }
+    });
+    const recentText = (recentResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    assertNoInternalFields(recentText, "recent");
+
+    // search — text format
+    const searchResp = await client.callTool({
+      name: "search",
+      arguments: { query: "strip test", projectId, limit: 5 }
+    });
+    const searchText = (searchResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    assertNoInternalFields(searchText, "search");
+
+    // configure_recurrence + get_recurrence — JSON format for get_recurrence
+    const configResp = await client.callTool({
+      name: "configure_recurrence",
+      arguments: {
+        taskId: taskId!,
+        preset: "daily",
+        interval: 1,
+        anchor: "scheduled",
+        timezone: "UTC",
+        allDay: true
+      }
+    });
+    const configText = (configResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    assertNoInternalFields(configText, "configure_recurrence");
+
+    const recurrenceResp = await client.callTool({
+      name: "get_recurrence",
+      arguments: { taskId: taskId! }
+    });
+    const recurrenceText = (recurrenceResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    assertNoInternalFields(recurrenceText, "get_recurrence (JSON with currentOccurrence)");
+
+    // opening_brief — markdown format
+    const briefResp = await client.callTool({
+      name: "opening_brief",
+      arguments: { projectId }
+    });
+    const briefText = (briefResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    assertNoInternalFields(briefText, "opening_brief");
+
+    // skip_occurrence — text format with two entity summaries
+    await client.callTool({
+      name: "update_entity",
+      arguments: { id: taskId!, status: "done" }
+    });
+    const skipResp = await client.callTool({
+      name: "skip_occurrence",
+      arguments: { taskId: taskId! }
+    });
+    const skipText = (skipResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    assertNoInternalFields(skipText, "skip_occurrence");
   });
 });

@@ -152,6 +152,29 @@ export class BotnoteHttpClient {
   }
 }
 
+// ----- Serialization helpers -----
+
+/**
+ * Strip internal-only fields (`bodyVec`, `bodyTsv` and their snake_case aliases)
+ * from an entity DTO before including it in any outward-facing MCP response.
+ * These fields are 384-dim float arrays / tsvector strings that are exclusively
+ * used by the search/embedding pipeline; they add nothing for agent consumers
+ * and bloat every response toward output-token truncation.
+ */
+export function serializeEntity(entity: EntityDTO): Omit<EntityDTO, "bodyVec" | "bodyTsv"> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { bodyVec: _bv, bodyTsv: _bt, ...rest } = entity as EntityDTO & {
+    bodyVec?: unknown;
+    bodyTsv?: unknown;
+    body_vec?: unknown;
+    body_tsv?: unknown;
+  };
+  // Also strip snake_case aliases that may arrive from older REST responses.
+  delete (rest as Record<string, unknown>).body_vec;
+  delete (rest as Record<string, unknown>).body_tsv;
+  return rest;
+}
+
 // ----- DTO shapes (mirror REST output; intentionally permissive to avoid
 //       lockstep with backend changes) -----
 

@@ -46,7 +46,6 @@ export interface Entity {
   actorKind: ActorKind;
   idempotencyKey: string | null;
   parentId: string | null;
-  bodyVec: number[] | null;
   metadata: Record<string, unknown>;
   dueAt: string | null;
   priority: Priority;
