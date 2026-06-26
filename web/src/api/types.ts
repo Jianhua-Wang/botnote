@@ -107,6 +107,10 @@ export interface RecurrenceInput {
   anchor?: RecurrenceAnchor;
 }
 
+// Split forks at the current occurrence; the fork point is derived server-side,
+// so there is no dtstart.
+export type SplitRecurrenceInput = Omit<RecurrenceInput, "dtstart">;
+
 export interface RecurrenceRule {
   id: string;
   seriesId: string;

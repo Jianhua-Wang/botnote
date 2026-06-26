@@ -137,6 +137,33 @@ export const StopRecurrenceInput = z.object({
 });
 export type StopRecurrenceInput = z.infer<typeof StopRecurrenceInput>;
 
+/** Fork a recurrence series at its current occurrence: freeze the old rule and
+ *  apply a new cadence going forward. No dtstart — the fork point is derived
+ *  from the current occurrence. allDay/timezone/anchor inherit the old rule when
+ *  omitted. */
+export const SplitRecurrenceInput = z
+  .object({
+    rrule: z.string().min(1).max(1000).optional(),
+    preset: RecurrenceFrequencyEnum.optional(),
+    interval: PositiveInterval.default(1),
+    byWeekday: z.array(WeekdayEnum).optional(),
+    byMonthDay: z.array(z.number().int().min(1).max(31)).optional(),
+    bySetPos: z.number().int().min(-5).max(5).optional(),
+    byMonth: z.array(z.number().int().min(1).max(12)).optional(),
+    until: z.coerce.date().nullable().optional(),
+    count: z.number().int().min(1).max(10000).nullable().optional(),
+    timezone: z.string().min(1).max(80).optional(),
+    allDay: z.boolean().optional(),
+    anchor: RecurrenceAnchorEnum.optional()
+  })
+  .refine((value) => value.rrule || value.preset, {
+    message: "Provide either rrule or preset"
+  })
+  .refine((value) => !(value.until && value.count), {
+    message: "Use either until or count, not both"
+  });
+export type SplitRecurrenceInput = z.infer<typeof SplitRecurrenceInput>;
+
 export const SkipOccurrenceInput = z.object({
   reason: z.string().max(500).optional(),
   actorKind: ActorKindEnum.default("human")

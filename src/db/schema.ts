@@ -160,7 +160,11 @@ export const recurrenceRules = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (t) => ({
-    seriesIdx: uniqueIndex("recurrence_rules_series_idx").on(t.seriesId),
+    // Partial unique: at most one ENABLED rule per series. A split keeps the old
+    // rule as disabled history alongside the new enabled rule (same series_id).
+    seriesIdx: uniqueIndex("recurrence_rules_series_idx")
+      .on(t.seriesId)
+      .where(sql`${t.enabled}`),
     currentOccurrenceIdx: index("recurrence_rules_current_occurrence_idx").on(
       t.currentOccurrenceId
     ),

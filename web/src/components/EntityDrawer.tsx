@@ -24,6 +24,7 @@ import {
   useRecurrence,
   useRelatedEntities,
   useSkipOccurrence,
+  useSplitRecurrence,
   useStopRecurrence,
   useUpdateEntity
 } from "../api/hooks";
@@ -117,6 +118,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   const configureRecurrence = useConfigureRecurrence();
   const skipOccurrence = useSkipOccurrence();
   const stopRecurrence = useStopRecurrence();
+  const splitRecurrence = useSplitRecurrence();
   const { open: openModal } = useModals();
   const { open: openDrawer } = useDrawer();
 
@@ -273,6 +275,14 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     await configureRecurrence.mutateAsync({ taskId: loadedEntity.id, input });
   }
 
+  async function splitCurrentSeries(input: RecurrenceInput) {
+    if (!recurrence) return;
+    // The fork point is derived server-side from the current occurrence, so we
+    // drop dtstart and reuse the rest of the form input verbatim.
+    const { dtstart: _dtstart, ...rest } = input;
+    await splitRecurrence.mutateAsync({ ruleId: recurrence.rule.id, input: rest });
+  }
+
   return (
     <>
       <header className="h-12 px-3 border-b border-line flex items-center gap-2 shrink-0">
@@ -387,11 +397,13 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
               update.isPending ||
               configureRecurrence.isPending ||
               skipOccurrence.isPending ||
-              stopRecurrence.isPending
+              stopRecurrence.isPending ||
+              splitRecurrence.isPending
             }
             onSaveRecurrence={saveRecurrence}
             onSkipOccurrence={skipCurrentOccurrence}
             onStopRecurrence={stopCurrentSeries}
+            onSplitRecurrence={splitCurrentSeries}
             isRecurringOccurrence={isRecurringOccurrence}
             occurrenceScope={occurrenceScope}
             setOccurrenceScope={setOccurrenceScope}
@@ -517,6 +529,7 @@ function RepeatMetaValue({
   onSave,
   onSkip,
   onStop,
+  onSplit,
   busy
 }: {
   isEditing: boolean;
@@ -526,6 +539,7 @@ function RepeatMetaValue({
   onSave?: (input: RecurrenceInput, firstDueDate: string) => Promise<void>;
   onSkip?: () => void;
   onStop?: () => void;
+  onSplit?: (input: RecurrenceInput) => Promise<void>;
   busy: boolean;
 }) {
   const [form, setForm] = useState<RecurrenceFormState>(() =>
@@ -553,6 +567,10 @@ function RepeatMetaValue({
   const canStop = Boolean(recurrence?.rule.enabled);
   const repeatEnabled = form.preset !== "none";
   const canSave = Boolean(onSave) && dueDate.length > 0 && repeatEnabled && form.interval >= 1;
+  // Split forks an existing active series at its current occurrence — only
+  // offered when editing one (not while configuring a brand-new recurrence).
+  const canSplit =
+    Boolean(onSplit) && Boolean(recurrence?.rule.enabled) && repeatEnabled && form.interval >= 1;
 
   function updateForm(patch: Partial<RecurrenceFormState>) {
     setForm((current) => ({ ...current, ...patch }));
@@ -564,6 +582,22 @@ function RepeatMetaValue({
     if (set.has(day)) set.delete(day);
     else set.add(day);
     updateForm({ byWeekday: RECURRENCE_WEEKDAYS.filter((d) => set.has(d)) });
+  }
+
+  function buildInput(): RecurrenceInput {
+    const input: RecurrenceInput = {
+      preset: form.preset as RecurrencePreset,
+      interval: form.interval,
+      anchor: form.anchor,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      allDay: true
+    };
+    if (form.preset === "weekly" && form.byWeekday.length > 0) {
+      input.byWeekday = form.byWeekday;
+    }
+    if (form.count) input.count = Number(form.count);
+    if (form.until) input.until = new Date(`${form.until}T23:59:59Z`).toISOString();
+    return input;
   }
 
   async function save() {
@@ -579,23 +613,25 @@ function RepeatMetaValue({
       setError("Use count or until");
       return;
     }
-    const input: RecurrenceInput = {
-      preset: form.preset,
-      interval: form.interval,
-      anchor: form.anchor,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      allDay: true
-    };
-    if (form.preset === "weekly" && form.byWeekday.length > 0) {
-      input.byWeekday = form.byWeekday;
-    }
-    if (form.count) input.count = Number(form.count);
-    if (form.until) input.until = new Date(`${form.until}T23:59:59Z`).toISOString();
     try {
-      await onSave?.(input, dueDate);
+      await onSave?.(buildInput(), dueDate);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save repeat");
+    }
+  }
+
+  async function splitSeries() {
+    if (form.preset === "none") return;
+    if (form.count && form.until) {
+      setError("Use count or until");
+      return;
+    }
+    try {
+      await onSplit?.(buildInput());
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not split series");
     }
   }
 
@@ -662,6 +698,16 @@ function RepeatMetaValue({
             >
               Save
             </button>
+            {canSplit && (
+              <button
+                className="text-faint hover:text-ink disabled:opacity-40"
+                onClick={splitSeries}
+                disabled={busy}
+                title="Keep past occurrences on the old cadence; apply this cadence going forward"
+              >
+                Split
+              </button>
+            )}
           </>
         )}
         {canStop && onStop && (
@@ -751,6 +797,7 @@ function MetaRow({
   onSaveRecurrence,
   onSkipOccurrence,
   onStopRecurrence,
+  onSplitRecurrence,
   isRecurringOccurrence,
   occurrenceScope,
   setOccurrenceScope
@@ -775,6 +822,7 @@ function MetaRow({
   onSaveRecurrence?: (input: RecurrenceInput, firstDueDate: string) => Promise<void>;
   onSkipOccurrence?: () => void;
   onStopRecurrence?: () => void;
+  onSplitRecurrence?: (input: RecurrenceInput) => Promise<void>;
   isRecurringOccurrence?: boolean;
   occurrenceScope?: "this" | "future";
   setOccurrenceScope?: (scope: "this" | "future") => void;
@@ -847,6 +895,7 @@ function MetaRow({
                 onSave={onSaveRecurrence}
                 onSkip={onSkipOccurrence}
                 onStop={onStopRecurrence}
+                onSplit={onSplitRecurrence}
               />
             </>
           )}

@@ -143,6 +143,9 @@ export class BotnoteHttpClient {
   stopRecurrence(ruleId: string, body: StopRecurrenceBody = {}) {
     return this.request<RecurrenceRuleDTO>("POST", `/v1/recurrences/${ruleId}/stop`, body);
   }
+  splitRecurrence(ruleId: string, body: SplitRecurrenceBody) {
+    return this.request<RecurrenceRuleDTO>("POST", `/v1/recurrences/${ruleId}/split`, body);
+  }
   link(fromId: string, body: { toId: string; kind: LinkKind }) {
     return this.request<{ created: boolean }>(
       "POST",
@@ -334,6 +337,10 @@ export interface SkipOccurrenceBody {
 export interface StopRecurrenceBody {
   reason?: string;
 }
+
+// Split forks at the current occurrence; the fork point is derived server-side,
+// so there is no dtstart.
+export type SplitRecurrenceBody = Omit<RecurrenceBody, "dtstart">;
 
 export interface RecentBody {
   projectId?: string | null;

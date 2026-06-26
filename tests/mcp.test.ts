@@ -80,6 +80,7 @@ describe("botnote MCP", () => {
       "remember",
       "search",
       "skip_occurrence",
+      "split_recurrence",
       "stop_recurrence",
       "update_entity",
       "update_project"
@@ -101,6 +102,8 @@ describe("botnote MCP", () => {
     expect(byName.get("configure_recurrence")?.annotations?.idempotentHint).toBe(true);
     expect(byName.get("get_recurrence")?.annotations?.readOnlyHint).toBe(true);
     expect(byName.get("skip_occurrence")?.annotations?.destructiveHint).toBe(true);
+    expect(byName.get("split_recurrence")?.annotations?.readOnlyHint).toBe(false);
+    expect(byName.get("split_recurrence")?.annotations?.idempotentHint).toBe(false);
   });
 
   it("create_project + remember + search round-trip", async () => {
@@ -371,6 +374,65 @@ describe("botnote MCP", () => {
     expect(recurrence.currentOccurrence?.dueAt).toBe(
       new Date(dueAt.getTime() + 24 * 60 * 60 * 1000).toISOString()
     );
+  });
+
+  it("splits a recurrence series via MCP", async () => {
+    const createResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "SMC", name: "Split MCP" }
+    });
+    const projectId = (createResp.content as Array<{ text: string }>)[0]?.text.match(
+      /[0-9a-f-]{36}/
+    )?.[0];
+
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const taskResp = await client.callTool({
+      name: "create_task",
+      arguments: {
+        projectId,
+        title: "Splittable MCP task",
+        actorKind: "agent",
+        dueAt: dueAt.toISOString(),
+        idempotencyKey: "mcp-split-task-1"
+      }
+    });
+    const taskId = (taskResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+
+    await client.callTool({
+      name: "configure_recurrence",
+      arguments: { taskId, preset: "daily", interval: 1, anchor: "scheduled", timezone: "UTC", allDay: true }
+    });
+
+    const beforeResp = await client.callTool({ name: "get_recurrence", arguments: { taskId } });
+    const before = JSON.parse(
+      (beforeResp.content as Array<{ text: string }>)[0]?.text ?? "{}"
+    ) as { rule: { id: string; seriesId: string } };
+    const ruleId = before.rule.id;
+    expect(ruleId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const splitResp = await client.callTool({
+      name: "split_recurrence",
+      arguments: { ruleId, preset: "weekly", interval: 1 }
+    });
+    const splitText = (splitResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(splitText).toMatch(/split into recurrence/);
+    expect(splitText).toContain("FREQ=WEEKLY");
+    const newRuleId = splitText.match(/split into recurrence ([0-9a-f-]{36})/)?.[1];
+    expect(newRuleId).toBeTruthy();
+    expect(newRuleId).not.toBe(ruleId);
+
+    // The original occurrence still routes to the frozen old rule (same series).
+    const afterResp = await client.callTool({ name: "get_recurrence", arguments: { taskId } });
+    const after = JSON.parse(
+      (afterResp.content as Array<{ text: string }>)[0]?.text ?? "{}"
+    ) as { rule: { id: string; seriesId: string; enabled: boolean; rrule: string } };
+    expect(after.rule.id).toBe(ruleId);
+    expect(after.rule.seriesId).toBe(before.rule.seriesId);
+    expect(after.rule.enabled).toBe(false);
+    expect(after.rule.rrule).toContain("UNTIL=");
   });
 
   it("reads workspace_overview resource", async () => {

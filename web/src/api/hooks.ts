@@ -6,6 +6,7 @@ import type {
   RecentInput,
   RecurrenceInput,
   SearchInput,
+  SplitRecurrenceInput,
   TasksRangeInput,
   Token,
   UpdateEmbeddingSettingsInput,
@@ -208,6 +209,21 @@ export function useStopRecurrence() {
     mutationFn: ({ ruleId, reason }: { ruleId: string; reason?: string }) =>
       api.stopRecurrence(ruleId, reason),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["recurrence"] });
+      qc.invalidateQueries({ queryKey: ["tasks-range"] });
+      qc.invalidateQueries({ queryKey: ["recent"] });
+      qc.invalidateQueries({ queryKey: ["entity-list"] });
+    }
+  });
+}
+
+export function useSplitRecurrence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ruleId, input }: { ruleId: string; input: SplitRecurrenceInput }) =>
+      api.splitRecurrence(ruleId, input),
+    onSuccess: (rule) => {
+      qc.invalidateQueries({ queryKey: ["entity", rule.currentOccurrenceId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["recurrence"] });
       qc.invalidateQueries({ queryKey: ["tasks-range"] });
       qc.invalidateQueries({ queryKey: ["recent"] });

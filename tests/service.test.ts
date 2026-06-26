@@ -19,10 +19,11 @@ import {
   getRecurrenceForTask,
   materializeScheduledRecurrences,
   skipOccurrence,
+  splitRecurrence,
   stopRecurrence
 } from "../src/service/recurrence.js";
 import { eq, and } from "drizzle-orm";
-import { recurrenceExceptions } from "../src/db/schema.js";
+import { entities, recurrenceExceptions, recurrenceRules } from "../src/db/schema.js";
 import { search } from "../src/service/search.js";
 import { tasksRange } from "../src/service/tasks.js";
 import { consumeToken, createToken, listTokens } from "../src/service/tokens.js";
@@ -2025,5 +2026,206 @@ describe("botnote service", () => {
       expect(v.title).toBe("Original title");
     }
     expect(result.virtualOccurrences.length).toBeGreaterThan(0);
+  });
+
+  it("splitRecurrence forks a scheduled series at the current occurrence", async () => {
+    const p = await createProject(db, { key: "SPL", name: "Split Scheduled" });
+    const dueAt = new Date();
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Series task",
+      body: "series body",
+      tags: ["series"],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt,
+      priority: "high"
+    });
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    const newRule = await splitRecurrence(db, rule.id, { preset: "weekly", interval: 1 });
+
+    // Old rule is frozen with UNTIL at the fork; disabled but kept as history.
+    const [oldRow] = await db
+      .select()
+      .from(recurrenceRules)
+      .where(eq(recurrenceRules.id, rule.id));
+    expect(oldRow.enabled).toBe(false);
+    expect(oldRow.rrule).toContain("UNTIL=");
+    expect(oldRow.endedAt).not.toBeNull();
+    expect(oldRow.currentOccurrenceId).toBe(task.id);
+
+    // New rule shares the series_id (UI continuity) but is a distinct row.
+    expect(newRule.id).not.toBe(rule.id);
+    expect(newRule.seriesId).toBe(rule.seriesId);
+    expect(newRule.enabled).toBe(true);
+    expect(newRule.rrule).toContain("FREQ=WEEKLY");
+    expect(newRule.generatedCount).toBe(0);
+    expect(newRule.currentOccurrenceId).toBe(task.id);
+    // First new-cadence occurrence is strictly after the fork — no duplicate at it.
+    expect(newRule.dtstart.getTime()).toBeGreaterThan(dueAt.getTime());
+    expect(newRule.nextOccurrenceAt?.getTime()).toBe(newRule.dtstart.getTime());
+
+    // Exactly one task carries the fork due date (the original current occurrence).
+    const atFork = await db.select().from(entities).where(eq(entities.dueAt, dueAt));
+    expect(atFork).toHaveLength(1);
+    expect(atFork[0].id).toBe(task.id);
+
+    // Materialize the new cadence forward.
+    const upTo = new Date(dueAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const created = await materializeScheduledRecurrences(db, upTo);
+    expect(created.length).toBeGreaterThan(0);
+    const first = created[0];
+    expect(first.dueAt?.getTime()).toBe(newRule.dtstart.getTime());
+    expect(first.dueAt?.getTime()).not.toBe(dueAt.getTime());
+    expect(first.title).toBe("Series task");
+    expect(first.priority).toBe("high");
+    const marker = (first.metadata as { recurrence?: Record<string, unknown> }).recurrence;
+    expect(marker?.seriesId).toBe(rule.seriesId);
+    expect(marker?.ruleId).toBe(newRule.id);
+
+    // Re-running the materializer over the same window is idempotent (no dupes).
+    const createdAgain = await materializeScheduledRecurrences(db, upTo);
+    expect(createdAgain).toHaveLength(0);
+
+    // The original occurrence still routes to the (disabled) old rule.
+    const fromCurrent = await getRecurrenceForTask(db, task.id);
+    expect(fromCurrent?.rule.id).toBe(rule.id);
+  });
+
+  it("splitRecurrence with completion anchor re-homes the current occurrence", async () => {
+    const p = await createProject(db, { key: "SPC", name: "Split Completion" });
+    const dueAt = new Date();
+    dueAt.setUTCDate(dueAt.getUTCDate() - 1);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Maintenance",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    const newRule = await splitRecurrence(db, rule.id, {
+      preset: "weekly",
+      interval: 1,
+      anchor: "completion"
+    });
+    expect(newRule.anchor).toBe("completion");
+    expect(newRule.currentOccurrenceId).toBe(task.id);
+    expect(newRule.nextOccurrenceAt).toBeNull();
+    expect(newRule.generatedCount).toBe(rule.generatedCount);
+
+    // Old rule is frozen and releases the current occurrence (it was re-homed).
+    const [oldRow] = await db
+      .select()
+      .from(recurrenceRules)
+      .where(eq(recurrenceRules.id, rule.id));
+    expect(oldRow.enabled).toBe(false);
+    expect(oldRow.currentOccurrenceId).toBeNull();
+
+    // The current occurrence now routes to the new rule.
+    const rehomed = await getRecurrenceForTask(db, task.id);
+    expect(rehomed?.rule.id).toBe(newRule.id);
+
+    // Completing it advances the NEW (weekly, completion) cadence.
+    await update(db, task.id, { status: "done" });
+    const details = await getRecurrenceForTask(db, task.id);
+    expect(details?.rule.id).toBe(newRule.id);
+    expect(details?.rule.currentOccurrenceId).not.toBe(task.id);
+    expect(details?.currentOccurrence?.status).toBe("open");
+    const nextDue = details?.currentOccurrence?.dueAt?.getTime() ?? 0;
+    expect(nextDue).toBeGreaterThan(Date.now());
+  });
+
+  it("splitRecurrence rejects unknown and disabled rules", async () => {
+    await expect(
+      splitRecurrence(db, "00000000-0000-0000-0000-000000000000", { preset: "daily" })
+    ).rejects.toThrow(/not found/);
+
+    const p = await createProject(db, { key: "SPD", name: "Split Disabled" });
+    const dueAt = new Date();
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Already stopped",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+    await stopRecurrence(db, rule.id);
+    await expect(splitRecurrence(db, rule.id, { preset: "weekly" })).rejects.toThrow(/active/);
+  });
+
+  it("splitRecurrence rolls back when the new cadence has no occurrence after the fork", async () => {
+    const p = await createProject(db, { key: "SPN", name: "Split No Occurrence" });
+    const dueAt = new Date();
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Bounded split",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    const beforeFork = new Date(dueAt.getTime() - 7 * 24 * 60 * 60 * 1000);
+    await expect(
+      splitRecurrence(db, rule.id, { preset: "weekly", until: beforeFork })
+    ).rejects.toThrow(/no occurrences after the fork/);
+
+    // No half-split: the old rule is untouched and remains the only rule.
+    const [oldRow] = await db
+      .select()
+      .from(recurrenceRules)
+      .where(eq(recurrenceRules.id, rule.id));
+    expect(oldRow.enabled).toBe(true);
+    const rows = await db
+      .select()
+      .from(recurrenceRules)
+      .where(eq(recurrenceRules.seriesId, rule.seriesId));
+    expect(rows).toHaveLength(1);
   });
 });

@@ -39,6 +39,7 @@ import {
   createRecurrenceRule,
   getRecurrenceForTask,
   skipOccurrence,
+  splitRecurrence,
   stopRecurrence,
   updateRecurrenceRule
 } from "../service/recurrence.js";
@@ -57,6 +58,7 @@ import {
   RecurrenceInput,
   SearchInput,
   SkipOccurrenceInput,
+  SplitRecurrenceInput,
   StopRecurrenceInput,
   TasksRangeInput,
   UpdateEmbeddingSettingsInput,
@@ -563,6 +565,23 @@ export async function registerRoutes(
       const { id } = RuleIdParams.parse(req.params);
       const body = StopRecurrenceInput.parse(req.body ?? {});
       return stopRecurrence(ctx.db, id, body);
+    }
+  );
+
+  app.post(
+    "/v1/recurrences/:id/split",
+    {
+      schema: {
+        tags: ["recurrence"],
+        summary: "Split a recurrence series at its current occurrence",
+        params: RuleIdParams,
+        body: SplitRecurrenceInput
+      }
+    },
+    async (req) => {
+      const { id } = RuleIdParams.parse(req.params);
+      const body = SplitRecurrenceInput.parse(req.body);
+      return splitRecurrence(ctx.db, id, body);
     }
   );
 

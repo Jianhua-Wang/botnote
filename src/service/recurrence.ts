@@ -1,4 +1,4 @@
-import { and, asc, eq, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, lte, or } from "drizzle-orm";
 import rrulePkg from "rrule";
 import type { Database } from "../db/client.js";
 import {
@@ -9,7 +9,12 @@ import {
   type RecurrenceRule
 } from "../db/schema.js";
 import { allDayDueAtInZone, normalizeDueAt } from "./dates.js";
-import type { RecurrenceInput, StopRecurrenceInput, UpdateRecurrenceInput } from "./types.js";
+import type {
+  RecurrenceInput,
+  SplitRecurrenceInput,
+  StopRecurrenceInput,
+  UpdateRecurrenceInput
+} from "./types.js";
 import { getWorkspaceSettings } from "./workspace_settings.js";
 
 // Content fields that can be scoped to "this occurrence only"
@@ -96,7 +101,13 @@ function rruleLine(rule: InstanceType<typeof RRule>): string {
   return line.slice("RRULE:".length);
 }
 
-function buildRRuleFromInput(input: RecurrenceInput, dtstart: Date): string {
+/** The RRULE-shaping subset shared by RecurrenceInput and SplitRecurrenceInput. */
+type RRuleFieldsInput = Pick<
+  RecurrenceInput,
+  "rrule" | "preset" | "interval" | "byWeekday" | "byMonthDay" | "bySetPos" | "byMonth" | "until" | "count"
+>;
+
+function buildRRuleFromInput(input: RRuleFieldsInput, dtstart: Date): string {
   if (input.rrule) return normalizeRRuleText(input.rrule);
   if (!input.preset) throw new Error("recurrence preset is required");
 
@@ -120,6 +131,17 @@ function buildRRuleFromInput(input: RecurrenceInput, dtstart: Date): string {
 export function buildRRule(rule: Pick<RecurrenceRule, "rrule" | "dtstart">, dtstart = rule.dtstart) {
   const parsed = RRule.parseString(rule.rrule);
   return new RRule({ ...parsed, dtstart });
+}
+
+/**
+ * Bound an existing RRULE with UNTIL at the fork point (used when freezing the
+ * old rule during a split). UNTIL supersedes any COUNT the rule carried.
+ */
+function applyUntilToRrule(rruleText: string, dtstart: Date, until: Date): string {
+  const parsed = RRule.parseString(rruleText);
+  delete parsed.count;
+  parsed.until = until;
+  return rruleLine(new RRule({ ...parsed, dtstart }));
 }
 
 function maxDate(a: Date, b: Date): Date {
@@ -186,7 +208,15 @@ export async function findRuleForTask(
     ? eq(recurrenceRules.id, marker.ruleId)
     : or(eq(recurrenceRules.currentOccurrenceId, task.id), eq(recurrenceRules.seriesId, task.id))!;
   const where = includeDisabled ? cond : and(cond, eq(recurrenceRules.enabled, true));
-  const rows = await db.select().from(recurrenceRules).where(where).limit(1);
+  // A split leaves multiple rules per series (disabled history + one active),
+  // so the seriesId/currentOccurrenceId fallback can match more than one. Prefer
+  // the active rule, then the most recent. (The marker.ruleId branch is exact.)
+  const rows = await db
+    .select()
+    .from(recurrenceRules)
+    .where(where)
+    .orderBy(desc(recurrenceRules.enabled), desc(recurrenceRules.createdAt))
+    .limit(1);
   return rows[0] ?? null;
 }
 
@@ -728,4 +758,146 @@ export async function stopRecurrence(
     .returning();
   if (!updated) throw new Error(`recurrence rule ${ruleId} not found`);
   return updated;
+}
+
+/**
+ * Fork a recurrence series at its current occurrence: freeze the old rule and
+ * apply a new cadence going forward, keeping the same series so the UI still
+ * shows one continuous timeline (history + future).
+ *
+ * Mechanics:
+ *  - The old rule is bounded with UNTIL at the fork point and disabled. It stays
+ *    as frozen history (its already-materialized occurrences are untouched).
+ *  - A new enabled rule is created sharing the SAME series_id (UI continuity)
+ *    with the new RRULE. The live occurrence is kept as its template/display
+ *    source.
+ *  - The new rule has a distinct id, so its occurrences live in a disjoint
+ *    idempotency-key space (`recurrence:<ruleId>:<dueAt>`): no duplicate or
+ *    orphan occurrence can appear at the fork even if a date coincides.
+ *  - Scheduled forks let the materializer grow the new rule from the first
+ *    occurrence after the fork; the live occurrence stays on the old rule as the
+ *    tail of history. Completion forks re-home the live occurrence onto the new
+ *    rule so completing it advances the new cadence.
+ *
+ * The whole operation runs in one transaction: the old rule is disabled before
+ * the new one is inserted, so the partial-unique "one enabled rule per series"
+ * index holds at every step.
+ */
+export async function splitRecurrence(
+  db: Database["db"],
+  ruleId: string,
+  input: SplitRecurrenceInput
+): Promise<RecurrenceRule> {
+  return db.transaction(async (tx) => {
+    const ruleRows = await tx
+      .select()
+      .from(recurrenceRules)
+      .where(eq(recurrenceRules.id, ruleId))
+      .limit(1);
+    const oldRule = ruleRows[0];
+    if (!oldRule) throw new Error(`recurrence rule ${ruleId} not found`);
+    if (!oldRule.enabled) throw new Error("only an active recurrence can be split");
+    if (!oldRule.currentOccurrenceId) {
+      throw new Error("recurrence has no current occurrence to fork from");
+    }
+
+    const occRows = await tx
+      .select()
+      .from(entities)
+      .where(eq(entities.id, oldRule.currentOccurrenceId))
+      .limit(1);
+    const current = occRows[0];
+    if (!current) throw new Error("recurrence has no current occurrence to fork from");
+
+    const forkAfter = current.dueAt ?? oldRule.dtstart;
+    const allDay = input.allDay ?? oldRule.allDay;
+    const timezone = input.timezone ?? oldRule.timezone;
+    const anchor: "scheduled" | "completion" =
+      input.anchor ?? (oldRule.anchor === "completion" ? "completion" : "scheduled");
+    const ruleShape = { allDay, timezone };
+
+    // The forward cadence.
+    const newRrule = buildRRuleFromInput(input, forkAfter);
+
+    // Resolve the new rule's anchoring before mutating anything, so a bounded
+    // new rule with no occurrences after the fork fails cleanly (no half-split).
+    let dtstart: Date;
+    let nextOccurrenceAt: Date | null;
+    let generatedCount: number;
+    if (anchor === "completion") {
+      // Completion series advance on completion, not on a schedule; the re-homed
+      // live occurrence (below) carries the chain.
+      dtstart = forkAfter;
+      nextOccurrenceAt = null;
+      generatedCount = oldRule.generatedCount;
+    } else {
+      const firstRaw = buildRRule({ rrule: newRrule, dtstart: forkAfter }).after(forkAfter, false);
+      if (!firstRaw) {
+        throw new Error("new recurrence has no occurrences after the fork point");
+      }
+      dtstart = normalizeOccurrenceDueAt(ruleShape, firstRaw);
+      nextOccurrenceAt = dtstart;
+      // The new rule has generated nothing yet — the scheduler materializes its
+      // first occurrence (index 1) at dtstart. Starting at 0 keeps COUNT on the
+      // new rule consistent with rrule expansion. UI continuity comes from the
+      // shared series_id, not from this counter.
+      generatedCount = 0;
+    }
+
+    // 1) Freeze the old rule. Must run before the insert so the partial-unique
+    //    (one enabled rule per series) index is satisfied at every step.
+    await tx
+      .update(recurrenceRules)
+      .set({
+        enabled: false,
+        rrule: applyUntilToRrule(oldRule.rrule, oldRule.dtstart, forkAfter),
+        currentOccurrenceId: anchor === "completion" ? null : oldRule.currentOccurrenceId,
+        lastOccurrenceAt: current.dueAt ?? oldRule.dtstart,
+        nextOccurrenceAt: null,
+        endedAt: new Date()
+      })
+      .where(eq(recurrenceRules.id, oldRule.id));
+
+    // 2) Insert the new enabled rule, same series_id.
+    const [created] = await tx
+      .insert(recurrenceRules)
+      .values({
+        seriesId: oldRule.seriesId,
+        currentOccurrenceId: current.id,
+        enabled: true,
+        rrule: newRrule,
+        dtstart,
+        timezone,
+        allDay,
+        anchor,
+        maxInstancesAhead: 1,
+        generatedCount,
+        lastOccurrenceAt: anchor === "completion" ? oldRule.lastOccurrenceAt : null,
+        nextOccurrenceAt,
+        endedAt: null
+      })
+      .returning();
+    if (!created) throw new Error("recurrence rule insert returned no row");
+
+    // 3) Completion fork: re-home the live occurrence onto the new rule so its
+    //    completion advances the new cadence (findRuleForTask routes by the
+    //    marker's ruleId). Scheduled forks leave it on the old rule as history.
+    if (anchor === "completion") {
+      const marker = recurrenceMarker(current);
+      await tx
+        .update(entities)
+        .set({
+          metadata: withRecurrenceMetadata(current, {
+            ruleId: created.id,
+            seriesId: created.seriesId,
+            role: "occurrence",
+            occurrenceAt: marker?.occurrenceAt ?? (current.dueAt ?? created.dtstart).toISOString(),
+            occurrenceIndex: marker?.occurrenceIndex ?? created.generatedCount
+          })
+        })
+        .where(eq(entities.id, current.id));
+    }
+
+    return created;
+  });
 }

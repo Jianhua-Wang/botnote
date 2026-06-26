@@ -13,6 +13,7 @@ import type {
   SearchInput,
   SearchResponse,
   SkipOccurrenceResult,
+  SplitRecurrenceInput,
   TasksRangeInput,
   TasksRangeResult,
   Token,
@@ -182,6 +183,11 @@ export const api = {
     request<RecurrenceRule>(`/v1/recurrences/${ruleId}/stop`, {
       method: "POST",
       body: JSON.stringify(reason ? { reason } : {})
+    }),
+  splitRecurrence: (ruleId: string, input: SplitRecurrenceInput) =>
+    request<RecurrenceRule>(`/v1/recurrences/${ruleId}/split`, {
+      method: "POST",
+      body: JSON.stringify(input)
     }),
 
   listTokens: () => request<Token[]>("/v1/tokens"),

@@ -671,6 +671,50 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     }
   );
 
+  server.registerTool(
+    "split_recurrence",
+    {
+      title: "Split Recurrence",
+      description:
+        "Fork a recurring series at its current occurrence: freeze the existing rule (history stays intact) and apply a new cadence going forward, keeping it the same series. Use this when the schedule should change from now on but past occurrences must be preserved; use configure_recurrence to rewrite the whole rule in place instead.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false
+      },
+      inputSchema: {
+        ruleId: z.string().uuid(),
+        rrule: z.string().min(1).max(1000).optional().describe("Raw RRULE such as FREQ=WEEKLY;BYDAY=MO."),
+        preset: z.enum(RECURRENCE_PRESETS).optional(),
+        interval: z.number().int().min(1).max(999).optional(),
+        byWeekday: z.array(z.enum(WEEKDAYS)).optional(),
+        byMonthDay: z.array(z.number().int().min(1).max(31)).optional(),
+        bySetPos: z.number().int().min(-5).max(5).optional(),
+        byMonth: z.array(z.number().int().min(1).max(12)).optional(),
+        until: z.string().datetime().nullable().optional(),
+        count: z.number().int().min(1).max(10000).nullable().optional(),
+        timezone: z.string().min(1).max(80).optional(),
+        allDay: z.boolean().optional(),
+        anchor: z.enum(RECURRENCE_ANCHORS).optional()
+      }
+    },
+    async ({ ruleId, ...fields }) => {
+      const body = Object.fromEntries(
+        Object.entries(fields).filter(([, v]) => v !== undefined)
+      );
+      const rule = await c.splitRecurrence(ruleId, body);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `split into recurrence ${rule.id}\nrrule: ${rule.rrule}\nanchor: ${rule.anchor}\nnext: ${rule.nextOccurrenceAt ?? "-"}`
+          }
+        ]
+      };
+    }
+  );
+
   // ----- 14. related -----
 
   server.registerTool(
