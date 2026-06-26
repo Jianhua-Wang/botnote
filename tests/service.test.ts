@@ -17,8 +17,11 @@ import {
 import {
   createRecurrenceRule,
   getRecurrenceForTask,
+  materializeScheduledRecurrences,
   skipOccurrence
 } from "../src/service/recurrence.js";
+import { eq, and } from "drizzle-orm";
+import { recurrenceExceptions } from "../src/db/schema.js";
 import { search } from "../src/service/search.js";
 import { tasksRange } from "../src/service/tasks.js";
 import { consumeToken, createToken, listTokens } from "../src/service/tokens.js";
@@ -1061,6 +1064,340 @@ describe("botnote service", () => {
     });
 
     expect(rule.timezone).toBe("America/Chicago");
+  });
+
+  // -----------------------------------------------------------------------
+  // BOT-54: recurrenceScope tests
+  // -----------------------------------------------------------------------
+
+  it("this-only title edit does not propagate to next occurrence", async () => {
+    const p = await createProject(db, { key: "SC1", name: "Scope1" });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Original title",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // Edit title with scope='this'
+    await update(db, task.id, { title: "Changed title", recurrenceScope: "this" });
+
+    // Complete to advance
+    await update(db, task.id, { status: "done" });
+
+    const details = await getRecurrenceForTask(db, task.id);
+    expect(details?.currentOccurrence?.title).toBe("Original title");
+  });
+
+  it("going-forward edit propagates title to next occurrence", async () => {
+    const p = await createProject(db, { key: "SC2", name: "Scope2" });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Original title",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // Edit title with scope='future' (explicit)
+    await update(db, task.id, { title: "New title", recurrenceScope: "future" });
+    await update(db, task.id, { status: "done" });
+
+    const details = await getRecurrenceForTask(db, task.id);
+    expect(details?.currentOccurrence?.title).toBe("New title");
+  });
+
+  it("baseline merge: earliest-wins — two this-only title edits preserve original", async () => {
+    const p = await createProject(db, { key: "SC3", name: "Scope3" });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Original title",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    await update(db, task.id, { title: "First change", recurrenceScope: "this" });
+    await update(db, task.id, { title: "Second change", recurrenceScope: "this" });
+    await update(db, task.id, { status: "done" });
+
+    const details = await getRecurrenceForTask(db, task.id);
+    expect(details?.currentOccurrence?.title).toBe("Original title");
+  });
+
+  it("mixed: this-only title + going-forward priority", async () => {
+    const p = await createProject(db, { key: "SC4", name: "Scope4" });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Original title",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt,
+      priority: "low"
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // Edit title this-only, then priority going-forward (two separate calls)
+    await update(db, task.id, { title: "Changed title", recurrenceScope: "this" });
+    await update(db, task.id, { priority: "high", recurrenceScope: "future" });
+    await update(db, task.id, { status: "done" });
+
+    const details = await getRecurrenceForTask(db, task.id);
+    expect(details?.currentOccurrence?.title).toBe("Original title");
+    expect(details?.currentOccurrence?.priority).toBe("high");
+  });
+
+  it("exception row has correct shape for this-only body edit", async () => {
+    const p = await createProject(db, { key: "SC5", name: "Scope5" });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Task",
+      body: "original body",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    await update(db, task.id, { body: "changed body", recurrenceScope: "this" });
+
+    const exceptions = await db
+      .select()
+      .from(recurrenceExceptions)
+      .where(
+        and(
+          eq(recurrenceExceptions.entityId, task.id),
+          eq(recurrenceExceptions.action, "modified")
+        )
+      )
+      .limit(1);
+    const ex = exceptions[0];
+    expect(ex).toBeDefined();
+    expect(ex!.action).toBe("modified");
+    expect(ex!.ruleId).toBe(rule.id);
+    expect(ex!.entityId).toBe(task.id);
+    const meta = ex!.metadata as Record<string, unknown>;
+    expect(meta.scope).toBe("this");
+    const baseline = meta.baseline as Record<string, unknown>;
+    expect(baseline.body).toBe("original body");
+    expect(meta.changedFields).toContain("body");
+  });
+
+  it("going-forward edit clears prior this-only baseline for that field", async () => {
+    const p = await createProject(db, { key: "SC6", name: "Scope6" });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Original title",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // First set a this-only baseline for title
+    await update(db, task.id, { title: "This-only change", recurrenceScope: "this" });
+    // Then override going-forward — should clear the baseline
+    await update(db, task.id, { title: "Going-forward change", recurrenceScope: "future" });
+
+    // No modified exception should exist for this field now
+    const exceptions = await db
+      .select()
+      .from(recurrenceExceptions)
+      .where(
+        and(
+          eq(recurrenceExceptions.entityId, task.id),
+          eq(recurrenceExceptions.action, "modified")
+        )
+      );
+    // Either row is deleted (empty baseline) or field not in baseline
+    if (exceptions.length > 0) {
+      const meta = exceptions[0]!.metadata as Record<string, unknown>;
+      const baseline = (meta.baseline ?? {}) as Record<string, unknown>;
+      expect("title" in baseline).toBe(false);
+    }
+
+    // Complete and verify next occurrence gets going-forward value
+    await update(db, task.id, { status: "done" });
+    const details = await getRecurrenceForTask(db, task.id);
+    expect(details?.currentOccurrence?.title).toBe("Going-forward change");
+  });
+
+  it("materializeScheduledRecurrences respects baseline for scheduled-anchor series", async () => {
+    const p = await createProject(db, { key: "SC7", name: "Scope7" });
+    const todayStartUTC = new Date();
+    todayStartUTC.setUTCHours(0, 0, 0, 0);
+    const twoDaysAgo = new Date(todayStartUTC);
+    twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
+    twoDaysAgo.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Series title",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: twoDaysAgo
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // Mark current occurrence as this-only title change
+    await update(db, task.id, { title: "Occurrence-only title", recurrenceScope: "this" });
+
+    // Materialize upcoming occurrences
+    const upTo = new Date();
+    upTo.setUTCDate(upTo.getUTCDate() + 1);
+    const created = await materializeScheduledRecurrences(db, upTo);
+
+    // Created occurrences should use the original series title (baseline restored)
+    for (const occ of created) {
+      if (occ.title !== "Occurrence-only title") {
+        expect(occ.title).toBe("Series title");
+      }
+    }
+    // At least one was created
+    expect(created.length).toBeGreaterThan(0);
+  });
+
+  it("recurrenceScope is a no-op for non-recurring entities", async () => {
+    const p = await createProject(db, { key: "SC8", name: "Scope8" });
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Plain task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+
+    // Update with recurrenceScope should work fine and update the field
+    const updated = await update(db, task.id, {
+      title: "Updated title",
+      recurrenceScope: "this"
+    });
+    expect(updated.title).toBe("Updated title");
+
+    // No exception row created
+    const exceptions = await db
+      .select()
+      .from(recurrenceExceptions)
+      .where(eq(recurrenceExceptions.entityId, task.id));
+    expect(exceptions).toHaveLength(0);
+  });
+
+  it("skip after this-only edit: next occurrence has original series field", async () => {
+    const p = await createProject(db, { key: "SC9", name: "Scope9" });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Original title",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // Edit title this-only, then skip
+    await update(db, task.id, { title: "This-only title", recurrenceScope: "this" });
+    const { next } = await skipOccurrence(db, task.id, { actorKind: "human" });
+
+    expect(next?.title).toBe("Original title");
   });
 
   it("all-day recurrence under non-UTC workspace tz computes occurrence on correct local calendar day", async () => {

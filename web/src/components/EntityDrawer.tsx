@@ -42,6 +42,7 @@ import { useDrawer } from "../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
 import { useModals } from "../state/modals";
 import { parseRRule, RECURRENCE_PRESETS, RECURRENCE_WEEKDAYS } from "../lib/rrule";
+import { applyRecurrenceScope } from "../lib/recurrenceScope";
 import { KindBadge } from "./KindBadge";
 import { ProjectIcon } from "./ProjectIcon";
 import {
@@ -127,6 +128,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   const [priority, setPriority] = useState<Priority>("none");
   const [isEditing, setIsEditing] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [occurrenceScope, setOccurrenceScope] = useState<"this" | "future">("future");
   const initializedFor = useRef<string | null>(null);
 
   // Hydrate local draft when the entity ID changes. Don't reset on object identity
@@ -171,6 +173,16 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     return out;
   }, [isEditing, entity, title, body, tagsStr, status, priority, dueDate]);
 
+  // Whether the entity is a recurring occurrence
+  const isRecurringOccurrence =
+    entity != null &&
+    (entity.metadata?.recurrence as { role?: string } | undefined)?.role === "occurrence";
+
+  // Enhance the diff with recurrenceScope when editing a recurring occurrence's content fields
+  function withScope(d: Record<string, unknown>): Record<string, unknown> {
+    return applyRecurrenceScope(d, isRecurringOccurrence, occurrenceScope);
+  }
+
   // Debounced auto-save.
   useEffect(() => {
     if (!isEditing || !entity || !diff || Object.keys(diff).length === 0) return;
@@ -178,7 +190,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     const t = setTimeout(async () => {
       setSaveState("saving");
       try {
-        await update.mutateAsync({ id: entity.id, fields: diff });
+        await update.mutateAsync({ id: entity.id, fields: withScope(diff) });
         setSaveState("saved");
       } catch {
         setSaveState("error");
@@ -213,6 +225,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     setDueDate(loadedEntity.dueAt ? loadedEntity.dueAt.slice(0, 10) : "");
     setPriority(loadedEntity.priority);
     setSaveState("idle");
+    setOccurrenceScope("future");
     setIsEditing(true);
   }
 
@@ -223,7 +236,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     }
     setSaveState("saving");
     try {
-      await update.mutateAsync({ id: loadedEntity.id, fields: diff });
+      await update.mutateAsync({ id: loadedEntity.id, fields: withScope(diff) });
       setSaveState("saved");
       setIsEditing(false);
     } catch {
@@ -379,6 +392,9 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
             onSaveRecurrence={saveRecurrence}
             onSkipOccurrence={skipCurrentOccurrence}
             onStopRecurrence={stopCurrentSeries}
+            isRecurringOccurrence={isRecurringOccurrence}
+            occurrenceScope={occurrenceScope}
+            setOccurrenceScope={setOccurrenceScope}
           />
 
           {isNote && parentEntity && (
@@ -734,7 +750,10 @@ function MetaRow({
   recurrenceBusy,
   onSaveRecurrence,
   onSkipOccurrence,
-  onStopRecurrence
+  onStopRecurrence,
+  isRecurringOccurrence,
+  occurrenceScope,
+  setOccurrenceScope
 }: {
   isEditing: boolean;
   isTask: boolean;
@@ -756,6 +775,9 @@ function MetaRow({
   onSaveRecurrence?: (input: RecurrenceInput, firstDueDate: string) => Promise<void>;
   onSkipOccurrence?: () => void;
   onStopRecurrence?: () => void;
+  isRecurringOccurrence?: boolean;
+  occurrenceScope?: "this" | "future";
+  setOccurrenceScope?: (scope: "this" | "future") => void;
 }) {
   return (
     <div className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 items-center text-xs">
@@ -826,6 +848,25 @@ function MetaRow({
                 onSkip={onSkipOccurrence}
                 onStop={onStopRecurrence}
               />
+            </>
+          )}
+
+          {isEditing && isRecurringOccurrence && (
+            <>
+              <span className="text-faint">Apply to</span>
+              <span className="flex items-center gap-1.5">
+                <select
+                  className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                  value={occurrenceScope ?? "future"}
+                  onChange={(e) =>
+                    setOccurrenceScope?.(e.target.value as "this" | "future")
+                  }
+                  title="Recurrence edit scope"
+                >
+                  <option value="future">This and future</option>
+                  <option value="this">This occurrence only</option>
+                </select>
+              </span>
             </>
           )}
 

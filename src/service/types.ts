@@ -95,7 +95,8 @@ export const UpdateInput = z.object({
   parentId: Uuid.nullable().optional(),
   dueAt: z.coerce.date().nullable().optional(),
   priority: PriorityEnum.optional(),
-  pinned: z.boolean().optional()
+  pinned: z.boolean().optional(),
+  recurrenceScope: z.enum(["this", "future"]).optional()
 });
 export type UpdateInput = z.infer<typeof UpdateInput>;
 

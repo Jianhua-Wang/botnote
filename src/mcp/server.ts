@@ -527,7 +527,13 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         parentId: z.string().uuid().nullable().optional().describe("Re-link or unlink (null) parent."),
         dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear."),
         priority: z.enum(PRIORITIES).optional(),
-        pinned: z.boolean().optional().describe("Pin or unpin from project opening brief.")
+        pinned: z.boolean().optional().describe("Pin or unpin from project opening brief."),
+        recurrenceScope: z
+          .enum(["this", "future"])
+          .optional()
+          .describe(
+            "For recurring task occurrences: 'this' applies the edit to this occurrence only (does not propagate to future); 'future' (default) propagates the edit to future occurrences."
+          )
       }
     },
     async ({ id, ...fields }) => {

@@ -12,6 +12,10 @@ import { allDayDueAtInZone, normalizeDueAt } from "./dates.js";
 import type { RecurrenceInput, StopRecurrenceInput, UpdateRecurrenceInput } from "./types.js";
 import { getWorkspaceSettings } from "./workspace_settings.js";
 
+// Content fields that can be scoped to "this occurrence only"
+type BaselineFields = { title?: string | null; body?: string; tags?: string[]; priority?: string };
+export type ContentFieldKey = "title" | "body" | "tags" | "priority";
+
 const { RRule } = rrulePkg;
 
 type WeekdayKey = "MO" | "TU" | "WE" | "TH" | "FR" | "SA" | "SU";
@@ -57,7 +61,7 @@ function metadataObject(value: unknown): Record<string, unknown> {
   return { ...(value as Record<string, unknown>) };
 }
 
-function recurrenceMarker(e: Entity): Partial<RecurrenceMarker> | null {
+export function recurrenceMarker(e: Entity): Partial<RecurrenceMarker> | null {
   const metadata = metadataObject(e.metadata) as RecurrenceMetadata;
   if (!metadata.recurrence || typeof metadata.recurrence !== "object") return null;
   return metadata.recurrence;
@@ -172,7 +176,7 @@ async function fetchEntity(db: Database["db"], id: string): Promise<Entity> {
   return row;
 }
 
-async function findRuleForTask(
+export async function findRuleForTask(
   db: Database["db"],
   task: Entity,
   includeDisabled = true
@@ -341,11 +345,173 @@ export async function updateRecurrenceRule(
   return updated;
 }
 
+// ---------------------------------------------------------------------------
+// Modified-exception helpers (scope='this' baseline management)
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the existing 'modified' exception row for a given entity.
+ * Keyed by entityId (stable), not occurrenceAt.
+ */
+async function findModifiedExceptionForEntity(
+  db: Database["db"],
+  entityId: string
+): Promise<{ id: string; metadata: Record<string, unknown> } | null> {
+  const rows = await db
+    .select({ id: recurrenceExceptions.id, metadata: recurrenceExceptions.metadata })
+    .from(recurrenceExceptions)
+    .where(
+      and(
+        eq(recurrenceExceptions.entityId, entityId),
+        eq(recurrenceExceptions.action, "modified")
+      )
+    )
+    .limit(1);
+  if (!rows[0]) return null;
+  const meta = rows[0].metadata;
+  return {
+    id: rows[0].id,
+    metadata: (meta && typeof meta === "object" && !Array.isArray(meta))
+      ? (meta as Record<string, unknown>)
+      : {}
+  };
+}
+
+/**
+ * Upsert a 'modified' exception row recording the pre-edit (baseline) values
+ * of content fields for this occurrence. Uses earliest-wins merge: only
+ * adds a field to baseline if not already present.
+ */
+export async function upsertModifiedExceptionBaseline(
+  db: Database["db"],
+  rule: RecurrenceRule,
+  occurrence: Entity,
+  preEditValues: BaselineFields,
+  changedFields: ContentFieldKey[]
+): Promise<void> {
+  const existing = await findModifiedExceptionForEntity(db, occurrence.id);
+
+  if (existing) {
+    const existingMeta = existing.metadata;
+    const existingBaseline = (
+      existingMeta.baseline && typeof existingMeta.baseline === "object" && !Array.isArray(existingMeta.baseline)
+        ? existingMeta.baseline
+        : {}
+    ) as Record<string, unknown>;
+    const existingChangedFields = Array.isArray(existingMeta.changedFields)
+      ? (existingMeta.changedFields as string[])
+      : [];
+
+    // Merge: only add fields not already in baseline (earliest value wins)
+    const mergedBaseline: Record<string, unknown> = { ...existingBaseline };
+    const mergedChangedFields = new Set<string>(existingChangedFields);
+    for (const field of changedFields) {
+      if (!(field in mergedBaseline)) {
+        mergedBaseline[field] = (preEditValues as Record<string, unknown>)[field] ?? null;
+      }
+      mergedChangedFields.add(field);
+    }
+
+    await db
+      .update(recurrenceExceptions)
+      .set({
+        metadata: {
+          scope: "this",
+          baseline: mergedBaseline,
+          changedFields: Array.from(mergedChangedFields),
+          actorKind: "human"
+        }
+      })
+      .where(eq(recurrenceExceptions.id, existing.id));
+  } else {
+    const baseline: Record<string, unknown> = {};
+    for (const field of changedFields) {
+      baseline[field] = (preEditValues as Record<string, unknown>)[field] ?? null;
+    }
+    await db.insert(recurrenceExceptions).values({
+      ruleId: rule.id,
+      occurrenceAt: occurrence.dueAt ?? rule.dtstart,
+      action: "modified",
+      entityId: occurrence.id,
+      metadata: {
+        scope: "this",
+        baseline,
+        changedFields,
+        actorKind: "human"
+      }
+    });
+  }
+}
+
+/**
+ * Remove the given fields from an existing 'modified' exception's baseline.
+ * If baseline becomes empty after removal, delete the row.
+ */
+export async function clearModifiedExceptionFields(
+  db: Database["db"],
+  _rule: RecurrenceRule,
+  occurrence: Entity,
+  changedFields: ContentFieldKey[]
+): Promise<void> {
+  const existing = await findModifiedExceptionForEntity(db, occurrence.id);
+  if (!existing) return;
+
+  const existingMeta = existing.metadata;
+  const existingBaseline = (
+    existingMeta.baseline && typeof existingMeta.baseline === "object" && !Array.isArray(existingMeta.baseline)
+      ? existingMeta.baseline
+      : {}
+  ) as Record<string, unknown>;
+  const existingChangedFields = Array.isArray(existingMeta.changedFields)
+    ? (existingMeta.changedFields as string[])
+    : [];
+
+  const newBaseline: Record<string, unknown> = { ...existingBaseline };
+  const newChangedFields = existingChangedFields.filter((f) => !changedFields.includes(f as ContentFieldKey));
+  for (const field of changedFields) {
+    delete newBaseline[field];
+  }
+
+  if (Object.keys(newBaseline).length === 0) {
+    await db.delete(recurrenceExceptions).where(eq(recurrenceExceptions.id, existing.id));
+  } else {
+    await db
+      .update(recurrenceExceptions)
+      .set({
+        metadata: {
+          ...existingMeta,
+          baseline: newBaseline,
+          changedFields: newChangedFields
+        }
+      })
+      .where(eq(recurrenceExceptions.id, existing.id));
+  }
+}
+
+/**
+ * Fetch the baseline stored in the 'modified' exception for the given template
+ * occurrence. Returns null if no such exception exists.
+ */
+async function fetchBaselineForTemplate(
+  db: Database["db"],
+  _rule: RecurrenceRule,
+  template: Entity
+): Promise<BaselineFields | null> {
+  const existing = await findModifiedExceptionForEntity(db, template.id);
+  if (!existing) return null;
+  const meta = existing.metadata;
+  if (!meta.baseline || typeof meta.baseline !== "object" || Array.isArray(meta.baseline)) {
+    return null;
+  }
+  return meta.baseline as BaselineFields;
+}
+
 async function insertNextOccurrence(
   db: Database["db"],
   rule: RecurrenceRule,
   occurrence: Entity,
-  nextDueAt: Date
+  nextDueAt: Date,
+  baseline?: BaselineFields
 ): Promise<Entity> {
   const occurrenceIndex = rule.generatedCount + 1;
   const idempotencyKey = `recurrence:${rule.id}:${nextDueAt.toISOString()}`;
@@ -363,15 +529,15 @@ async function insertNextOccurrence(
   const values = {
     kind: "task",
     projectId: occurrence.projectId,
-    title: occurrence.title,
-    body: occurrence.body,
-    tags: occurrence.tags,
+    title: baseline && "title" in baseline ? baseline.title : occurrence.title,
+    body: baseline && "body" in baseline ? (baseline.body ?? "") : occurrence.body,
+    tags: baseline && "tags" in baseline ? (baseline.tags ?? []) : occurrence.tags,
     status: "open",
     parentId: occurrence.parentId,
     actorKind: "system",
     metadata,
     dueAt: nextDueAt,
-    priority: occurrence.priority,
+    priority: (baseline && "priority" in baseline ? baseline.priority : null) ?? occurrence.priority,
     pinned: false,
     completedAt: null,
     idempotencyKey
@@ -410,7 +576,8 @@ async function advanceRuleFromOccurrence(
     return null;
   }
 
-  const next = await insertNextOccurrence(db, rule, occurrence, nextDueAt);
+  const baseline = await fetchBaselineForTemplate(db, rule, occurrence);
+  const next = await insertNextOccurrence(db, rule, occurrence, nextDueAt, baseline ?? undefined);
   await db
     .update(recurrenceRules)
     .set({
@@ -464,7 +631,8 @@ export async function materializeScheduledRecurrences(
       }
 
       const nextDueAt = normalizeOccurrenceDueAt(rule, rule.nextOccurrenceAt!);
-      const next = await insertNextOccurrence(db, rule, template, nextDueAt);
+      const baseline = await fetchBaselineForTemplate(db, rule, template);
+      const next = await insertNextOccurrence(db, rule, template, nextDueAt, baseline ?? undefined);
       created.push(next);
 
       const generatedCount = rule.generatedCount + 1;

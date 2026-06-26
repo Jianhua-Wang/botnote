@@ -307,6 +307,7 @@ export interface UpdateEntityBody {
   dueAt?: string | null;
   priority?: string;
   pinned?: boolean;
+  recurrenceScope?: "this" | "future";
 }
 
 export interface RecurrenceBody {

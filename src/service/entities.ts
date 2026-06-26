@@ -2,7 +2,14 @@ import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { edges, entities, projects, type Entity } from "../db/schema.js";
 import { normalizeDueAt } from "./dates.js";
-import { advanceRecurrenceOnCompletion } from "./recurrence.js";
+import {
+  advanceRecurrenceOnCompletion,
+  clearModifiedExceptionFields,
+  findRuleForTask,
+  recurrenceMarker,
+  upsertModifiedExceptionBaseline,
+  type ContentFieldKey
+} from "./recurrence.js";
 import type { LinkInput, RecentInput, UpdateInput, WriteInput } from "./types.js";
 
 const UUID_RE =
@@ -84,6 +91,8 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
   return row;
 }
 
+const CONTENT_FIELDS: ContentFieldKey[] = ["title", "body", "tags", "priority"];
+
 export async function update(
   db: Database["db"],
   id: string,
@@ -97,17 +106,36 @@ export async function update(
     normalizedFields.status = normalizeStatus(fields.status) as NonNullable<UpdateInput["status"]>;
   }
   const set: Record<string, unknown> = { ...normalizedFields, updatedAt: new Date() };
+  // recurrenceScope is not a DB column — remove it before the UPDATE
+  delete set.recurrenceScope;
   if (fields.dueAt !== undefined) {
     set.dueAt = normalizeDueAt(fields.dueAt);
   }
+
+  // Determine which content fields are being changed and capture pre-edit snapshot
+  // if recurrenceScope is set (we need preEditSnapshot for this-only writes).
+  const changedContentFields = CONTENT_FIELDS.filter(
+    (f) => f in fields && fields[f] !== undefined
+  );
+  const needsSnapshot =
+    fields.recurrenceScope !== undefined && changedContentFields.length > 0;
+
   // Maintain completedAt as a side effect of status transitions. We need the
   // prior status to know whether this is an entry into or exit from 'done',
   // so do a tiny read first — cheaper than a CASE expression on UPDATE and
   // keeps the SQL the same shape as other writes.
   let enteredDone = false;
-  if (normalizedFields.status !== undefined) {
+  let preEditSnapshot: Partial<Record<ContentFieldKey, unknown>> | null = null;
+
+  if (normalizedFields.status !== undefined || needsSnapshot) {
     const prior = await db
-      .select({ status: entities.status })
+      .select({
+        status: entities.status,
+        title: entities.title,
+        body: entities.body,
+        tags: entities.tags,
+        priority: entities.priority
+      })
       .from(entities)
       .where(eq(entities.id, entityId))
       .limit(1);
@@ -117,7 +145,16 @@ export async function update(
     enteredDone = isDone && !wasDone;
     if (isDone && !wasDone) set.completedAt = new Date();
     else if (!isDone && wasDone) set.completedAt = null;
+    if (needsSnapshot) {
+      preEditSnapshot = {
+        title: prior[0].title,
+        body: prior[0].body,
+        tags: prior[0].tags,
+        priority: prior[0].priority
+      };
+    }
   }
+
   const [row] = await db.update(entities).set(set).where(eq(entities.id, entityId)).returning();
   if (!row) throw new Error(`entity ${id} not found`);
   if (fields.parentId !== undefined && fields.parentId !== null) {
@@ -126,6 +163,38 @@ export async function update(
       .values({ fromId: fields.parentId, toId: row.id, kind: "parent_of" })
       .onConflictDoNothing();
   }
+
+  // Handle recurrenceScope for recurring task occurrences
+  if (
+    fields.recurrenceScope !== undefined &&
+    row.kind === "task" &&
+    changedContentFields.length > 0
+  ) {
+    const marker = recurrenceMarker(row);
+    if (marker?.role === "occurrence" && marker.ruleId) {
+      const rule = await findRuleForTask(db, row);
+      if (rule && preEditSnapshot) {
+        const preEdit = preEditSnapshot as Record<string, unknown>;
+        const preEditValues = Object.fromEntries(
+          changedContentFields.map((f) => [f, preEdit[f]])
+        ) as Record<ContentFieldKey, unknown>;
+
+        if (fields.recurrenceScope === "this") {
+          await upsertModifiedExceptionBaseline(
+            db,
+            rule,
+            row,
+            preEditValues as { title?: string | null; body?: string; tags?: string[]; priority?: string },
+            changedContentFields
+          );
+        } else {
+          // scope === 'future': clear any prior this-only baseline for those fields
+          await clearModifiedExceptionFields(db, rule, row, changedContentFields);
+        }
+      }
+    }
+  }
+
   if (enteredDone && row.kind === "task") {
     await advanceRecurrenceOnCompletion(db, row);
   }

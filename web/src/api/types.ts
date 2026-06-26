@@ -230,6 +230,7 @@ export interface UpdateEntityInput {
   dueAt?: string | null;
   priority?: Priority;
   pinned?: boolean;
+  recurrenceScope?: "this" | "future";
 }
 
 export interface CreateProjectInput {
