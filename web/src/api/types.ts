@@ -9,14 +9,24 @@ export type ActorKind = "human" | "agent" | "system";
 export const ACTOR_KINDS: ActorKind[] = ["human", "agent", "system"];
 
 export type EdgeKind = "blocks" | "references" | "parent_of";
+export type ProjectStatus = "planned" | "active" | "watching" | "paused" | "archived";
+export const PROJECT_STATUSES: ProjectStatus[] = [
+  "planned",
+  "active",
+  "watching",
+  "paused",
+  "archived"
+];
 
 export interface Project {
   id: string;
   key: string;
   name: string;
+  status: ProjectStatus;
   color: string;
   icon: string;
   agentsMd: string;
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -226,6 +236,7 @@ export interface UpdateEntityInput {
 export interface CreateProjectInput {
   key: string;
   name: string;
+  status?: ProjectStatus;
   color?: string;
   icon?: string;
   agentsMd?: string;
@@ -233,6 +244,7 @@ export interface CreateProjectInput {
 
 export interface UpdateProjectInput {
   name?: string;
+  status?: ProjectStatus;
   color?: string;
   icon?: string;
   agentsMd?: string;

@@ -3,12 +3,14 @@ import {
   ACTOR_KINDS,
   EDGE_KINDS,
   ENTITY_KINDS,
+  PROJECT_STATUSES,
   RECURRENCE_ANCHORS
 } from "../db/schema.js";
 
 export const EntityKindEnum = z.enum(ENTITY_KINDS);
 export const ActorKindEnum = z.enum(ACTOR_KINDS);
 export const EdgeKindEnum = z.enum(EDGE_KINDS);
+export const ProjectStatusEnum = z.enum(PROJECT_STATUSES);
 
 export const PriorityEnum = z.enum(["urgent", "high", "medium", "low", "none"]);
 export const RecurrenceAnchorEnum = z.enum(RECURRENCE_ANCHORS);
@@ -188,26 +190,37 @@ const IconName = z
   .max(40)
   .regex(/^[a-z0-9_-]+$/, "icon must be a lowercase identifier");
 
-export const CreateProjectInput = z.object({
-  key: z
-    .string()
-    .min(1)
-    .max(20)
-    .regex(/^[A-Z][A-Z0-9_]*$/),
-  name: z.string().min(1).max(200),
-  color: HexColor.default("#5e6ad2"),
-  icon: IconName.default("circle"),
-  agentsMd: z.string().default("")
-});
+export const CreateProjectInput = z
+  .object({
+    key: z
+      .string()
+      .min(1)
+      .max(20)
+      .regex(/^[A-Z][A-Z0-9_]*$/),
+    name: z.string().min(1).max(200),
+    status: ProjectStatusEnum.default("active"),
+    color: HexColor.default("#5e6ad2"),
+    icon: IconName.default("circle"),
+    agentsMd: z.string().default("")
+  })
+  .strict();
 export type CreateProjectInput = z.infer<typeof CreateProjectInput>;
 
-export const UpdateProjectInput = z.object({
-  name: z.string().min(1).max(200).optional(),
-  color: HexColor.optional(),
-  icon: IconName.optional(),
-  agentsMd: z.string().optional()
-});
+export const UpdateProjectInput = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    status: ProjectStatusEnum.optional(),
+    color: HexColor.optional(),
+    icon: IconName.optional(),
+    agentsMd: z.string().optional()
+  })
+  .strict();
 export type UpdateProjectInput = z.infer<typeof UpdateProjectInput>;
+
+export const ListProjectsInput = z.object({
+  includeArchived: z.boolean().default(false)
+});
+export type ListProjectsInput = z.infer<typeof ListProjectsInput>;
 
 export const CreateTokenInput = z.object({
   name: z.string().min(1).max(200)

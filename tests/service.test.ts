@@ -11,6 +11,7 @@ import { formatOpeningBrief, openingBrief } from "../src/service/opening_brief.j
 import {
   createProject,
   getProjectByKey,
+  listProjects,
   updateProject
 } from "../src/service/projects.js";
 import {
@@ -57,10 +58,106 @@ describe("botnote service", () => {
       agentsMd: "## Rules\nALWAYS test."
     });
     expect(p.key).toBe("TEST");
+    expect(p.status).toBe("active");
     expect(p.id).toMatch(/^[0-9a-f-]{36}$/);
 
     const found = await getProjectByKey(db, "TEST");
     expect(found?.id).toBe(p.id);
+  });
+
+  it("updates project status for active lifecycle states", async () => {
+    const p = await createProject(db, {
+      key: "STAT",
+      name: "Status Project",
+      status: "planned"
+    });
+    expect(p.status).toBe("planned");
+
+    const updated = await updateProject(db, p.id, { status: "watching" });
+    expect(updated.status).toBe("watching");
+
+    const found = await getProjectByKey(db, "STAT");
+    expect(found?.status).toBe("watching");
+
+    const archived = await updateProject(db, p.id, { status: "archived" });
+    expect(archived.status).toBe("archived");
+    expect(archived.archivedAt).not.toBeNull();
+
+    const restored = await updateProject(db, p.id, { status: "active" });
+    expect(restored.status).toBe("active");
+    expect(restored.archivedAt).toBeNull();
+  });
+
+  it("archives projects and hides their entities from workspace views by default", async () => {
+    const active = await createProject(db, { key: "ACT", name: "Active" });
+    const archived = await createProject(db, { key: "ARC", name: "Archived" });
+    const dueAt = new Date("2026-06-25T12:00:00.000Z");
+
+    await write(db, {
+      kind: "task",
+      projectId: active.id,
+      title: "Visible active task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    const archivedTask = await write(db, {
+      kind: "task",
+      projectId: archived.id,
+      title: "Hidden archived task",
+      body: "archive-only needle",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+
+    const archivedProject = await updateProject(db, archived.id, { status: "archived" });
+    expect(archivedProject.status).toBe("archived");
+    expect(archivedProject.archivedAt).not.toBeNull();
+
+    expect((await listProjects(db)).map((p) => p.key)).toEqual(["ACT"]);
+    expect((await listProjects(db, { includeArchived: true })).map((p) => p.key)).toEqual([
+      "ACT",
+      "ARC"
+    ]);
+
+    const recentRows = await recent(db, { limit: 10 });
+    expect(recentRows.map((e) => e.id)).not.toContain(archivedTask.id);
+    const archivedRecentRows = await recent(db, { projectId: archived.id, limit: 10 });
+    expect(archivedRecentRows.map((e) => e.id)).toContain(archivedTask.id);
+
+    expect((await search(db, { query: "archive-only needle", limit: 5 })).length).toBe(0);
+    expect(
+      (await search(db, { query: "archive-only needle", projectId: archived.id, limit: 5 }))[0]
+        ?.entity.id
+    ).toBe(archivedTask.id);
+
+    const range = await tasksRange(db, {
+      from: new Date("2026-06-25T00:00:00.000Z"),
+      to: new Date("2026-06-26T00:00:00.000Z"),
+      includeBacklog: false,
+      includeDone: false
+    });
+    expect(range.scheduled.map((e) => e.id)).not.toContain(archivedTask.id);
+
+    const archivedRange = await tasksRange(db, {
+      from: new Date("2026-06-25T00:00:00.000Z"),
+      to: new Date("2026-06-26T00:00:00.000Z"),
+      projectIds: [archived.id],
+      includeBacklog: false,
+      includeDone: false
+    });
+    expect(archivedRange.scheduled.map((e) => e.id)).toContain(archivedTask.id);
+
+    const restored = await updateProject(db, archived.id, { status: "active" });
+    expect(restored.status).toBe("active");
+    expect(restored.archivedAt).toBeNull();
+    expect((await listProjects(db)).map((p) => p.key)).toEqual(["ACT", "ARC"]);
   });
 
   it("write entity + get + update + recent", async () => {
@@ -377,6 +474,56 @@ describe("botnote service", () => {
     await update(db, task.id, { status: "done" });
     const afterRetry = await getRecurrenceForTask(db, task.id);
     expect(afterRetry?.rule.currentOccurrenceId).toBe(details?.rule.currentOccurrenceId);
+  });
+
+  it("tasksRange materializes scheduled recurrences through today", async () => {
+    const p = await createProject(db, { key: "RMT", name: "Recurrence Materialize Today" });
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const twoDaysAgo = new Date(todayStart);
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    twoDaysAgo.setHours(12, 0, 0, 0);
+    const todayDue = new Date(todayStart);
+    todayDue.setHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Publish daily recurring task",
+      body: "",
+      tags: ["repeat"],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: twoDaysAgo
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    const range = await tasksRange(db, {
+      from: todayStart,
+      to: tomorrowStart,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false
+    });
+
+    const todayOccurrence = range.scheduled.find(
+      (row) => row.title === task.title && row.dueAt?.getTime() === todayDue.getTime()
+    );
+    expect(todayOccurrence?.status).toBe("open");
+    expect(range.overdue.filter((row) => row.title === task.title)).toHaveLength(2);
+
+    const details = await getRecurrenceForTask(db, task.id);
+    expect(details?.currentOccurrence?.id).toBe(todayOccurrence?.id);
+    expect(details?.rule.generatedCount).toBe(3);
   });
 
   it("supports repeat-after-completion anchor", async () => {

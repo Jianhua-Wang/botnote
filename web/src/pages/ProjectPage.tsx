@@ -5,6 +5,7 @@ import { useEntityList, useProjectByKey } from "../api/hooks";
 import { KanbanBoard } from "../components/project/KanbanBoard";
 import { NotesList } from "../components/project/NotesList";
 import { ProjectIcon } from "../components/ProjectIcon";
+import { PROJECT_STATUS_LABEL } from "../lib/projectStatus";
 import { useModals } from "../state/modals";
 
 type Tab = "tasks" | "notes" | "agents-md";
@@ -50,6 +51,7 @@ export function ProjectPage() {
             {project.key}
           </span>
           <span className="text-sm font-semibold text-ink truncate">{project.name}</span>
+          <span className="chip">{PROJECT_STATUS_LABEL[project.status]}</span>
           <button
             className="ml-1 p-1 -m-1 text-faint hover:text-ink rounded hover:bg-sidebar"
             onClick={() => openModal({ kind: "edit-project", projectId: project.id })}

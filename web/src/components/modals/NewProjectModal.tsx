@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCreateProject } from "../../api/hooks";
+import { PROJECT_STATUSES, type ProjectStatus } from "../../api/types";
 import { DEFAULT_PROJECT_COLOR, DEFAULT_PROJECT_ICON } from "../../lib/projectTheme";
+import { PROJECT_STATUS_HELP, PROJECT_STATUS_LABEL } from "../../lib/projectStatus";
 import { useModals } from "../../state/modals";
 import { IconColorPicker } from "../IconColorPicker";
 import { ModalShell } from "../ModalShell";
@@ -9,6 +11,7 @@ import { ModalShell } from "../ModalShell";
 export function NewProjectModal() {
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
+  const [status, setStatus] = useState<ProjectStatus>("active");
   const [agentsMd, setAgentsMd] = useState("");
   const [color, setColor] = useState(DEFAULT_PROJECT_COLOR);
   const [icon, setIcon] = useState(DEFAULT_PROJECT_ICON);
@@ -27,6 +30,7 @@ export function NewProjectModal() {
           const p = await create.mutateAsync({
             key: key.trim(),
             name: name.trim(),
+            status,
             color,
             icon,
             agentsMd: agentsMd.trim()
@@ -64,6 +68,20 @@ export function NewProjectModal() {
           onIconChange={setIcon}
           onColorChange={setColor}
         />
+        <div>
+          <label className="block text-xxs text-muted uppercase tracking-wider mb-1">Status</label>
+          <select
+            className="input"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as ProjectStatus)}
+          >
+            {PROJECT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {PROJECT_STATUS_LABEL[s]} · {PROJECT_STATUS_HELP[s]}
+              </option>
+            ))}
+          </select>
+        </div>
         <div>
           <label className="block text-xxs text-muted uppercase tracking-wider mb-1">
             AGENTS.md (optional)

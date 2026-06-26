@@ -24,10 +24,19 @@ export function useHealth() {
   });
 }
 
-export function useProjects() {
+export function useProjects(opts: { includeArchived?: boolean } = {}) {
+  const includeArchived = Boolean(opts.includeArchived);
   return useQuery({
-    queryKey: ["projects"],
-    queryFn: api.listProjects
+    queryKey: ["projects", includeArchived],
+    queryFn: () => api.listProjects({ includeArchived })
+  });
+}
+
+export function useProject(id: string | undefined) {
+  return useQuery({
+    queryKey: ["project", id],
+    queryFn: () => api.getProject(id!),
+    enabled: Boolean(id)
   });
 }
 
@@ -206,6 +215,7 @@ export function useUpdateProject() {
       api.updateProject(id, fields),
     onSuccess: (project) => {
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.setQueryData(["project", project.id], project);
       qc.invalidateQueries({ queryKey: ["project", "by-key", project.key] });
       qc.invalidateQueries({ queryKey: ["opening-brief", project.id] });
     }

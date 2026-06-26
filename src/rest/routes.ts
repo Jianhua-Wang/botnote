@@ -47,6 +47,7 @@ import {
   CreateTokenInput,
   EmbeddingBackfillInput,
   LinkInput,
+  ListProjectsInput,
   OpeningBriefInput,
   RecentInput,
   RecurrenceInput,
@@ -68,6 +69,14 @@ const EntityIdRef = z.string().min(8).max(36).regex(/^[0-9a-fA-F-]+$/);
 const EntityIdParams = z.object({ id: EntityIdRef });
 const RuleIdParams = z.object({ id: Uuid });
 const KeyParams = z.object({ key: z.string() });
+const BooleanQuery = z.preprocess((value) => {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") return value === "true" || value === "1";
+  return value;
+}, z.boolean());
+const ListProjectsQuery = z.object({
+  includeArchived: BooleanQuery.default(false)
+});
 const KeySeqParams = z.object({
   key: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
   seq: z.coerce.number().int().positive()
@@ -197,8 +206,17 @@ export async function registerRoutes(
 
   app.get(
     "/v1/projects",
-    { schema: { tags: ["projects"], summary: "List projects" } },
-    async () => listProjects(ctx.db)
+    {
+      schema: {
+        tags: ["projects"],
+        summary: "List non-archived projects",
+        querystring: ListProjectsQuery
+      }
+    },
+    async (req) => {
+      const query = ListProjectsInput.parse(ListProjectsQuery.parse(req.query));
+      return listProjects(ctx.db, query);
+    }
   );
 
   app.get(
@@ -217,7 +235,7 @@ export async function registerRoutes(
     {
       schema: {
         tags: ["projects"],
-        summary: "Update project (name, color, icon, agents_md)",
+        summary: "Update project (status, name, color, icon, agents_md)",
         params: IdParams,
         body: UpdateProjectInput
       }

@@ -1,27 +1,30 @@
 import { useEffect, useState } from "react";
-import { useProjects, useUpdateProject } from "../../api/hooks";
+import { useProject, useUpdateProject } from "../../api/hooks";
+import { PROJECT_STATUSES, type ProjectStatus } from "../../api/types";
 import { DEFAULT_PROJECT_COLOR, DEFAULT_PROJECT_ICON } from "../../lib/projectTheme";
+import { PROJECT_STATUS_HELP, PROJECT_STATUS_LABEL } from "../../lib/projectStatus";
 import { useModals } from "../../state/modals";
 import { IconColorPicker } from "../IconColorPicker";
 import { ModalShell } from "../ModalShell";
 
 export function EditProjectModal({ projectId }: { projectId: string }) {
-  const { data: projects } = useProjects();
-  const project = projects?.find((p) => p.id === projectId);
+  const { data: project } = useProject(projectId);
   const update = useUpdateProject();
   const { close } = useModals();
 
   const [name, setName] = useState("");
+  const [status, setStatus] = useState<ProjectStatus>("active");
   const [color, setColor] = useState(DEFAULT_PROJECT_COLOR);
   const [icon, setIcon] = useState(DEFAULT_PROJECT_ICON);
 
   useEffect(() => {
     if (project) {
       setName(project.name);
+      setStatus(project.status);
       setColor(project.color);
       setIcon(project.icon);
     }
-  }, [project?.id]);
+  }, [project?.id, project?.name, project?.status, project?.color, project?.icon]);
 
   if (!project) {
     return (
@@ -31,17 +34,23 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
     );
   }
 
-  const dirty = name !== project.name || color !== project.color || icon !== project.icon;
+  const loadedProject = project;
+  const dirty =
+    name !== loadedProject.name ||
+    status !== loadedProject.status ||
+    color !== loadedProject.color ||
+    icon !== loadedProject.icon;
+  const valid = name.trim().length > 0;
 
   return (
-    <ModalShell title={`Settings · ${project.key}`} width="max-w-md">
+    <ModalShell title={`Settings · ${loadedProject.key}`} width="max-w-md">
       <form
         onSubmit={async (e) => {
           e.preventDefault();
-          if (!dirty) return;
+          if (!dirty || !valid) return;
           await update.mutateAsync({
-            id: project.id,
-            fields: { name: name.trim(), color, icon }
+            id: loadedProject.id,
+            fields: { name: name.trim(), status, color, icon }
           });
           close();
         }}
@@ -62,10 +71,21 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
           onIconChange={setIcon}
           onColorChange={setColor}
         />
-        <div className="flex justify-between items-center pt-1">
-          <div className="text-xxs text-faint">
-            Edit AGENTS.md from project header → AGENTS.md tab.
-          </div>
+        <div>
+          <label className="block text-xxs text-muted uppercase tracking-wider mb-1">Status</label>
+          <select
+            className="input"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as ProjectStatus)}
+          >
+            {PROJECT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {PROJECT_STATUS_LABEL[s]} · {PROJECT_STATUS_HELP[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex justify-end items-center pt-1">
           <div className="flex gap-2">
             <button type="button" className="btn" onClick={close}>
               Cancel
@@ -73,7 +93,7 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={!dirty || update.isPending}
+              disabled={!dirty || !valid || update.isPending}
             >
               {update.isPending ? "Saving…" : "Save"}
             </button>

@@ -44,15 +44,20 @@ export type ActorKind = (typeof ACTOR_KINDS)[number];
 export const EDGE_KINDS = ["blocks", "references", "parent_of"] as const;
 export type EdgeKind = (typeof EDGE_KINDS)[number];
 
+export const PROJECT_STATUSES = ["planned", "active", "watching", "paused", "archived"] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
 export const projects = pgTable(
   "projects",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     key: text("key").notNull(),
     name: text("name").notNull(),
+    status: text("status").notNull().default("active"),
     color: text("color").notNull().default("#5e6ad2"),
     icon: text("icon").notNull().default("circle"),
     agentsMd: text("agents_md").notNull().default(""),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },

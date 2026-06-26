@@ -69,8 +69,11 @@ export class BotnoteHttpClient {
   }
 
   // ----- projects -----
-  listProjects() {
-    return this.request<ProjectDTO[]>("GET", "/v1/projects");
+  listProjects(opts: { includeArchived?: boolean } = {}) {
+    const params = new URLSearchParams();
+    if (opts.includeArchived) params.set("includeArchived", "true");
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request<ProjectDTO[]>("GET", `/v1/projects${suffix}`);
   }
   getProject(id: string) {
     return this.request<ProjectDTO>("GET", `/v1/projects/${id}`);
@@ -156,9 +159,11 @@ export interface ProjectDTO {
   id: string;
   key: string;
   name: string;
+  status: string;
   color: string;
   icon: string;
   agentsMd: string;
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -232,6 +237,7 @@ export type LinkKind = "blocks" | "references" | "parent_of";
 export interface CreateProjectBody {
   key: string;
   name: string;
+  status?: string;
   color?: string;
   icon?: string;
   agentsMd?: string;
@@ -239,6 +245,7 @@ export interface CreateProjectBody {
 
 export interface UpdateProjectBody {
   name?: string;
+  status?: string;
   color?: string;
   icon?: string;
   agentsMd?: string;

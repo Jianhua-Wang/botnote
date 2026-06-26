@@ -1,12 +1,41 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+  type SQL
+} from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity } from "../db/schema.js";
+import { materializeScheduledRecurrences } from "./recurrence.js";
 import type { TasksRangeInput } from "./types.js";
 
 export interface TasksRangeResult {
   scheduled: Entity[];
   overdue: Entity[];
   backlog: Entity[];
+}
+
+function endOfToday(now: Date): Date {
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+function materializationHorizon(input: TasksRangeInput, now: Date): Date {
+  const todayEnd = endOfToday(now);
+  if (!input.to) return todayEnd;
+  const requestedEnd = new Date(input.to);
+  if (Number.isNaN(requestedEnd.getTime())) return todayEnd;
+  return requestedEnd.getTime() < todayEnd.getTime() ? requestedEnd : todayEnd;
 }
 
 /**
@@ -28,22 +57,30 @@ export async function tasksRange(
   input: TasksRangeInput
 ): Promise<TasksRangeResult> {
   const now = new Date();
+  await materializeScheduledRecurrences(db, materializationHorizon(input, now));
+
   const projectFilter = input.projectIds?.length
     ? inArray(entities.projectId, input.projectIds)
     : undefined;
+  const activeProjectFilter = projectFilter
+    ? undefined
+    : sql`(${entities.projectId} IS NULL OR ${entities.projectId} IN (
+        SELECT id FROM projects WHERE status <> 'archived'
+      ))`;
 
   // Base filter applied to every bucket: only tasks, optional project filter,
   // and the includeDone toggle.
-  const baseConds = [eq(entities.kind, "task")];
+  const baseConds: SQL[] = [eq(entities.kind, "task")];
   if (!input.includeDone) {
     baseConds.push(or(ne(entities.status, "done"), isNull(entities.status))!);
   }
   if (projectFilter) baseConds.push(projectFilter);
+  if (activeProjectFilter) baseConds.push(activeProjectFilter);
 
   // Three independent passes, unioned in JS. Drizzle's `or` keeps the SQL
   // clear and the partial completed_at index keeps the done-pass cheap.
-  const inRange = <T>(col: T) => {
-    const conds: ReturnType<typeof gte>[] = [];
+  const inRange = <T>(col: T): SQL[] => {
+    const conds: SQL[] = [];
     if (input.from) conds.push(gte(col as never, input.from));
     if (input.to) conds.push(lt(col as never, input.to));
     return conds;
@@ -68,26 +105,28 @@ export async function tasksRange(
   // work by dueAt: completion history should reflect when work actually ended.
   let doneByCompleted: Entity[] = [];
   if (input.includeDone) {
-    const doneByCompletedConds = [
+    const doneByCompletedConds: SQL[] = [
       eq(entities.kind, "task"),
       eq(entities.status, "done"),
       isNotNull(entities.completedAt),
       ...inRange(entities.completedAt)
     ];
     if (projectFilter) doneByCompletedConds.push(projectFilter);
+    if (activeProjectFilter) doneByCompletedConds.push(activeProjectFilter);
     const completedRows = await db
       .select()
       .from(entities)
       .where(and(...doneByCompletedConds))
       .orderBy(asc(entities.completedAt));
 
-    const legacyDoneConds = [
+    const legacyDoneConds: SQL[] = [
       eq(entities.kind, "task"),
       eq(entities.status, "done"),
       isNull(entities.completedAt),
       ...inRange(entities.updatedAt)
     ];
     if (projectFilter) legacyDoneConds.push(projectFilter);
+    if (activeProjectFilter) legacyDoneConds.push(activeProjectFilter);
     const legacyRows = await db
       .select()
       .from(entities)
@@ -104,8 +143,9 @@ export async function tasksRange(
     (!input.from || now >= new Date(input.from)) &&
     (!input.to || now < new Date(input.to));
   if (todayInRange) {
-    const ipConds = [eq(entities.kind, "task"), eq(entities.status, "in_progress")];
+    const ipConds: SQL[] = [eq(entities.kind, "task"), eq(entities.status, "in_progress")];
     if (projectFilter) ipConds.push(projectFilter);
+    if (activeProjectFilter) ipConds.push(activeProjectFilter);
     inProgressToday = await db
       .select()
       .from(entities)
@@ -125,7 +165,7 @@ export async function tasksRange(
   // when present so today's scheduled tasks do not double-surface as overdue
   // later in the same day.
   const overdueCutoff = input.from ?? now;
-  const overdueConds = [
+  const overdueConds: SQL[] = [
     eq(entities.kind, "task"),
     isNotNull(entities.dueAt),
     lt(entities.dueAt, overdueCutoff),
@@ -134,6 +174,7 @@ export async function tasksRange(
     or(ne(entities.status, "rejected"), isNull(entities.status))!
   ];
   if (projectFilter) overdueConds.push(projectFilter);
+  if (activeProjectFilter) overdueConds.push(activeProjectFilter);
   const overdue = await db
     .select()
     .from(entities)

@@ -88,7 +88,9 @@ Usage:
   botnote serve                            Run the REST + web daemon (same as: node dist/cli.js)
   botnote mcp                              Run the MCP stdio server (for plugin/agent integration)
 
-  botnote projects                         List projects
+  botnote projects [--all]                 List projects
+  botnote project archive KEY|UUID         Archive a project
+  botnote project restore KEY|UUID         Restore an archived project
   botnote today                            Show today + overdue tasks
   botnote tasks [--status open]            List tasks
   botnote task "<title>" [--project KEY] [--due YYYY-MM-DD] [--priority P]
@@ -173,8 +175,10 @@ interface Project {
   id: string;
   key: string;
   name: string;
+  status: string;
   color: string;
   icon: string;
+  archivedAt: string | null;
 }
 
 interface Entity {
@@ -221,11 +225,31 @@ function displayTitle(e: { title: string | null; body: string }): string {
   return first ? (first.length > 60 ? `${first.slice(0, 60)}…` : first) : "(untitled)";
 }
 
-async function cmdProjects(): Promise<void> {
-  const projects = await callApi<Project[]>("GET", "/v1/projects");
+async function cmdProjects(args: Args): Promise<void> {
+  const includeArchived = Boolean(args.flags.all);
+  const projects = await callApi<Project[]>(
+    "GET",
+    includeArchived ? "/v1/projects?includeArchived=true" : "/v1/projects"
+  );
   for (const p of projects) {
-    console.log(`${p.key.padEnd(10)} ${p.name}`);
+    const archived = p.archivedAt ? ` (archived ${p.archivedAt.slice(0, 10)})` : "";
+    console.log(`${p.key.padEnd(10)} [${p.status.padEnd(8)}] ${p.name}${archived}`);
   }
+}
+
+async function cmdProject(args: Args): Promise<void> {
+  const [action, keyOrId] = args.positional;
+  if (!action || !keyOrId || (action !== "archive" && action !== "restore")) {
+    console.error("usage: botnote project archive KEY|UUID");
+    console.error("   or: botnote project restore KEY|UUID");
+    process.exit(1);
+  }
+
+  const projectId = await resolveProjectId(keyOrId, { includeArchived: true });
+  const project = await callApi<Project>("PATCH", `/v1/projects/${projectId}`, {
+    status: action === "archive" ? "archived" : "active"
+  });
+  console.log(`✓ ${action === "archive" ? "archived" : "restored"} project ${project.key}`);
 }
 
 async function cmdToday(): Promise<void> {
@@ -278,14 +302,20 @@ async function cmdTasks(args: Args): Promise<void> {
   }
 }
 
-async function resolveProjectId(keyOrId?: string): Promise<string | undefined> {
+async function resolveProjectId(
+  keyOrId?: string,
+  opts: { includeArchived?: boolean } = {}
+): Promise<string | undefined> {
   if (!keyOrId) {
     const env = process.env.BOTNOTE_PROJECT;
-    if (env) return resolveProjectId(env);
+    if (env) return resolveProjectId(env, opts);
     return undefined;
   }
   if (/^[0-9a-f-]{36}$/i.test(keyOrId)) return keyOrId;
-  const projects = await callApi<Project[]>("GET", "/v1/projects");
+  const projects = await callApi<Project[]>(
+    "GET",
+    opts.includeArchived ? "/v1/projects?includeArchived=true" : "/v1/projects"
+  );
   const hit = projects.find((p) => p.key.toUpperCase() === keyOrId.toUpperCase());
   if (!hit) throw new Error(`project not found: ${keyOrId}`);
   return hit.id;
@@ -490,7 +520,9 @@ async function main(): Promise<void> {
     case "mcp":
       return cmdMcp();
     case "projects":
-      return cmdProjects();
+      return cmdProjects(args);
+    case "project":
+      return cmdProject(args);
     case "today":
       return cmdToday();
     case "tasks":

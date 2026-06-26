@@ -1,4 +1,4 @@
-import { and, eq, or } from "drizzle-orm";
+import { and, asc, eq, lte, or } from "drizzle-orm";
 import rrulePkg from "rrule";
 import type { Database } from "../db/client.js";
 import {
@@ -139,6 +139,11 @@ function computeNextOccurrenceAt(
   const scheduledBase = occurrence.dueAt ?? rule.dtstart;
   const cursor = anchor === "completion" ? completedAt : maxDate(scheduledBase, completedAt);
   const next = rrule.after(cursor, false);
+  return next ? normalizeDueAt(next) : null;
+}
+
+function computeNextScheduledAfter(rule: RecurrenceRule, after: Date): Date | null {
+  const next = buildRRule(rule, rule.dtstart).after(after, false);
   return next ? normalizeDueAt(next) : null;
 }
 
@@ -383,6 +388,74 @@ async function advanceRuleFromOccurrence(
     })
     .where(eq(recurrenceRules.id, rule.id));
   return next;
+}
+
+export async function materializeScheduledRecurrences(
+  db: Database["db"],
+  upTo: Date,
+  limit = 100
+): Promise<Entity[]> {
+  const rows = await db
+    .select()
+    .from(recurrenceRules)
+    .where(
+      and(
+        eq(recurrenceRules.enabled, true),
+        eq(recurrenceRules.anchor, "scheduled"),
+        lte(recurrenceRules.nextOccurrenceAt, upTo)
+      )
+    )
+    .orderBy(asc(recurrenceRules.nextOccurrenceAt))
+    .limit(limit);
+
+  const created: Entity[] = [];
+  for (const originalRule of rows) {
+    let rule = originalRule;
+    let template = await fetchEntity(db, rule.currentOccurrenceId ?? rule.seriesId).catch(() =>
+      fetchEntity(db, rule.seriesId)
+    );
+
+    while (
+      rule.enabled &&
+      rule.nextOccurrenceAt &&
+      rule.nextOccurrenceAt.getTime() <= upTo.getTime() &&
+      created.length < limit
+    ) {
+      const count = countLimit(rule);
+      if (count != null && rule.generatedCount >= count) {
+        await db
+          .update(recurrenceRules)
+          .set({ nextOccurrenceAt: null })
+          .where(eq(recurrenceRules.id, rule.id));
+        break;
+      }
+
+      const nextDueAt = normalizeDueAt(rule.nextOccurrenceAt)!;
+      const next = await insertNextOccurrence(db, rule, template, nextDueAt);
+      created.push(next);
+
+      const generatedCount = rule.generatedCount + 1;
+      const following =
+        count != null && generatedCount >= count
+          ? null
+          : computeNextScheduledAfter(rule, nextDueAt);
+      const [updated] = await db
+        .update(recurrenceRules)
+        .set({
+          currentOccurrenceId: next.id,
+          generatedCount,
+          lastOccurrenceAt: template.dueAt ?? rule.dtstart,
+          nextOccurrenceAt: following
+        })
+        .where(eq(recurrenceRules.id, rule.id))
+        .returning();
+      if (!updated) break;
+      rule = updated;
+      template = next;
+    }
+  }
+
+  return created;
 }
 
 export async function advanceRecurrenceOnCompletion(

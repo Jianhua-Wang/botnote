@@ -148,6 +148,75 @@ describe("botnote MCP", () => {
     expect(updateByPrefixText).toContain("Adopt MCP annotations with short ids");
   });
 
+  it("archives and restores projects via MCP", async () => {
+    const createResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "ARCM", name: "Archive MCP" }
+    });
+    const projectId = (createResp.content as Array<{ text: string }>)[0]?.text.match(
+      /[0-9a-f-]{36}/
+    )?.[0];
+    expect(projectId).toBeTruthy();
+
+    const archiveResp = await client.callTool({
+      name: "update_project",
+      arguments: { projectId, status: "archived" }
+    });
+    const archiveText = (archiveResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(archiveText).toContain("(archived)");
+
+    const activeListResp = await client.callTool({ name: "list_projects", arguments: {} });
+    const activeListText = (activeListResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(activeListText).not.toContain("ARCM");
+
+    const allListResp = await client.callTool({
+      name: "list_projects",
+      arguments: { includeArchived: true }
+    });
+    const allListText = (allListResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(allListText).toContain("ARCM");
+    expect(allListText).toContain("archived:");
+
+    await client.callTool({
+      name: "update_project",
+      arguments: { projectId, status: "active" }
+    });
+    const restoredListResp = await client.callTool({ name: "list_projects", arguments: {} });
+    const restoredListText =
+      (restoredListResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(restoredListText).toContain("ARCM");
+  });
+
+  it("updates project status via MCP", async () => {
+    const createResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "WAT", name: "Watching MCP", status: "planned" }
+    });
+    const projectId = (createResp.content as Array<{ text: string }>)[0]?.text.match(
+      /[0-9a-f-]{36}/
+    )?.[0];
+    expect(projectId).toBeTruthy();
+
+    const updateResp = await client.callTool({
+      name: "update_project",
+      arguments: { projectId, status: "watching" }
+    });
+    const updateText = (updateResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(updateText).toContain("watching");
+
+    const listResp = await client.callTool({ name: "list_projects", arguments: {} });
+    const listText = (listResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(listText).toContain("WAT");
+    expect(listText).toContain("status: watching");
+
+    const archiveResp = await client.callTool({
+      name: "update_project",
+      arguments: { projectId, status: "archived" }
+    });
+    const archiveText = (archiveResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(archiveText).toContain("archived");
+  });
+
   it("opening_brief returns AGENTS.md + open tasks markdown", async () => {
     const tools = await client.listTools();
     expect(tools.tools.length).toBeGreaterThan(0);

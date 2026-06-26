@@ -1,15 +1,35 @@
-import { Activity, FolderKanban } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, FolderKanban } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useProjects, useRecent } from "../api/hooks";
+import type { Project, ProjectStatus } from "../api/types";
 import { KindBadge } from "../components/KindBadge";
 import { ProjectIcon } from "../components/ProjectIcon";
 import { useDrawer } from "../hooks/useDrawer";
+import { usePersistedState } from "../hooks/usePersistedState";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
+import { PROJECT_STATUS_GROUPS, PROJECT_STATUS_LABEL } from "../lib/projectStatus";
+
+const DEFAULT_COLLAPSED_GROUPS: Partial<Record<ProjectStatus, boolean>> = {
+  archived: true
+};
 
 export function DashboardPage() {
-  const { data: projects } = useProjects();
+  const { data: projects } = useProjects({ includeArchived: true });
   const { data: recent } = useRecent({ limit: 20 });
   const drawer = useDrawer();
+  const [collapsedGroups, setCollapsedGroups] = usePersistedState<
+    Partial<Record<ProjectStatus, boolean>>
+  >("botnote.workspace.projectGroups.collapsed", DEFAULT_COLLAPSED_GROUPS);
+  const projectGroups = PROJECT_STATUS_GROUPS.map((status) => ({
+    status,
+    projects: (projects ?? []).filter((p) => p.status === status)
+  })).filter((group) => group.projects.length > 0);
+  const groupCollapsed = (status: ProjectStatus) =>
+    collapsedGroups[status] ?? DEFAULT_COLLAPSED_GROUPS[status] ?? false;
+  const toggleGroup = (status: ProjectStatus) => {
+    const collapsed = groupCollapsed(status);
+    setCollapsedGroups({ ...collapsedGroups, [status]: !collapsed });
+  };
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
@@ -21,7 +41,7 @@ export function DashboardPage() {
           </p>
         </header>
 
-        <section>
+        <section className="space-y-5">
           <div className="flex items-center gap-2 mb-3 text-muted">
             <FolderKanban size={14} />
             <h2 className="text-xs uppercase tracking-wider font-medium">
@@ -33,33 +53,15 @@ export function DashboardPage() {
               No projects yet. Press <kbd>n</kbd> to create one.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-              {projects?.map((p) => (
-                <Link
-                  to={`/p/${p.key}`}
-                  key={p.id}
-                  className="border border-line rounded-md p-3 bg-surface hover:border-accent/50 transition-colors block"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <ProjectIcon color={p.color} icon={p.icon} size={12} />
-                      <span className="font-mono text-xs" style={{ color: p.color }}>
-                        {p.key}
-                      </span>
-                    </div>
-                    <span className="text-xxs text-faint">
-                      {new Date(p.updatedAt).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <div className="text-sm font-medium text-ink mt-1 truncate">{p.name}</div>
-                  {p.agentsMd && (
-                    <div className="text-xxs text-muted mt-1 truncate">
-                      AGENTS.md · {p.agentsMd.length} chars
-                    </div>
-                  )}
-                </Link>
-              ))}
-            </div>
+            projectGroups.map((group) => (
+              <ProjectGroup
+                key={group.status}
+                status={group.status}
+                projects={group.projects}
+                collapsed={groupCollapsed(group.status)}
+                onToggle={() => toggleGroup(group.status)}
+              />
+            ))
           )}
         </section>
 
@@ -103,6 +105,70 @@ export function DashboardPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+function ProjectGroup({
+  status,
+  projects,
+  collapsed,
+  onToggle
+}: {
+  status: ProjectStatus;
+  projects: Project[];
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex items-center gap-1.5 mb-2 text-muted hover:text-ink"
+        onClick={onToggle}
+        title={`${collapsed ? "Expand" : "Collapse"} ${PROJECT_STATUS_LABEL[status]}`}
+      >
+        {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+        <span className="text-xxs uppercase tracking-wider font-medium">
+          {PROJECT_STATUS_LABEL[status]} ({projects.length})
+        </span>
+      </button>
+      {!collapsed && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+          {projects.map((p) => (
+            <ProjectCard key={p.id} project={p} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectCard({ project }: { project: Project }) {
+  return (
+    <Link
+      to={`/p/${project.key}`}
+      className={`border border-line rounded-md p-3 bg-surface hover:border-accent/50 transition-colors block ${
+        project.status === "archived" ? "opacity-70" : ""
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <ProjectIcon color={project.color} icon={project.icon} size={12} />
+          <span className="font-mono text-xs shrink-0" style={{ color: project.color }}>
+            {project.key}
+          </span>
+        </div>
+        <span className="text-xxs text-faint shrink-0">
+          {new Date(project.updatedAt).toLocaleDateString()}
+        </span>
+      </div>
+      <div className="text-sm font-medium text-ink mt-1 truncate">{project.name}</div>
+      {project.agentsMd && (
+        <div className="text-xxs text-muted mt-1 truncate">
+          AGENTS.md · {project.agentsMd.length} chars
+        </div>
+      )}
+    </Link>
   );
 }
 

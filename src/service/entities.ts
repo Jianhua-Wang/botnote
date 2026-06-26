@@ -13,6 +13,12 @@ function normalizeStatus(value: string): string {
   return value === "delayed" || value === "archived" ? "done" : value;
 }
 
+function activeProjectVisibility() {
+  return sql`(${entities.projectId} IS NULL OR ${entities.projectId} IN (
+    SELECT id FROM projects WHERE status <> 'archived'
+  ))`;
+}
+
 export async function resolveEntityId(
   db: Database["db"],
   idOrPrefix: string
@@ -181,6 +187,7 @@ export async function recent(db: Database["db"], input: RecentInput): Promise<En
   const conds = [];
   if (input.projectId) conds.push(eq(entities.projectId, input.projectId));
   else if (input.projectId === null) conds.push(isNull(entities.projectId));
+  else conds.push(activeProjectVisibility());
   if (input.since) conds.push(gte(entities.createdAt, input.since));
   if (input.kinds?.length) conds.push(inArray(entities.kind, input.kinds));
   const where = conds.length ? and(...conds) : undefined;

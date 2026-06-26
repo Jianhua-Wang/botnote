@@ -82,7 +82,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<{ ok: boolean; version: string }>("/health"),
 
-  listProjects: () => request<Project[]>("/v1/projects"),
+  listProjects: (opts: { includeArchived?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.includeArchived) params.set("includeArchived", "true");
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return request<Project[]>(`/v1/projects${suffix}`);
+  },
   getProject: (id: string) => request<Project>(`/v1/projects/${id}`),
   getProjectByKey: (key: string) =>
     request<Project>(`/v1/projects/by-key/${encodeURIComponent(key)}`),

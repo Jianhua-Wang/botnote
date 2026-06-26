@@ -154,6 +154,74 @@ describe("botnote E2E cross-transport", () => {
     expect(mdText).toContain("pnpm test");
   });
 
+  it("REST archives projects and lists archived projects only when requested", async () => {
+    const projectResp = await fetch(`${baseUrl}/v1/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "ARCE", name: "Archive E2E" })
+    });
+    const project = (await projectResp.json()) as { id: string };
+
+    const legacyArchiveResp = await fetch(`${baseUrl}/v1/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ archived: true })
+    });
+    expect(legacyArchiveResp.status).toBe(400);
+
+    const archiveResp = await fetch(`${baseUrl}/v1/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "archived" })
+    });
+    expect(archiveResp.ok).toBe(true);
+    const archived = (await archiveResp.json()) as { status: string; archivedAt: string | null };
+    expect(archived.status).toBe("archived");
+    expect(archived.archivedAt).toBeTruthy();
+
+    const activeList = (await (await fetch(`${baseUrl}/v1/projects`)).json()) as Array<{
+      key: string;
+    }>;
+    expect(activeList.map((p) => p.key)).not.toContain("ARCE");
+
+    const allList = (await (
+      await fetch(`${baseUrl}/v1/projects?includeArchived=true`)
+    ).json()) as Array<{ key: string; status: string; archivedAt: string | null }>;
+    const archivedProject = allList.find((p) => p.key === "ARCE");
+    expect(archivedProject?.status).toBe("archived");
+    expect(archivedProject?.archivedAt).toBeTruthy();
+  });
+
+  it("REST creates and updates project status", async () => {
+    const projectResp = await fetch(`${baseUrl}/v1/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "W2E", name: "Watching E2E", status: "planned" })
+    });
+    expect(projectResp.ok).toBe(true);
+    const project = (await projectResp.json()) as { id: string; status: string };
+    expect(project.status).toBe("planned");
+
+    const updateResp = await fetch(`${baseUrl}/v1/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "watching" })
+    });
+    expect(updateResp.ok).toBe(true);
+    const updated = (await updateResp.json()) as { status: string };
+    expect(updated.status).toBe("watching");
+
+    const archiveResp = await fetch(`${baseUrl}/v1/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "archived" })
+    });
+    expect(archiveResp.ok).toBe(true);
+    const archived = (await archiveResp.json()) as { status: string; archivedAt: string | null };
+    expect(archived.status).toBe("archived");
+    expect(archived.archivedAt).toBeTruthy();
+  });
+
   it("REST recurrence completion creates the next occurrence", async () => {
     const projectResp = await fetch(`${baseUrl}/v1/projects`, {
       method: "POST",
@@ -208,7 +276,7 @@ describe("botnote E2E cross-transport", () => {
     );
   });
 
-  it("workspace_overview resource lists all projects E2E", async () => {
+  it("workspace_overview resource lists non-archived projects E2E", async () => {
     const result = await mcpClient.readResource({ uri: "botnote://workspace" });
     const contents = result.contents as Array<{ text: string }>;
     const text = contents[0]?.text ?? "";
@@ -216,6 +284,8 @@ describe("botnote E2E cross-transport", () => {
     expect(text).toContain("E2E");
     expect(text).toContain("MCP2");
     expect(text).toContain("DOC");
+    expect(text).not.toContain("ARCE");
+    expect(text).not.toContain("W2E");
   });
 
   it("token lifecycle creates, lists, and revokes recoverable tokens", async () => {

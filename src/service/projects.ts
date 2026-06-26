@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { eq, ne, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { projects, type Project } from "../db/schema.js";
-import type { CreateProjectInput, UpdateProjectInput } from "./types.js";
+import type { CreateProjectInput, ListProjectsInput, UpdateProjectInput } from "./types.js";
 
 export async function createProject(
   db: Database["db"],
@@ -12,9 +12,11 @@ export async function createProject(
     .values({
       key: input.key,
       name: input.name,
+      status: input.status,
       color: input.color,
       icon: input.icon,
-      agentsMd: input.agentsMd
+      agentsMd: input.agentsMd,
+      archivedAt: input.status === "archived" ? new Date() : null
     })
     .returning();
   if (!row) throw new Error("project insert returned no row");
@@ -27,6 +29,11 @@ export async function updateProject(
   input: UpdateProjectInput
 ): Promise<Project> {
   const set: Record<string, unknown> = { ...input, updatedAt: new Date() };
+  if (input.status === "archived") {
+    set.archivedAt = sql`COALESCE(${projects.archivedAt}, now())`;
+  } else if (input.status !== undefined) {
+    set.archivedAt = null;
+  }
   const [row] = await db.update(projects).set(set).where(eq(projects.id, id)).returning();
   if (!row) throw new Error(`project ${id} not found`);
   return row;
@@ -45,7 +52,12 @@ export async function getProject(db: Database["db"], id: string): Promise<Projec
   return rows[0] ?? null;
 }
 
-export async function listProjects(db: Database["db"]): Promise<Project[]> {
-  return db.select().from(projects).orderBy(projects.key);
+export async function listProjects(
+  db: Database["db"],
+  input: ListProjectsInput = { includeArchived: false }
+): Promise<Project[]> {
+  if (input.includeArchived) {
+    return db.select().from(projects).orderBy(projects.key);
+  }
+  return db.select().from(projects).where(ne(projects.status, "archived")).orderBy(projects.key);
 }
-

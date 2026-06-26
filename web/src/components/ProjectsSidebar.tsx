@@ -1,9 +1,19 @@
-import { Calendar, ChevronDown, Cog, Inbox, Plus, Sunrise } from "lucide-react";
+import {
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  Cog,
+  Inbox,
+  LayoutDashboard,
+  Plus,
+  Sunrise
+} from "lucide-react";
 import { NavLink, useParams } from "react-router-dom";
 import { useMemo } from "react";
 import { useProjects } from "../api/hooks";
-import type { Project } from "../api/types";
+import type { Project, ProjectStatus } from "../api/types";
 import { usePersistedState } from "../hooks/usePersistedState";
+import { PROJECT_STATUS_GROUPS, PROJECT_STATUS_LABEL } from "../lib/projectStatus";
 import { useModals } from "../state/modals";
 import { ProjectIcon } from "./ProjectIcon";
 import { PopoverMenu } from "./tasks/PopoverMenu";
@@ -14,6 +24,9 @@ const SORT_LABEL: Record<ProjectSort, string> = {
   name: "Name (A→Z)",
   recent: "Recently active"
 };
+const DEFAULT_COLLAPSED_GROUPS: Partial<Record<ProjectStatus, boolean>> = {
+  archived: true
+};
 
 function sortProjects(projects: Project[], sort: ProjectSort): Project[] {
   const copy = [...projects];
@@ -23,12 +36,33 @@ function sortProjects(projects: Project[], sort: ProjectSort): Project[] {
 }
 
 export function ProjectsSidebar() {
-  const { data: projects, isLoading } = useProjects();
   const { open } = useModals();
   const { key: activeKey } = useParams<{ key: string }>();
   const [sort, setSort] = usePersistedState<ProjectSort>("botnote.projectSort", "key");
+  const [collapsedGroups, setCollapsedGroups] = usePersistedState<
+    Partial<Record<ProjectStatus, boolean>>
+  >("botnote.sidebar.projectGroups.collapsed", DEFAULT_COLLAPSED_GROUPS);
+  const { data: projects, isLoading } = useProjects({ includeArchived: true });
 
-  const sorted = useMemo(() => sortProjects(projects ?? [], sort), [projects, sort]);
+  const groupedProjects = useMemo(() => {
+    const all = projects ?? [];
+    return new Map(
+      PROJECT_STATUS_GROUPS.map((status) => [
+        status,
+        sortProjects(
+          all.filter((p) => p.status === status),
+          sort
+        )
+      ])
+    );
+  }, [projects, sort]);
+  const projectCount = projects?.length ?? 0;
+  const groupCollapsed = (status: ProjectStatus) =>
+    collapsedGroups[status] ?? DEFAULT_COLLAPSED_GROUPS[status] ?? false;
+  const toggleGroup = (status: ProjectStatus) => {
+    const collapsed = groupCollapsed(status);
+    setCollapsedGroups({ ...collapsedGroups, [status]: !collapsed });
+  };
 
   return (
     <aside className="w-52 shrink-0 border-r border-line bg-sidebar flex flex-col scrollbar-thin overflow-y-auto text-sm">
@@ -46,7 +80,7 @@ export function ProjectsSidebar() {
         />
         <SidebarLink
           to="/dashboard"
-          icon={<svg width="12" height="12" viewBox="0 0 14 14" className="opacity-70"><rect x="2" y="2" width="4" height="4" rx="0.5" fill="currentColor"/><rect x="8" y="2" width="4" height="4" rx="0.5" fill="currentColor"/><rect x="2" y="8" width="4" height="4" rx="0.5" fill="currentColor"/><rect x="8" y="8" width="4" height="4" rx="0.5" fill="currentColor"/></svg>}
+          icon={<LayoutDashboard size={12} className="opacity-70" />}
           label="Workspace"
         />
       </nav>
@@ -94,7 +128,7 @@ export function ProjectsSidebar() {
       </div>
       <nav className="px-1.5 space-y-px flex-1">
         {isLoading && <div className="px-2 py-1 text-xs text-faint">Loading…</div>}
-        {!isLoading && sorted.length === 0 && (
+        {!isLoading && projectCount === 0 && (
           <button
             className="w-full text-left px-2 py-1 text-xs text-muted hover:bg-sidebarHover rounded"
             onClick={() => open({ kind: "new-project" })}
@@ -102,28 +136,29 @@ export function ProjectsSidebar() {
             No projects yet. <span className="text-accent">Create →</span>
           </button>
         )}
-        {sorted.map((p) => (
-          <NavLink
-            key={p.id}
-            to={`/p/${p.key}`}
-            className={({ isActive }) =>
-              `flex items-center gap-2 px-2 py-1 text-xs rounded ${
-                isActive || activeKey === p.key
-                  ? "bg-accentSoft text-accentText"
-                  : "text-ink2 hover:bg-sidebarHover"
-              }`
-            }
-          >
-            <ProjectIcon color={p.color} icon={p.icon} size={11} />
-            <span
-              className="font-mono text-xxs tabular-nums opacity-90 shrink-0"
-              style={{ color: p.color }}
-            >
-              {p.key}
-            </span>
-            <span className="truncate text-muted">{p.name}</span>
-          </NavLink>
-        ))}
+        {PROJECT_STATUS_GROUPS.map((status) => {
+          const group = groupedProjects.get(status) ?? [];
+          if (isLoading || group.length === 0) return null;
+          const collapsed = groupCollapsed(status);
+          return (
+            <div key={status} className="pt-2 first:pt-0">
+              <button
+                type="button"
+                className="w-full px-1.5 pb-1 flex items-center gap-1 text-xxs uppercase tracking-wider text-muted font-medium hover:text-ink"
+                onClick={() => toggleGroup(status)}
+                title={`${collapsed ? "Expand" : "Collapse"} ${PROJECT_STATUS_LABEL[status]}`}
+              >
+                {collapsed ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
+                <span>{PROJECT_STATUS_LABEL[status]}</span>
+                <span className="ml-auto text-faint tabular-nums">{group.length}</span>
+              </button>
+              {!collapsed &&
+                group.map((p) => (
+                  <ProjectNavLink key={p.id} project={p} activeKey={activeKey} />
+                ))}
+            </div>
+          );
+        })}
       </nav>
 
       <div className="border-t border-line/60 px-1.5 py-1.5">
@@ -134,6 +169,37 @@ export function ProjectsSidebar() {
         />
       </div>
     </aside>
+  );
+}
+
+function ProjectNavLink({
+  project,
+  activeKey
+}: {
+  project: Project;
+  activeKey?: string;
+}) {
+  return (
+    <NavLink
+      to={`/p/${project.key}`}
+      title={project.status === "archived" ? `${project.name} (archived)` : project.name}
+      className={({ isActive }) =>
+        `flex items-center gap-2 px-2 py-1 text-xs rounded ${
+          isActive || activeKey === project.key
+            ? "bg-accentSoft text-accentText"
+            : "text-ink2 hover:bg-sidebarHover"
+        } ${project.status === "archived" ? "opacity-60" : ""}`
+      }
+    >
+      <ProjectIcon color={project.color} icon={project.icon} size={11} />
+      <span
+        className="font-mono text-xxs tabular-nums opacity-90 shrink-0"
+        style={{ color: project.color }}
+      >
+        {project.key}
+      </span>
+      <span className="truncate text-muted">{project.name}</span>
+    </NavLink>
   );
 }
 

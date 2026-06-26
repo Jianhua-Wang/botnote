@@ -90,12 +90,15 @@ BOTNOTE_TEST_DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote_tes
 
 ## REST endpoints
 
+Project status values are `planned`, `active`, `watching`, `paused`, and
+`archived`. `archivedAt` records when a project entered the archived status.
+
 | method | path | summary |
 |---|---|---|
 | `POST` | `/v1/projects` | Create project |
-| `GET` | `/v1/projects` | List projects |
+| `GET` | `/v1/projects` | List non-archived projects (`?includeArchived=true` includes archived) |
 | `GET` | `/v1/projects/:id` | Fetch project |
-| `PATCH` | `/v1/projects/:id` | Update project |
+| `PATCH` | `/v1/projects/:id` | Update project status or metadata |
 | `GET` | `/v1/projects/by-key/:key` | Fetch by key |
 | `POST` | `/v1/projects/:id/opening-brief` | Opening brief |
 | `POST` | `/v1/opening-brief` | Workspace or project opening brief |
@@ -152,6 +155,12 @@ curl -s -X POST $A/v1/search \
 Recurring tasks are normal task rows plus a recurrence rule. Configure a first
 dated task, then attach a rule. Completing the current occurrence generates the
 next occurrence idempotently.
+
+Scheduled recurrences are also materialized by the REST daemon through the end
+of the current day at startup and on a short background interval, so daily
+tasks and fixed meetings appear even when nobody opens the calendar first.
+Future occurrences beyond today are not pre-created; calendar previews should
+stay virtual so sequence numbers are only assigned to real task rows.
 
 ```bash
 botnote task "Attend weekly lab meeting" \
@@ -298,10 +307,10 @@ botnote exposes the following tools + resources over stdio.
 | `opening_brief` | `readOnly` | Project or workspace context bundle (AGENTS.md + pinned notes + open tasks + recent) |
 | `search` | `readOnly` | Hybrid retrieval over tasks and notes |
 | `recent` | `readOnly` | Recent activity, filterable |
-| `list_projects` | `readOnly` | List all projects |
+| `list_projects` | `readOnly` | List non-archived projects (`includeArchived` includes archived) |
 | `get_project` | `readOnly` | Fetch a project by UUID or key, including AGENTS.md |
 | `create_project` | — | Create a project |
-| `update_project` | `destructive idempotent` | Update project name, color, icon, or AGENTS.md |
+| `update_project` | `destructive idempotent` | Update project status, name, color, icon, or AGENTS.md |
 | `get_entity` | `readOnly` | Fetch one task or note by UUID |
 | `get_entity_by_key` | `readOnly` | Fetch one task or note by human-readable identifier, e.g. `DEMO-12` |
 | `create_task` | `idempotent` | Create a structured task |

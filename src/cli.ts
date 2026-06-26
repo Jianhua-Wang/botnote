@@ -4,6 +4,7 @@ import { migrate } from "./db/migrate.js";
 import { BotnoteHttpClient } from "./mcp/http-client.js";
 import { buildMcpServer } from "./mcp/server.js";
 import { EmbeddingService } from "./service/embedding.js";
+import { materializeScheduledRecurrences } from "./service/recurrence.js";
 import { buildServer } from "./rest/server.js";
 import { VERSION } from "./version.js";
 
@@ -11,11 +12,22 @@ import { VERSION } from "./version.js";
 // plugin-install case) work without extra config. The daemon host overrides
 // via BOTNOTE_URL in its Codex / Claude Code config to skip the tunnel.
 const DEFAULT_MCP_BASE_URL = "https://botnote.net";
+const DEFAULT_RECURRENCE_MATERIALIZE_INTERVAL_MS = 5 * 60 * 1000;
+
+function endOfToday(): Date {
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
 
 async function runRest(): Promise<void> {
   const port = Number(process.env.BOTNOTE_PORT ?? 4280);
   const host = process.env.BOTNOTE_HOST ?? "127.0.0.1";
   const logLevel = process.env.BOTNOTE_LOG_LEVEL ?? "info";
+  const recurrenceIntervalMs = Number(
+    process.env.BOTNOTE_RECURRENCE_MATERIALIZE_INTERVAL_MS ??
+      DEFAULT_RECURRENCE_MATERIALIZE_INTERVAL_MS
+  );
 
   await migrate();
 
@@ -30,8 +42,23 @@ async function runRest(): Promise<void> {
     `botnote v${VERSION} listening on http://${host}:${port} (docs: /docs, embeddings ${embedding.isEnabled() ? "ON" : "OFF"})`
   );
 
+  const materializeRecurrences = async () => {
+    try {
+      const created = await materializeScheduledRecurrences(db, endOfToday(), 500);
+      if (created.length > 0) {
+        app.log.info(`materialized ${created.length} scheduled recurring task(s)`);
+      }
+    } catch (err) {
+      app.log.error({ err }, "scheduled recurrence materializer failed");
+    }
+  };
+  await materializeRecurrences();
+  const recurrenceTimer =
+    recurrenceIntervalMs > 0 ? setInterval(materializeRecurrences, recurrenceIntervalMs) : null;
+
   const shutdown = async (sig: string) => {
     app.log.info(`shutting down on ${sig}`);
+    if (recurrenceTimer) clearInterval(recurrenceTimer);
     await app.close();
     process.exit(0);
   };

@@ -27,6 +27,7 @@ const EDGE_KINDS = ["blocks", "references", "parent_of"] as const;
 const RECURRENCE_PRESETS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
 const RECURRENCE_ANCHORS = ["scheduled", "completion"] as const;
 const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
+const PROJECT_STATUSES = ["planned", "active", "watching", "paused", "archived"] as const;
 const EntityIdRef = z
   .string()
   .min(8)
@@ -187,19 +188,24 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "List Projects",
       description:
-        "List every project in the workspace with its key, name, color and icon. Call this before creating tasks or notes if you don't already know the target project's UUID.",
+        "List non-archived projects in the workspace with key, status, name, color and icon. Pass includeArchived=true only when you need archived projects too.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: false
       },
-      inputSchema: {}
+      inputSchema: {
+        includeArchived: z.boolean().default(false)
+      }
     },
-    async () => {
-      const projects = await c.listProjects();
+    async ({ includeArchived }) => {
+      const projects = await c.listProjects({ includeArchived });
       const lines = projects.map(
-        (p) => `${p.key.padEnd(10)} ${p.name}  (id: ${p.id}, icon: ${p.icon}, color: ${p.color})`
+        (p) =>
+          `${p.key.padEnd(10)} ${p.name}  (id: ${p.id}, status: ${p.status}, icon: ${p.icon}, color: ${p.color}${
+            p.archivedAt ? `, archived: ${p.archivedAt}` : ""
+          })`
       );
       return {
         content: [{ type: "text", text: projects.length ? lines.join("\n") : "no projects" }]
@@ -254,6 +260,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "Conventions:\n" +
         "- `key`: short uppercase identifier, e.g. 'BOT', 'DOCS', 'OPS'. Unique across the workspace.\n" +
         "- `name`: human-readable.\n" +
+        "- `status`: planned, active, watching, paused, or archived. Use archived for completed, canceled, or historical projects.\n" +
         "- `color`: hex like '#5e6ad2' (Linear blue) by default. Pick a color that contrasts with the existing palette.\n" +
         "- `icon`: lowercase kebab name from lucide-react (e.g. 'rocket', 'brain', 'package', 'archive').\n" +
         "- `agentsMd`: write project-level conventions agents should follow (test commands, deploy steps, important gotchas). Surfaced in opening_brief.",
@@ -266,12 +273,13 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       inputSchema: {
         key: ProjectKey,
         name: z.string().min(1).max(200),
+        status: z.enum(PROJECT_STATUSES).default("active"),
         color: HexColor.default("#5e6ad2"),
         icon: IconName.default("circle"),
         agentsMd: z.string().default("")
       }
     },
-    async ({ key, name, color, icon, agentsMd }) => {
+    async ({ key, name, status, color, icon, agentsMd }) => {
       try {
         const existing = await c.getProjectByKey(key);
         return {
@@ -280,7 +288,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       } catch {
         // Not found → continue to create.
       }
-      const p = await c.createProject({ key, name, color, icon, agentsMd });
+      const p = await c.createProject({ key, name, status, color, icon, agentsMd });
       return { content: [{ type: "text", text: `created project ${p.key} · ${p.name}\nid: ${p.id}` }] };
     }
   );
@@ -292,7 +300,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Update Project",
       description:
-        "Update a project's name, color, icon, or AGENTS.md. Pass only the fields you want to change.",
+        "Update a project's status, name, color, icon, or AGENTS.md. Use status='archived' for completed, canceled, or historical projects.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -302,6 +310,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       inputSchema: {
         projectId: z.string().uuid(),
         name: z.string().min(1).max(200).optional(),
+        status: z.enum(PROJECT_STATUSES).optional(),
         color: HexColor.optional(),
         icon: IconName.optional(),
         agentsMd: z.string().optional()
@@ -312,7 +321,14 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         Object.entries(fields).filter(([, v]) => v !== undefined)
       );
       const p = await c.updateProject(projectId, defined);
-      return { content: [{ type: "text", text: `updated project ${p.key} · ${p.name}` }] };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `updated project ${p.key} · ${p.name} · ${p.status}${p.archivedAt ? " (archived)" : ""}`
+          }
+        ]
+      };
     }
   );
 
@@ -715,7 +731,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     "botnote://workspace",
     {
       title: "Workspace Overview",
-      description: "List of all projects + most recent activity across the workspace.",
+      description: "List of non-archived projects + most recent activity across the workspace.",
       mimeType: "text/markdown"
     },
     async (uri) => {
@@ -729,7 +745,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       const lines: string[] = ["# botnote workspace", ""];
       lines.push("## Projects");
       for (const p of projects) {
-        lines.push(`- ${p.key} — ${p.name} (id: ${p.id})`);
+        lines.push(`- ${p.key} — ${p.name} [${p.status}] (id: ${p.id})`);
       }
       lines.push("");
       lines.push("## Recent (workspace-wide)");
