@@ -117,7 +117,7 @@ function buildRRuleFromInput(input: RecurrenceInput, dtstart: Date): string {
   return rruleLine(new RRule(options));
 }
 
-function buildRRule(rule: Pick<RecurrenceRule, "rrule" | "dtstart">, dtstart = rule.dtstart) {
+export function buildRRule(rule: Pick<RecurrenceRule, "rrule" | "dtstart">, dtstart = rule.dtstart) {
   const parsed = RRule.parseString(rule.rrule);
   return new RRule({ ...parsed, dtstart });
 }
@@ -133,7 +133,7 @@ function maxDate(a: Date, b: Date): Date {
  *   across all UTC-offset clients).
  * - Timed rules: use normalizeDueAt (exact-midnight-UTC -> noon-UTC heuristic).
  */
-function normalizeOccurrenceDueAt(
+export function normalizeOccurrenceDueAt(
   rule: Pick<RecurrenceRule, "allDay" | "timezone">,
   date: Date
 ): Date {

@@ -1,10 +1,10 @@
 import { format, isSameMonth, isToday } from "date-fns";
 import { useMemo, useState } from "react";
 import { useProjects, useTasksRange, useUpdateEntity } from "../../api/hooks";
-import type { Entity, Project } from "../../api/types";
+import type { Entity, Project, VirtualOccurrence } from "../../api/types";
 import { useModals } from "../../state/modals";
-import { TaskChip } from "./TaskChip";
-import { compareByStatus, dayKey, daysBetween, groupTasksByDay, projectLookup, viewRange } from "./utils";
+import { GhostChip, TaskChip } from "./TaskChip";
+import { compareByStatus, dayKey, daysBetween, groupTasksByDay, groupVirtualsByDay, projectLookup, viewRange } from "./utils";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -23,11 +23,16 @@ export function MonthView({
     projectIds: projectIds ?? null,
     includeBacklog: false,
     // includeDone=true so each cell can show its done/total count.
-    includeDone: true
+    includeDone: true,
+    includeVirtualRecurrences: true
   });
   const { data: projects } = useProjects();
   const projectMap = useMemo(() => projectLookup(projects), [projects]);
   const byDay = useMemo(() => groupTasksByDay(tasksData?.scheduled ?? []), [tasksData]);
+  const virtualsByDay = useMemo(
+    () => groupVirtualsByDay(tasksData?.virtualOccurrences ?? []),
+    [tasksData]
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -44,6 +49,7 @@ export function MonthView({
       <div className="flex-1 grid grid-cols-7 grid-rows-6 bg-line/30 gap-px overflow-y-auto scrollbar-thin">
         {days.map((d) => {
           const tasks = byDay.get(dayKey(d)) ?? [];
+          const virtuals = virtualsByDay.get(dayKey(d)) ?? [];
           const outOfMonth = !isSameMonth(d, anchor);
           const today = isToday(d);
           return (
@@ -51,6 +57,7 @@ export function MonthView({
               key={d.toISOString()}
               day={d}
               tasks={tasks}
+              virtuals={virtuals}
               projectMap={projectMap}
               outOfMonth={outOfMonth}
               today={today}
@@ -65,12 +72,14 @@ export function MonthView({
 function DayCell({
   day,
   tasks,
+  virtuals,
   projectMap,
   outOfMonth,
   today
 }: {
   day: Date;
   tasks: Entity[];
+  virtuals: VirtualOccurrence[];
   projectMap: Map<string, Project>;
   outOfMonth: boolean;
   today: boolean;
@@ -153,6 +162,15 @@ function DayCell({
         {active.length > 4 && (
           <div className="text-xxs text-muted pl-1">+{active.length - 4}</div>
         )}
+        {/* Ghost chips for future virtual occurrences — rendered after real tasks,
+            not counted in done/total or +N more, pointer-events-none */}
+        {virtuals.map((v) => (
+          <GhostChip
+            key={v.id}
+            virtual={v}
+            project={v.projectId ? projectMap.get(v.projectId) : undefined}
+          />
+        ))}
       </div>
     </div>
   );

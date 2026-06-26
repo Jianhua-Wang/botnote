@@ -18,7 +18,8 @@ import {
   createRecurrenceRule,
   getRecurrenceForTask,
   materializeScheduledRecurrences,
-  skipOccurrence
+  skipOccurrence,
+  stopRecurrence
 } from "../src/service/recurrence.js";
 import { eq, and } from "drizzle-orm";
 import { recurrenceExceptions } from "../src/db/schema.js";
@@ -1428,5 +1429,601 @@ describe("botnote service", () => {
 
     // The next occurrence should be on June 24 local time in NY = noon UTC June 24
     expect(rule.nextOccurrenceAt?.toISOString()).toBe("2026-06-24T12:00:00.000Z");
+  });
+
+  // ---------------------------------------------------------------------------
+  // BOT-53: Virtual occurrences (ghost cards) tests
+  // ---------------------------------------------------------------------------
+
+  it("virtualOccurrences is [] when includeVirtualRecurrences is false (hard boundary)", async () => {
+    const p = await createProject(db, { key: "VRT0", name: "Virtual0" });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Daily recurring",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    const from = new Date();
+    from.setUTCHours(0, 0, 0, 0);
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 14);
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false
+      // includeVirtualRecurrences not set → defaults to false
+    });
+    expect(result.virtualOccurrences).toEqual([]);
+  });
+
+  it("daily rule fills window; materialized occurrence subtracted; virtuals have correct shape", async () => {
+    const p = await createProject(db, { key: "VRT1", name: "Virtual1" });
+    // Task due tomorrow (so window starts after now but rule is already set up)
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Virtual daily",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // Query: from now, to now+5 days
+    const from = new Date();
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 5);
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    // Tomorrow's occurrence is the materialized real task (already in scheduled)
+    const realIds = result.scheduled.map((e) => e.id);
+    expect(realIds).toContain(task.id);
+
+    // Virtuals should not include the materialized occurrence's dueAt
+    const virtualDueTimes = result.virtualOccurrences.map((v) => v.dueAt);
+    expect(virtualDueTimes).not.toContain(tomorrow.toISOString());
+
+    // Each virtual has virtual=true, correct ruleId, seriesId, and noon-UTC dueAt
+    for (const v of result.virtualOccurrences) {
+      expect(v.virtual).toBe(true);
+      expect(v.ruleId).toBe(rule.id);
+      expect(v.seriesId).toBe(rule.seriesId);
+      expect(v.id).toMatch(/^virtual:/);
+      // All-day UTC → noon UTC
+      const dueDate = new Date(v.dueAt);
+      expect(dueDate.getUTCHours()).toBe(12);
+      expect(dueDate.getUTCMinutes()).toBe(0);
+    }
+
+    // Virtuals should cover 2 days+: day-after-tomorrow through to (up to ~4 days)
+    expect(result.virtualOccurrences.length).toBeGreaterThan(0);
+  });
+
+  it("virtual id format is virtual:<ruleId>:<iso>", async () => {
+    const p = await createProject(db, { key: "VRT2", name: "Virtual2" });
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "ID check",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    const from = new Date();
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 5);
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    for (const v of result.virtualOccurrences) {
+      expect(v.id).toBe(`virtual:${rule.id}:${v.dueAt}`);
+    }
+  });
+
+  it("skipped exception blocks corresponding virtual occurrence", async () => {
+    const p = await createProject(db, { key: "VRT3", name: "Virtual3" });
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Skip test",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // Insert a 'skipped' exception for the day-after-tomorrow occurrence.
+    // The exception's occurrenceAt must match the RRule raw output date, which
+    // for a UTC daily rule with dtstart=noon-UTC is also noon UTC.
+    const dayAfterTomorrow = new Date(tomorrow);
+    dayAfterTomorrow.setUTCDate(dayAfterTomorrow.getUTCDate() + 1);
+    // dayAfterTomorrow is already noon UTC (inherited from `tomorrow`)
+    await db.insert(recurrenceExceptions).values({
+      ruleId: rule.id,
+      occurrenceAt: dayAfterTomorrow,
+      action: "skipped",
+      entityId: null,
+      metadata: {}
+    });
+
+    const from = new Date();
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 7);
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    // The day-after-tomorrow virtual should be blocked by the exception
+    const blockedDue = dayAfterTomorrow.toISOString();
+    const found = result.virtualOccurrences.find((v) => v.dueAt === blockedDue);
+    expect(found).toBeUndefined();
+  });
+
+  it("all-day + non-UTC timezone → dueAt is noon UTC of correct local calendar day", async () => {
+    // Set workspace to America/New_York (UTC-4 summer)
+    await updateWorkspaceSettings(db, { timezone: "America/New_York" });
+
+    const p = await createProject(db, { key: "VRT4", name: "Virtual4" });
+    // dueAt: noon UTC June 23 = 08:00 EDT = calendar day June 23 in NY
+    const dueAt = new Date("2026-06-23T12:00:00.000Z");
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "NY tz virtual",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      allDay: true,
+      anchor: "scheduled"
+      // timezone inherited from workspace = America/New_York
+    });
+
+    // Query from now to 2026-06-30 (future window from today's perspective)
+    const from = new Date();
+    const to = new Date("2026-06-30T12:00:00.000Z");
+
+    // If today > 2026-06-30, skip test (won't have future virtuals)
+    if (from.getTime() >= to.getTime()) return;
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    // Each virtual's dueAt should be noon UTC on the correct calendar day
+    for (const v of result.virtualOccurrences) {
+      const d = new Date(v.dueAt);
+      expect(d.getUTCHours()).toBe(12);
+      expect(d.getUTCMinutes()).toBe(0);
+    }
+  });
+
+  it("COUNT-bounded rule → no virtuals beyond count", async () => {
+    const p = await createProject(db, { key: "VRT5", name: "Virtual5" });
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Count bounded",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      count: 3,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // Query 30 days
+    const from = new Date();
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 30);
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    // With count=3 and 1 already materialized, at most 2 virtuals
+    // The RRule with count=3 only generates 3 dates total (including dtstart)
+    expect(result.virtualOccurrences.length).toBeLessThanOrEqual(2);
+  });
+
+  it("stopped/disabled rule → no virtuals", async () => {
+    const p = await createProject(db, { key: "VRT6", name: "Virtual6" });
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Stopped rule",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    const rule = await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // Stop the rule
+    await stopRecurrence(db, rule.id);
+
+    const from = new Date();
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 7);
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    expect(result.virtualOccurrences).toHaveLength(0);
+  });
+
+  it("completion-anchor rule → no virtuals (anchor must be 'scheduled')", async () => {
+    const p = await createProject(db, { key: "VRT7", name: "Virtual7" });
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Completion anchor task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "completion"
+    });
+
+    const from = new Date();
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 7);
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    expect(result.virtualOccurrences).toHaveLength(0);
+  });
+
+  it("project filter restricts virtuals to matching projectId", async () => {
+    const p1 = await createProject(db, { key: "VRP1", name: "Virtual P1" });
+    const p2 = await createProject(db, { key: "VRP2", name: "Virtual P2" });
+
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+
+    const task1 = await write(db, {
+      kind: "task",
+      projectId: p1.id,
+      title: "P1 daily",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    await createRecurrenceRule(db, task1.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    const task2 = await write(db, {
+      kind: "task",
+      projectId: p2.id,
+      title: "P2 daily",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    await createRecurrenceRule(db, task2.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    const from = new Date();
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 5);
+
+    // Filter to p1 only
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p1.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    for (const v of result.virtualOccurrences) {
+      expect(v.projectId).toBe(p1.id);
+    }
+    expect(result.virtualOccurrences.length).toBeGreaterThan(0);
+  });
+
+  it("virtual dueAt is within [windowStart, to); window clamped to now", async () => {
+    const p = await createProject(db, { key: "VRT8", name: "Virtual8" });
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Horizon test",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    const from = new Date("2020-01-01T00:00:00.000Z"); // past
+    const to = new Date();
+    to.setUTCDate(to.getUTCDate() + 7);
+    const now = Date.now();
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    // All virtual dueAt must be >= now (no past ghosts, even though from is in past)
+    for (const v of result.virtualOccurrences) {
+      expect(new Date(v.dueAt).getTime()).toBeGreaterThanOrEqual(now - 60000); // 1-minute tolerance
+      expect(new Date(v.dueAt).getTime()).toBeLessThan(to.getTime());
+    }
+  });
+
+  it("CORRECTION 1: after going-forward title edit, virtual title reflects NEW title", async () => {
+    const p = await createProject(db, { key: "VRC1", name: "VirtualCorr1" });
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Original title",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // Going-forward title edit (no recurrenceScope = going-forward by default)
+    await update(db, task.id, { title: "New series title", recurrenceScope: "future" });
+
+    const from = new Date();
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 5);
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    // All virtuals should reflect the new title
+    for (const v of result.virtualOccurrences) {
+      expect(v.title).toBe("New series title");
+    }
+    expect(result.virtualOccurrences.length).toBeGreaterThan(0);
+  });
+
+  it("CORRECTION 1: after this-only title edit, virtual title reflects ORIGINAL (baseline) title", async () => {
+    const p = await createProject(db, { key: "VRC2", name: "VirtualCorr2" });
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    tomorrow.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Original title",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: tomorrow
+    });
+    await createRecurrenceRule(db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    // This-only edit: title on current occurrence should not propagate to virtuals
+    await update(db, task.id, { title: "This-occurrence-only title", recurrenceScope: "this" });
+
+    const from = new Date();
+    const to = new Date(from);
+    to.setUTCDate(to.getUTCDate() + 5);
+
+    const result = await tasksRange(db, {
+      from,
+      to,
+      projectIds: [p.id],
+      includeBacklog: false,
+      includeDone: false,
+      includeVirtualRecurrences: true
+    });
+
+    // Virtuals should show original (baseline) title, not the this-only override
+    for (const v of result.virtualOccurrences) {
+      expect(v.title).toBe("Original title");
+    }
+    expect(result.virtualOccurrences.length).toBeGreaterThan(0);
   });
 });

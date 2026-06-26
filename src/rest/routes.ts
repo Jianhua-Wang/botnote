@@ -462,7 +462,8 @@ export async function registerRoutes(
       return {
         scheduled: serializeEntities(result.scheduled),
         overdue: serializeEntities(result.overdue),
-        backlog: serializeEntities(result.backlog)
+        backlog: serializeEntities(result.backlog),
+        virtualOccurrences: result.virtualOccurrences
       };
     }
   );

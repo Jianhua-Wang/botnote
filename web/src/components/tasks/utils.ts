@@ -12,7 +12,7 @@ import {
   startOfMonth,
   startOfWeek
 } from "date-fns";
-import type { Entity, Project } from "../../api/types";
+import type { Entity, Project, VirtualOccurrence } from "../../api/types";
 
 export type CalendarView = "day" | "week" | "month";
 
@@ -106,6 +106,24 @@ export function groupTasksByDay(
     const key = format(d, "yyyy-MM-dd");
     if (!m.has(key)) m.set(key, []);
     m.get(key)!.push(t);
+  }
+  return m;
+}
+
+/**
+ * Group virtual (ghost) occurrences by calendar day key ("yyyy-MM-dd"),
+ * using the same key format as groupTasksByDay / dayKey.
+ * The dueAt field on each VirtualOccurrence is always a noon-UTC ISO string,
+ * so format(new Date(v.dueAt), "yyyy-MM-dd") produces the correct local day.
+ */
+export function groupVirtualsByDay(
+  virtuals: VirtualOccurrence[]
+): Map<string, VirtualOccurrence[]> {
+  const m = new Map<string, VirtualOccurrence[]>();
+  for (const v of virtuals) {
+    const key = format(new Date(v.dueAt), "yyyy-MM-dd");
+    if (!m.has(key)) m.set(key, []);
+    m.get(key)!.push(v);
   }
   return m;
 }

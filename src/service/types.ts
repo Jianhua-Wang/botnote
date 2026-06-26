@@ -164,7 +164,8 @@ export const TasksRangeInput = z.object({
   to: z.coerce.date().nullish(),
   projectIds: z.array(Uuid).nullish(),
   includeBacklog: z.boolean().default(true),
-  includeDone: z.boolean().default(false)
+  includeDone: z.boolean().default(false),
+  includeVirtualRecurrences: z.boolean().default(false)
 });
 export type TasksRangeInput = z.infer<typeof TasksRangeInput>;
 

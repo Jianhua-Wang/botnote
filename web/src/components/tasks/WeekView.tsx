@@ -1,10 +1,10 @@
 import { addDays, format, isSameWeek, isToday } from "date-fns";
 import { useMemo } from "react";
 import { useProjects, useTasksRange, useUpdateEntity } from "../../api/hooks";
-import type { Entity, Project } from "../../api/types";
+import type { Entity, Project, VirtualOccurrence } from "../../api/types";
 import { useModals } from "../../state/modals";
-import { TaskChip } from "./TaskChip";
-import { compareByStatus, dayKey, daysBetween, groupTasksByDay, projectLookup, viewRange } from "./utils";
+import { GhostChip, TaskChip } from "./TaskChip";
+import { compareByStatus, dayKey, daysBetween, groupTasksByDay, groupVirtualsByDay, projectLookup, viewRange } from "./utils";
 
 export function WeekView({
   anchor,
@@ -31,19 +31,24 @@ export function WeekView({
     includeBacklog: false,
     // includeDone=true so each day cell can show "done/total" counts and the
     // chips list shows completed tasks (struck-through, à la Linear).
-    includeDone: true
+    includeDone: true,
+    includeVirtualRecurrences: true
   });
   const { data: projects } = useProjects();
   const projectMap = useMemo(() => projectLookup(projects), [projects]);
   const byDay = useMemo(() => groupTasksByDay(tasksData?.scheduled ?? []), [tasksData]);
+  const virtualsByDay = useMemo(
+    () => groupVirtualsByDay(tasksData?.virtualOccurrences ?? []),
+    [tasksData]
+  );
 
   const topRow = days.slice(0, 4);
   const bottomRow = days.slice(4);
 
   return (
     <div className="h-full flex flex-col bg-bg">
-      <DayRow days={topRow} byDay={byDay} projectMap={projectMap} anchor={anchor} />
-      <DayRow days={bottomRow} byDay={byDay} projectMap={projectMap} anchor={anchor} />
+      <DayRow days={topRow} byDay={byDay} virtualsByDay={virtualsByDay} projectMap={projectMap} anchor={anchor} />
+      <DayRow days={bottomRow} byDay={byDay} virtualsByDay={virtualsByDay} projectMap={projectMap} anchor={anchor} />
     </div>
   );
 }
@@ -51,11 +56,13 @@ export function WeekView({
 function DayRow({
   days,
   byDay,
+  virtualsByDay,
   projectMap,
   anchor
 }: {
   days: Date[];
   byDay: Map<string, Entity[]>;
+  virtualsByDay: Map<string, VirtualOccurrence[]>;
   projectMap: Map<string, Project>;
   anchor: Date;
 }) {
@@ -63,12 +70,14 @@ function DayRow({
     <div className="flex-1 min-h-0 flex border-b border-line last:border-b-0">
       {days.map((d) => {
         const tasks = byDay.get(dayKey(d)) ?? [];
+        const virtuals = virtualsByDay.get(dayKey(d)) ?? [];
         const outOfWeek = !isSameWeek(d, anchor, { weekStartsOn: 1 });
         return (
           <DayCell
             key={d.toISOString()}
             day={d}
             tasks={tasks}
+            virtuals={virtuals}
             projectMap={projectMap}
             outOfWeek={outOfWeek}
           />
@@ -81,11 +90,13 @@ function DayRow({
 function DayCell({
   day,
   tasks,
+  virtuals,
   projectMap,
   outOfWeek
 }: {
   day: Date;
   tasks: Entity[];
+  virtuals: VirtualOccurrence[];
   projectMap: Map<string, Project>;
   outOfWeek: boolean;
 }) {
@@ -152,16 +163,25 @@ function DayCell({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin p-1.5 space-y-1">
-        {active.length === 0 ? (
+        {active.length === 0 && virtuals.length === 0 ? (
           <div className="text-xxs text-faint px-1 py-0.5">—</div>
         ) : (
-          active.map((t) => (
-            <TaskChip
-              key={t.id}
-              task={t}
-              project={t.projectId ? projectMap.get(t.projectId) : undefined}
-            />
-          ))
+          <>
+            {active.map((t) => (
+              <TaskChip
+                key={t.id}
+                task={t}
+                project={t.projectId ? projectMap.get(t.projectId) : undefined}
+              />
+            ))}
+            {virtuals.map((v) => (
+              <GhostChip
+                key={v.id}
+                virtual={v}
+                project={v.projectId ? projectMap.get(v.projectId) : undefined}
+              />
+            ))}
+          </>
         )}
       </div>
     </div>

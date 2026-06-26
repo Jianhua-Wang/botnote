@@ -56,18 +56,35 @@ export interface Entity {
   updatedAt: string;
 }
 
+export interface VirtualOccurrence {
+  virtual: true;
+  id: string;
+  ruleId: string;
+  seriesId: string;
+  occurrenceAt: string;
+  dueAt: string;
+  title: string | null;
+  projectId: string | null;
+  priority: string;
+  allDay: boolean;
+  timezone: string;
+  rrule: string;
+}
+
 export interface TasksRangeInput {
   from?: string | null;
   to?: string | null;
   projectIds?: string[] | null;
   includeBacklog?: boolean;
   includeDone?: boolean;
+  includeVirtualRecurrences?: boolean;
 }
 
 export interface TasksRangeResult {
   scheduled: Entity[];
   overdue: Entity[];
   backlog: Entity[];
+  virtualOccurrences: VirtualOccurrence[];
 }
 
 export type RecurrencePreset = "hourly" | "daily" | "weekly" | "monthly" | "yearly";
