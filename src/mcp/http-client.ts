@@ -321,6 +321,7 @@ export interface CreateNoteBody {
 }
 
 export interface UpdateEntityBody {
+  projectId?: string | null;
   title?: string | null;
   body?: string;
   bodyAppend?: string;

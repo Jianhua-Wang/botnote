@@ -203,6 +203,30 @@ describe("botnote service", () => {
     expect(list.length).toBe(1);
   });
 
+  it("moves an entity between projects and to workspace scope", async () => {
+    const source = await createProject(db, { key: "SRC", name: "Source" });
+    const destination = await createProject(db, { key: "DST", name: "Destination" });
+    const task = await write(db, {
+      kind: "task",
+      projectId: source.id,
+      title: "Move this task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+
+    const moved = await update(db, task.id, { projectId: destination.id });
+    expect(moved.projectId).toBe(destination.id);
+    expect(await recent(db, { projectId: source.id, limit: 10 })).toEqual([]);
+    expect((await recent(db, { projectId: destination.id, limit: 10 }))[0]?.id).toBe(task.id);
+
+    const unscoped = await update(db, task.id, { projectId: null });
+    expect(unscoped.projectId).toBeNull();
+    expect((await recent(db, { projectId: null, limit: 10 }))[0]?.id).toBe(task.id);
+  });
+
   it("write is idempotent on idempotency_key", async () => {
     const p = await createProject(db, { key: "IDP", name: "Idp" });
     const input = {

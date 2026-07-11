@@ -574,6 +574,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "- task completion: `status='done'`. Optionally `remember` a closing note with `parentId` set to this task.\n" +
         "- task cancellation / give up: `status='rejected'`.\n" +
         "- start work: `status='in_progress'` ONLY when work actually begins in this turn (not just on every mention).\n" +
+        "- move between projects: pass `projectId` (or `null` to move to workspace scope).\n" +
         "- re-parent: pass `parentId` (or `null` to detach).\n" +
         "- pin/unpin: `pinned: true/false`. Pinned notes drive opening_brief — use sparingly.\n" +
         "- title=null clears the title (notes only).",
@@ -585,6 +586,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       },
       inputSchema: {
         id: EntityRef,
+        projectId: z
+          .string()
+          .uuid()
+          .nullable()
+          .optional()
+          .describe("Move to a project UUID, or pass null for workspace scope."),
         title: z
           .string()
           .max(500)
@@ -1028,6 +1035,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
 
   const UpdateEntityItem = z.object({
     id: EntityRef,
+    projectId: z
+      .string()
+      .uuid()
+      .nullable()
+      .optional()
+      .describe("Move to a project UUID, or pass null for workspace scope."),
     title: z.string().max(500).nullable().optional().describe("Pass null to clear the title (notes only)."),
     body: z.string().optional().describe("Replace the entire body. Mutually exclusive with bodyAppend."),
     bodyAppend: z.string().optional().describe("Atomically append text to the body. Mutually exclusive with body."),

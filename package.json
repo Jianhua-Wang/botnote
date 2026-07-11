@@ -1,6 +1,6 @@
 {
   "name": "botnote",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "description": "Notion for bots. Lightweight project + notes + memory store, agent-first.",
   "type": "module",
   "packageManager": "pnpm@10.33.0",

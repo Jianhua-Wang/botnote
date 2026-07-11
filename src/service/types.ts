@@ -88,6 +88,7 @@ export type GetByKeyInput = z.infer<typeof GetByKeyInput>;
 
 export const UpdateInput = z
   .object({
+    projectId: Uuid.nullable().optional(),
     title: z.string().max(500).nullable().optional(),
     body: z.string().optional(),
     bodyAppend: z.string().optional(),
