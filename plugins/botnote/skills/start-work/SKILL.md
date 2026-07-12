@@ -40,6 +40,7 @@ Argument: `<task-key-or-project-key>`.
 6. Treat botnote as working memory while doing the work.
    - Use `mcp__botnote__search` or `/botnote:recall` when prior decisions, related notes, similar tasks, or missing context could matter.
    - Use `mcp__botnote__remember` or `/botnote:remember` to preserve durable decisions, gotchas, useful findings, handoff notes, and final summaries.
+   - When new work emerges that is outside the current task's scope (a discovered bug, a follow-up, an idea worth doing), propose capturing it as a new task instead of silently doing it or letting it drop. Confirm before creating; batch proposals at natural checkpoints rather than interrupting for every item. Link follow-ups to the current task via `parentId` or a reference edge.
 
 7. After loading the focused context, ask the user what they want to do next unless they already gave a concrete implementation request.
 

@@ -65,10 +65,20 @@ function displayTitle(e: { title: string | null; body: string }): string {
   return "(untitled)";
 }
 
-function summarizeEntity(e: EntityDTO): string {
+/**
+ * Human-readable reference for an entity: KEY-SEQ (e.g. BOT-55) when the
+ * project key is known, otherwise kind/uuid-prefix. Both forms are accepted
+ * back as EntityRef inputs, so tool output never needs the full UUID.
+ */
+function entityRefLabel(e: EntityDTO, projectKey: string | null): string {
+  if (projectKey && e.sequenceId != null) return `${projectKey}-${e.sequenceId}`;
+  return `${e.kind}/${e.id.slice(0, 8)}`;
+}
+
+function summarizeEntity(e: EntityDTO, projectKey: string | null): string {
   const tagPart = e.tags.length ? ` [${e.tags.join(", ")}]` : "";
-  const base = `${e.kind}/${e.id} · id: ${e.id} · ${displayTitle(e)}${tagPart}`;
-  if (e.kind !== "task") return base;
+  const base = `${entityRefLabel(e, projectKey)} · ${displayTitle(e)}${tagPart}`;
+  if (e.kind !== "task") return `${base} (note)`;
   // Compact task suffix: status, optional priority, and due/completedAt date.
   const parts: string[] = [e.status];
   if (e.priority && e.priority !== "none") parts.push(e.priority);
@@ -111,12 +121,60 @@ const ProjectKey = z
 const HexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const IconName = z.string().min(1).max(40).regex(/^[a-z0-9_-]+$/);
 
+/**
+ * Server-level behavioral guidance, surfaced to MCP clients at initialize time
+ * (Claude Code injects it into the agent's context). Keep it short — this is
+ * always-on context for every session that connects to botnote.
+ */
+const SERVER_INSTRUCTIONS = `botnote is the user's task + memory system. Rules for agents:
+
+Proactive task capture (propose, don't silently create):
+- When a discussion turns into a decision to build/fix/do something, propose recording it as a task before starting the work.
+- When new work emerges mid-task that is outside the current task's scope, propose capturing it as a new task (link it via parentId or a reference) instead of silently doing it or letting it drop.
+- Confirm with the user before creating. Batch proposals at natural checkpoints rather than interrupting for every item.
+
+Task scope:
+- Keep tasks small: one focused session (roughly ≤1 hour). Propose splitting bigger work into a parent milestone task plus small subtasks via parentId.
+
+References:
+- Refer to tasks and notes by their KEY-SEQ identifier (e.g. BOT-55) when talking to the user, never by UUID.
+
+Session start: call opening_brief first to load project context.`;
+
 export function buildMcpServer(ctx: McpServerContext): McpServer {
-  const server = new McpServer({
-    name: "botnote",
-    version: ctx.version ?? VERSION
-  });
+  const server = new McpServer(
+    {
+      name: "botnote",
+      version: ctx.version ?? VERSION
+    },
+    { instructions: SERVER_INSTRUCTIONS }
+  );
   const c = ctx.client;
+
+  // projectId → key cache used to render human-readable KEY-SEQ refs (BOT-55)
+  // in tool output. Loaded lazily; refreshed whenever an unknown projectId
+  // shows up (e.g. a project created after the cache was filled).
+  let projectKeyCache: Map<string, string> | null = null;
+
+  async function projectKeysFor(rows: EntityDTO[]): Promise<Map<string, string>> {
+    const cache = projectKeyCache;
+    if (!cache || rows.some((e) => e.projectId && !cache.has(e.projectId))) {
+      const projects = await c.listProjects({ includeArchived: true });
+      projectKeyCache = new Map(projects.map((p) => [p.id, p.key]));
+    }
+    return projectKeyCache!;
+  }
+
+  async function summarizeAll(rows: EntityDTO[]): Promise<string[]> {
+    const keys = await projectKeysFor(rows);
+    return rows.map((e) =>
+      summarizeEntity(e, e.projectId ? (keys.get(e.projectId) ?? null) : null)
+    );
+  }
+
+  async function summarize(e: EntityDTO): Promise<string> {
+    return (await summarizeAll([e]))[0]!;
+  }
 
   // ----- 1. opening_brief -----
 
@@ -174,9 +232,10 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         kind,
         limit
       });
+      const summaries = await summarizeAll(hits.map((h) => h.entity));
       const lines = hits.map(
-        (h) =>
-          `${h.score.toFixed(4)} ${summarizeEntity(h.entity)}\n    ${h.entity.body.slice(0, 200).replace(/\n/g, " ")}`
+        (h, i) =>
+          `${h.score.toFixed(4)} ${summaries[i]}\n    ${h.entity.body.slice(0, 200).replace(/\n/g, " ")}`
       );
       return {
         content: [
@@ -219,6 +278,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         kinds,
         limit
       });
+      const summaries = await summarizeAll(rows);
       return {
         content: [
           {
@@ -226,8 +286,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
             text: rows.length
               ? rows
                   .map(
-                    (r) =>
-                      `${r.createdAt.slice(0, 16).replace("T", " ")} · ${summarizeEntity(r)}`
+                    (r, i) =>
+                      `${r.createdAt.slice(0, 16).replace("T", " ")} · ${summaries[i]}`
                   )
                   .join("\n")
               : "no recent entities"
@@ -462,7 +522,14 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "- `status`: defaults to 'open'. Use 'in_progress' only if work has actually started in this turn.\n" +
         "- `dueAt`: include when the user mentions a date. Use an ISO datetime in UTC.\n" +
         "- `tags`: 2-4 short lowercase kebab-case tokens. Re-use existing tags when possible — search first if unsure.\n" +
-        "- `parentId`: include when this task is a follow-up under another task or note.",
+        "- `parentId`: include when this task is a follow-up under another task or note.\n" +
+        "\n" +
+        "Scope — keep tasks small:\n" +
+        "- One task = one focused work session (roughly ≤1 hour). If the work spans multiple hours, days, or deliverables, propose a split into smaller executable tasks and get the user's agreement before creating anything.\n" +
+        "- For a large goal, create a parent milestone task (no dueAt needed), then attach small executable subtasks via `parentId`.\n" +
+        "- Heuristic: if the title needs 'and' to chain multiple verbs, it should be several tasks.\n" +
+        "\n" +
+        "When reporting a created task to the user, refer to it by its KEY-SEQ identifier (e.g. BOT-55), never the UUID.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -499,7 +566,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           priority: input.priority,
           idempotencyKey: input.idempotencyKey
         });
-        return { content: [{ type: "text", text: `created task ${summarizeEntity(entity)}\nid: ${entity.id}` }] };
+        return { content: [{ type: "text", text: `created task ${await summarize(entity)}\nid: ${entity.id}` }] };
       } catch (err: unknown) {
         return formatToolError(err);
       }
@@ -554,7 +621,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           pinned: input.pinned,
           idempotencyKey: input.idempotencyKey
         });
-        return { content: [{ type: "text", text: `remembered ${summarizeEntity(entity)}\nid: ${entity.id}` }] };
+        return { content: [{ type: "text", text: `remembered ${await summarize(entity)}\nid: ${entity.id}` }] };
       } catch (err: unknown) {
         return formatToolError(err);
       }
@@ -629,7 +696,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         );
         if (resolvedParentId !== undefined) defined.parentId = resolvedParentId;
         const updated = await c.updateEntity(resolvedId, defined);
-        return { content: [{ type: "text", text: `updated ${summarizeEntity(updated)}` }] };
+        return { content: [{ type: "text", text: `updated ${await summarize(updated)}` }] };
       } catch (err: unknown) {
         return formatToolError(err);
       }
@@ -739,8 +806,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           content: [
             {
               type: "text",
-              text: `skipped ${summarizeEntity(result.skipped)}\nnext: ${
-                result.next ? summarizeEntity(result.next) : "-"
+              text: `skipped ${await summarize(result.skipped)}\nnext: ${
+                result.next ? await summarize(result.next) : "-"
               }`
             }
           ]
@@ -844,12 +911,13 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     async ({ id }) => {
       const resolvedId = await resolveEntityRef(c, id);
       const rows = await c.listRelated(resolvedId);
+      const summaries = await summarizeAll(rows);
       return {
         content: [
           {
             type: "text",
             text: rows.length
-              ? rows.map((r) => `- ${summarizeEntity(r)}`).join("\n")
+              ? summaries.map((s) => `- ${s}`).join("\n")
               : "no related entities"
           }
         ]
@@ -939,19 +1007,15 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
 
       const lines: string[] = [];
 
-      if (result.overdue.length) {
-        lines.push("## Overdue");
-        for (const e of result.overdue) lines.push(`- ${summarizeEntity(serializeEntity(e))}`);
-      }
-
-      if (result.scheduled.length) {
-        lines.push("## Scheduled");
-        for (const e of result.scheduled) lines.push(`- ${summarizeEntity(serializeEntity(e))}`);
-      }
-
-      if (result.backlog.length) {
-        lines.push("## Backlog");
-        for (const e of result.backlog) lines.push(`- ${summarizeEntity(serializeEntity(e))}`);
+      const buckets: Array<[string, EntityDTO[]]> = [
+        ["## Overdue", result.overdue.map(serializeEntity)],
+        ["## Scheduled", result.scheduled.map(serializeEntity)],
+        ["## Backlog", result.backlog.map(serializeEntity)]
+      ];
+      for (const [header, rows] of buckets) {
+        if (!rows.length) continue;
+        lines.push(header);
+        for (const s of await summarizeAll(rows)) lines.push(`- ${s}`);
       }
 
       if (result.virtualOccurrences.length) {
@@ -1019,12 +1083,10 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     async ({ id, kind, direction }) => {
       const resolvedId = await resolveEntityRef(c, id);
       const links = await c.getLinks(resolvedId, { kind: kind ?? null, direction });
+      const summaries = await summarizeAll(links.map((l) => serializeEntity(l.entity)));
       const text = links.length
         ? links
-            .map(
-              (l) =>
-                `- [${l.kind} ▸ ${l.direction}] ${summarizeEntity(serializeEntity(l.entity))}`
-            )
+            .map((l, i) => `- [${l.kind} ▸ ${l.direction}] ${summaries[i]}`)
             .join("\n")
         : "no links";
       return { content: [{ type: "text", text }] };
@@ -1090,7 +1152,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
             );
             if (resolvedParentId !== undefined) defined.parentId = resolvedParentId;
             const updated = await c.updateEntity(resolvedId, defined);
-            lines.push(`✓ ${summarizeEntity(updated)}`);
+            lines.push(`✓ ${await summarize(updated)}`);
             okCount++;
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -1164,9 +1226,10 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       }
       lines.push("");
       lines.push("## Recent (workspace-wide)");
-      for (const r of recentRows) {
+      const summaries = await summarizeAll(recentRows);
+      for (let i = 0; i < recentRows.length; i++) {
         lines.push(
-          `- ${r.createdAt.slice(0, 16).replace("T", " ")} · ${r.kind}/${r.id} · ${displayTitle(r)}`
+          `- ${recentRows[i]!.createdAt.slice(0, 16).replace("T", " ")} · ${summaries[i]}`
         );
       }
       return { contents: [{ uri: uri.href, mimeType: "text/markdown", text: lines.join("\n") }] };

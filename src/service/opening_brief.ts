@@ -58,6 +58,15 @@ export async function openingBrief(
   };
 }
 
+/**
+ * Human-readable reference: KEY-SEQ (e.g. BOT-55) when the project key is
+ * known, otherwise kind/uuid-prefix. Both forms resolve as entity refs.
+ */
+function refFor(e: Entity, projectKey: string | null): string {
+  if (projectKey && e.sequenceId != null) return `${projectKey}-${e.sequenceId}`;
+  return `${e.kind}/${e.id.slice(0, 8)}`;
+}
+
 function titleFor(e: Entity): string {
   if (e.title && e.title.trim()) return e.title;
   const firstLine = e.body.split("\n").find((l) => l.trim())?.trim() ?? "";
@@ -67,6 +76,7 @@ function titleFor(e: Entity): string {
 
 export function formatOpeningBrief(brief: OpeningBrief): string {
   const lines: string[] = [];
+  const projectKey = brief.project?.key ?? null;
   if (brief.project) {
     lines.push(`# Project: ${brief.project.key} — ${brief.project.name}`);
   } else {
@@ -99,7 +109,7 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
   if (brief.openTasks.length) {
     lines.push(`## Open Tasks (${brief.openTasks.length})`);
     for (const t of brief.openTasks) {
-      lines.push(`- [${t.id}] ${titleFor(t)}${t.tags.length ? ` [${t.tags.join(", ")}]` : ""}`);
+      lines.push(`- [${refFor(t, projectKey)}] ${titleFor(t)}${t.tags.length ? ` [${t.tags.join(", ")}]` : ""}`);
     }
     lines.push("");
   }
@@ -108,11 +118,15 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     lines.push(`## Recent Activity (${brief.recent.length})`);
     for (const r of brief.recent) {
       const when = r.createdAt.toISOString().slice(0, 16).replace("T", " ");
-      lines.push(`- ${when} · ${r.kind}/${r.id} · ${titleFor(r)}`);
+      lines.push(`- ${when} · ${refFor(r, projectKey)} · ${titleFor(r)}`);
     }
     lines.push("");
   }
 
+  lines.push(
+    "_Reminders: when discussion turns into work, or new out-of-scope work appears mid-task, propose creating a task (confirm before creating; keep each task ≤1 focused session). Refer to entities by KEY-SEQ (e.g. BOT-55), never UUID._"
+  );
+  lines.push("");
   lines.push(`_Generated at ${brief.generatedAt.toISOString()}_`);
   return lines.join("\n");
 }

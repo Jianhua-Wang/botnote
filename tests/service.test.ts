@@ -1001,8 +1001,8 @@ describe("botnote service", () => {
     expect(formatted).toContain("# Project: OBR");
     expect(formatted).toContain("## Open Tasks");
     expect(formatted).toContain("## Pinned Notes");
-    expect(formatted).toContain(`[${openTask.id}]`);
-    expect(formatted).toContain(`task/${openTask.id}`);
+    expect(formatted).toContain(`[OBR-${openTask.sequenceId}]`);
+    expect(formatted).toMatch(/OBR-\d+ · Open task A/);
   });
 
   // ---------------------------------------------------------------------------

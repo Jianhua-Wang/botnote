@@ -95,6 +95,13 @@ describe("botnote MCP", () => {
     expect(resourceNames).toContain("workspace_overview");
   });
 
+  it("surfaces server instructions with behavioral rules", async () => {
+    const instructions = client.getInstructions() ?? "";
+    expect(instructions).toContain("Proactive task capture");
+    expect(instructions).toContain("KEY-SEQ");
+    expect(instructions).toContain("opening_brief");
+  });
+
   it("annotates read/write/destructive correctly", async () => {
     const tools = await client.listTools();
     const byName = new Map(tools.tools.map((t) => [t.name, t]));
@@ -133,7 +140,7 @@ describe("botnote MCP", () => {
       }
     });
     const writeText = (writeResp.content as Array<{ text: string }>)[0]?.text ?? "";
-    expect(writeText).toMatch(/remembered note/);
+    expect(writeText).toMatch(/remembered MCP-\d+/);
 
     const searchResp = await client.callTool({
       name: "search",
@@ -142,7 +149,9 @@ describe("botnote MCP", () => {
     const searchText = (searchResp.content as Array<{ text: string }>)[0]?.text ?? "";
     expect(searchText).toMatch(/Adopt MCP 2025-03-26 annotations/);
     expect(searchText).toMatch(/embedding=off/);
-    const noteId = searchText.match(/note\/([0-9a-f-]{36})/)?.[1];
+    // Search output leads with the human-readable KEY-SEQ ref, not the UUID.
+    expect(searchText).toMatch(/MCP-\d+ · Adopt MCP 2025-03-26 annotations/);
+    const noteId = writeText.match(/id: ([0-9a-f-]{36})/)?.[1];
     expect(noteId).toMatch(/^[0-9a-f-]{36}$/);
 
     const getResp = await client.callTool({
@@ -276,8 +285,8 @@ describe("botnote MCP", () => {
     expect(briefText).toMatch(/AGENTS.md/);
     expect(briefText).toMatch(/NEVER ship without tests/);
     expect(briefText).toMatch(/Ship botnote v0/);
-    expect(briefText).toContain(`[${taskId}]`);
-    expect(briefText).toContain(`task/${taskId}`);
+    expect(briefText).toMatch(/\[MCP-\d+\] Ship botnote v0/);
+    expect(briefText).toMatch(/MCP-\d+ · Ship botnote v0/);
   });
 
   it("write is idempotent on idempotencyKey via MCP", async () => {
