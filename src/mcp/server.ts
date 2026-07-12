@@ -17,7 +17,8 @@ export interface McpServerContext {
 
 // Inline kind constants so the MCP package can be packaged without pulling
 // drizzle / the db schema module at runtime.
-const ENTITY_KINDS = ["task", "note", "comment"] as const;
+const ENTITY_KINDS = ["task", "note", "comment", "feedback"] as const;
+const FEEDBACK_CATEGORIES = ["bug", "feature", "friction", "idea"] as const;
 const ACTOR_KINDS = ["human", "agent", "system"] as const;
 const TASK_STATUSES = [
   "open",
@@ -145,6 +146,9 @@ Worklog:
 Memory hygiene:
 - When a stored fact becomes outdated (changed decision, corrected detail), remember the new fact with supersedes=<old note id> instead of leaving both or editing history away. Superseded notes are downweighted in search but stay readable.
 - If remember reports similar existing notes, check them before piling on duplicates — supersede or update instead.
+
+Product feedback:
+- When botnote ITSELF gets in your way — a tool misbehaves, a capability is missing, a workflow is awkward — file it with submit_feedback (category: bug/feature/friction/idea). Do not create tasks in the user's projects for botnote product issues, and check list_feedback first to avoid duplicates.
 
 Session start: call opening_brief first to load project context.`;
 
@@ -793,6 +797,101 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           return `[${when} · ${r.actorKind}]\n${r.body}`;
         });
         return { content: [{ type: "text", text: lines.join("\n\n---\n\n") }] };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "submit_feedback",
+    {
+      title: "Submit Feedback",
+      description:
+        "File product feedback about botnote ITSELF — not about the user's projects. Use it when botnote misbehaves (bug), lacks a capability you needed (feature), makes a workflow awkward (friction), or you see how it could serve agents better (idea). This feeds botnote's own iteration backlog.\n" +
+        "\n" +
+        "Conventions:\n" +
+        "- `title`: one concrete, actionable sentence (e.g. \"search ignores KEY-SEQ refs in queries\").\n" +
+        "- `body`: what you tried, what happened, what you expected. Include the exact tool call when reporting a bug.\n" +
+        "- `tool`: the tool or surface involved (e.g. \"search\", \"opening_brief\", \"web-ui\").\n" +
+        "- `projectId`: the project you were working in when it surfaced, if any.\n" +
+        "Check list_feedback first if you suspect it is already known; do not re-file duplicates.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        category: z.enum(FEEDBACK_CATEGORIES),
+        title: z.string().min(1).max(500),
+        body: z.string().default(""),
+        projectId: z.string().uuid().optional(),
+        tool: z.string().max(100).optional(),
+        actorKind: z.enum(ACTOR_KINDS).default("agent"),
+        idempotencyKey: z.string().min(1).max(200).optional()
+      }
+    },
+    async (input) => {
+      try {
+        const entity = await c.submitFeedback({
+          category: input.category,
+          title: input.title,
+          body: input.body,
+          projectId: input.projectId ?? null,
+          tool: input.tool ?? null,
+          actorKind: input.actorKind,
+          idempotencyKey: input.idempotencyKey
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: `feedback filed (${input.category}): ${await summarize(entity)}\nid: ${entity.id}`
+            }
+          ]
+        };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "list_feedback",
+    {
+      title: "List Feedback",
+      description:
+        "List filed botnote product feedback for triage, newest first. Filter by category (bug/feature/friction/idea) and status (open/in_progress/done/rejected). Check this before submit_feedback to avoid duplicates; use update_entity to change a feedback item's status when triaging.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        category: z.enum(FEEDBACK_CATEGORIES).optional(),
+        status: z.enum(["open", "in_progress", "done", "rejected"]).optional(),
+        limit: z.number().int().min(1).max(100).default(20)
+      }
+    },
+    async (input) => {
+      try {
+        const rows = await c.listFeedback({
+          category: input.category,
+          status: input.status,
+          limit: input.limit
+        });
+        if (rows.length === 0) {
+          return { content: [{ type: "text", text: "no feedback found" }] };
+        }
+        const lines = rows.map((r) => {
+          const category = (r.metadata as { category?: string }).category ?? "?";
+          const tool = (r.metadata as { tool?: string }).tool;
+          const when = (r.createdAt ?? "").slice(0, 10);
+          return `- [${category}${tool ? ` · ${tool}` : ""}] ${r.title} (${r.status}, ${when}, id: ${r.id.slice(0, 8)})`;
+        });
+        return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (err: unknown) {
         return formatToolError(err);
       }

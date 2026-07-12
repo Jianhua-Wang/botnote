@@ -3,6 +3,7 @@ import {
   ACTOR_KINDS,
   EDGE_KINDS,
   ENTITY_KINDS,
+  FEEDBACK_CATEGORIES,
   PROJECT_STATUSES,
   RECURRENCE_ANCHORS
 } from "../db/schema.js";
@@ -92,6 +93,31 @@ export const CreateCommentInput = z.object({
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type CreateCommentInput = z.infer<typeof CreateCommentInput>;
+
+export const FeedbackCategoryEnum = z.enum(FEEDBACK_CATEGORIES);
+
+/** Product feedback about botnote itself, filed by agents (or humans) while
+ *  using it: bugs hit, missing features, workflow friction, improvement ideas. */
+export const CreateFeedbackInput = z.object({
+  category: FeedbackCategoryEnum,
+  title: z.string().min(1).max(500),
+  body: z.string().default(""),
+  /** Project the reporter was working in when the issue surfaced (context, optional). */
+  projectId: Uuid.nullish(),
+  /** Tool or surface involved, e.g. "search", "opening_brief", "web-ui". */
+  tool: z.string().max(100).nullish(),
+  actorKind: ActorKindEnum.default("agent"),
+  metadata: z.record(z.unknown()).default({}),
+  idempotencyKey: z.string().min(1).max(200).nullish()
+});
+export type CreateFeedbackInput = z.infer<typeof CreateFeedbackInput>;
+
+export const ListFeedbackInput = z.object({
+  category: FeedbackCategoryEnum.nullish(),
+  status: CanonicalTaskStatusEnum.nullish(),
+  limit: z.number().int().min(1).max(100).default(20)
+});
+export type ListFeedbackInput = z.infer<typeof ListFeedbackInput>;
 
 export const GetByKeyInput = z.object({
   projectKey: z.string().regex(/^[A-Z][A-Z0-9_]*$/),

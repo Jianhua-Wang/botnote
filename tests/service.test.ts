@@ -37,6 +37,7 @@ import {
 } from "../src/service/recurrence.js";
 import { eq, and } from "drizzle-orm";
 import { entities, recurrenceExceptions, recurrenceRules } from "../src/db/schema.js";
+import { listFeedback, submitFeedback } from "../src/service/feedback.js";
 import { findSimilar, search } from "../src/service/search.js";
 import { tasksRange } from "../src/service/tasks.js";
 import { consumeToken, createToken, listTokens } from "../src/service/tokens.js";
@@ -825,6 +826,52 @@ describe("botnote service", () => {
     });
     expect(similar.map((h) => h.entity.id)).toContain(existing.id);
     expect(similar.map((h) => h.entity.id)).not.toContain(fresh.id);
+  });
+
+  it("submitFeedback stores categorized feedback and listFeedback filters it", async () => {
+    const p = await createProject(db, { key: "FBK", name: "Fbk" });
+    const bug = await submitFeedback(db, {
+      category: "bug",
+      title: "search drops KEY-SEQ refs from queries",
+      body: "Searching for BOT-12 returns nothing even though the task exists.",
+      projectId: p.id,
+      tool: "search",
+      actorKind: "agent",
+      metadata: {},
+      idempotencyKey: "fbk-1"
+    });
+    expect(bug.kind).toBe("feedback");
+    expect(bug.status).toBe("open");
+    expect((bug.metadata as { category?: string }).category).toBe("bug");
+    expect((bug.metadata as { tool?: string }).tool).toBe("search");
+    // Feedback with a project gets a KEY-SEQ ref like any addressable item.
+    expect(bug.sequenceId).toBe(1);
+
+    // Idempotent replay returns the same row.
+    const replay = await submitFeedback(db, {
+      category: "bug",
+      title: "search drops KEY-SEQ refs from queries",
+      body: "",
+      actorKind: "agent",
+      metadata: {},
+      idempotencyKey: "fbk-1"
+    });
+    expect(replay.id).toBe(bug.id);
+
+    await submitFeedback(db, {
+      category: "idea",
+      title: "opening brief could include a weekly summary",
+      body: "",
+      actorKind: "agent",
+      metadata: {}
+    });
+
+    const bugs = await listFeedback(db, { category: "bug", limit: 20 });
+    expect(bugs.map((f) => f.id)).toEqual([bug.id]);
+    const all = await listFeedback(db, { limit: 20 });
+    expect(all.length).toBe(2);
+    const done = await listFeedback(db, { status: "done", limit: 20 });
+    expect(done.length).toBe(0);
   });
 
   it("bumpAccess tracks reads and boosts frequently-recalled entities in search", async () => {

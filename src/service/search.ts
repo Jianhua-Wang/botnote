@@ -30,6 +30,7 @@ const KIND_WEIGHTS: Record<string, number> = {
   memory: 0.1,
   task: 0.05,
   comment: -0.1,
+  feedback: -0.1,
   log: -0.2
 };
 

@@ -27,7 +27,9 @@ When the user signals something is finished:
    - Skip only when the user said a bare "done" with no detail and the work itself happened outside this session.
    - For durable knowledge that outlives this task (decisions, conventions, gotchas future agents need without opening this task), additionally call `mcp__botnote__remember` with `parentId` set to the task.
 
-5. Confirm in one line:
+5. If botnote itself caused friction during this task (a tool misbehaved, a capability was missing, a workflow felt awkward), file it with `mcp__botnote__submit_feedback` (category: bug/feature/friction/idea). Check `mcp__botnote__list_feedback` first to avoid duplicates.
+
+6. Confirm in one line:
 
 ```text
 Marked task/<id8> done: <title>

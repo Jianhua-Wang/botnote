@@ -77,6 +77,7 @@ describe("botnote MCP", () => {
       "get_recurrence",
       "link",
       "list_comments",
+      "list_feedback",
       "list_projects",
       "list_tags",
       "list_tasks",
@@ -88,6 +89,7 @@ describe("botnote MCP", () => {
       "skip_occurrence",
       "split_recurrence",
       "stop_recurrence",
+      "submit_feedback",
       "update_entities",
       "update_entity",
       "update_project"
@@ -179,6 +181,36 @@ describe("botnote MCP", () => {
     const updateByPrefixText =
       (updateByPrefixResp.content as Array<{ text: string }>)[0]?.text ?? "";
     expect(updateByPrefixText).toContain("Adopt MCP annotations with short ids");
+  });
+
+  it("submit_feedback files and list_feedback filters product feedback", async () => {
+    const submitResp = await client.callTool({
+      name: "submit_feedback",
+      arguments: {
+        category: "friction",
+        title: "opening_brief output is too long for small context windows",
+        body: "A brief with 20 open tasks plus pinned notes exceeds what a short session wants to read.",
+        tool: "opening_brief"
+      }
+    });
+    const submitText = (submitResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(submitText).toMatch(/feedback filed \(friction\)/);
+
+    const listResp = await client.callTool({
+      name: "list_feedback",
+      arguments: { category: "friction", status: "open" }
+    });
+    const listText = (listResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(listText).toContain("[friction · opening_brief]");
+    expect(listText).toContain("opening_brief output is too long");
+
+    const otherCategoryResp = await client.callTool({
+      name: "list_feedback",
+      arguments: { category: "bug" }
+    });
+    const otherCategoryText =
+      (otherCategoryResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(otherCategoryText).not.toContain("opening_brief output is too long");
   });
 
   it("remember flags near-duplicates and supports supersedes", async () => {

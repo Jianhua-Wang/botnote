@@ -1,5 +1,8 @@
-export type EntityKind = "task" | "note" | "comment";
-export const ENTITY_KINDS: EntityKind[] = ["task", "note", "comment"];
+export type EntityKind = "task" | "note" | "comment" | "feedback";
+export const ENTITY_KINDS: EntityKind[] = ["task", "note", "comment", "feedback"];
+
+export type FeedbackCategory = "bug" | "feature" | "friction" | "idea";
+export const FEEDBACK_CATEGORIES: FeedbackCategory[] = ["bug", "feature", "friction", "idea"];
 
 // Kinds the UI offers in QuickCreate. Comments are created from a task's
 // drawer / by agents via MCP, not from the global quick-create.

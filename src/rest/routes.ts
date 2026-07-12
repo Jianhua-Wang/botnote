@@ -27,6 +27,7 @@ import {
   updateProject
 } from "../service/projects.js";
 import { findSimilar, search } from "../service/search.js";
+import { listFeedback, submitFeedback } from "../service/feedback.js";
 import {
   embeddingCoverage,
   getEmbeddingSettings,
@@ -53,6 +54,7 @@ import { tasksRange } from "../service/tasks.js";
 import { createToken, listTokens, revokeToken } from "../service/tokens.js";
 import {
   CreateCommentInput,
+  CreateFeedbackInput,
   CreateNoteInput,
   CreateProjectInput,
   CreateTaskInput,
@@ -60,6 +62,7 @@ import {
   EmbeddingBackfillInput,
   GetLinksInput,
   LinkInput,
+  ListFeedbackInput,
   ListProjectsInput,
   ListTagsInput,
   OpeningBriefInput,
@@ -728,6 +731,44 @@ export async function registerRoutes(
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
       return serializeEntities(await listComments(ctx.db, id));
+    }
+  );
+
+  app.post(
+    "/v1/feedback",
+    {
+      schema: {
+        tags: ["feedback"],
+        summary: "File product feedback about botnote itself (bug/feature/friction/idea)",
+        body: CreateFeedbackInput
+      }
+    },
+    async (req) => {
+      const body = CreateFeedbackInput.parse(req.body);
+      const entity = await submitFeedback(ctx.db, body);
+      if (ctx.embedding.isEnabled()) {
+        ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
+      }
+      return serializeEntity(entity);
+    }
+  );
+
+  app.get(
+    "/v1/feedback",
+    {
+      schema: {
+        tags: ["feedback"],
+        summary: "List feedback for triage, newest first",
+        querystring: z.object({
+          category: z.enum(["bug", "feature", "friction", "idea"]).optional(),
+          status: z.enum(["open", "in_progress", "done", "rejected"]).optional(),
+          limit: z.coerce.number().int().min(1).max(100).default(20)
+        })
+      }
+    },
+    async (req) => {
+      const query = ListFeedbackInput.parse(req.query);
+      return serializeEntities(await listFeedback(ctx.db, query));
     }
   );
 

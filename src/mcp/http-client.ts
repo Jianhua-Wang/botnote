@@ -133,6 +133,17 @@ export class BotnoteHttpClient {
   addComment(id: string, body: CreateCommentBody) {
     return this.request<EntityDTO>("POST", `/v1/entities/${id}/comments`, body);
   }
+  submitFeedback(body: CreateFeedbackBody) {
+    return this.request<EntityDTO>("POST", "/v1/feedback", body);
+  }
+  listFeedback(opts: { category?: string; status?: string; limit?: number } = {}) {
+    const params = new URLSearchParams();
+    if (opts.category) params.set("category", opts.category);
+    if (opts.status) params.set("status", opts.status);
+    if (opts.limit) params.set("limit", String(opts.limit));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request<EntityDTO[]>("GET", `/v1/feedback${suffix}`);
+  }
   configureRecurrence(taskId: string, body: RecurrenceBody) {
     return this.request<RecurrenceRuleDTO>("POST", `/v1/tasks/${taskId}/recurrence`, body);
   }
@@ -222,7 +233,7 @@ export interface ProjectDTO {
 export interface EntityDTO {
   id: string;
   projectId: string | null;
-  kind: "task" | "note" | "comment";
+  kind: "task" | "note" | "comment" | "feedback";
   title: string | null;
   body: string;
   tags: string[];
@@ -327,6 +338,17 @@ export interface CreateNoteBody {
   actorKind?: string;
   pinned?: boolean;
   supersedes?: string | null;
+  idempotencyKey?: string;
+}
+
+export interface CreateFeedbackBody {
+  category: "bug" | "feature" | "friction" | "idea";
+  title: string;
+  body?: string;
+  projectId?: string | null;
+  tool?: string | null;
+  actorKind?: string;
+  metadata?: Record<string, unknown>;
   idempotencyKey?: string;
 }
 
