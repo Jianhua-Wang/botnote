@@ -106,6 +106,9 @@ export class BotnoteHttpClient {
   listRelated(id: string) {
     return this.request<EntityDTO[]>("GET", `/v1/entities/${id}/related`);
   }
+  listComments(id: string) {
+    return this.request<EntityDTO[]>("GET", `/v1/entities/${id}/comments`);
+  }
   recent(body: RecentBody) {
     return this.request<EntityDTO[]>("POST", "/v1/recent", body);
   }
@@ -126,6 +129,9 @@ export class BotnoteHttpClient {
   }
   updateEntity(id: string, body: UpdateEntityBody) {
     return this.request<EntityDTO>("PATCH", `/v1/entities/${id}`, body);
+  }
+  addComment(id: string, body: CreateCommentBody) {
+    return this.request<EntityDTO>("POST", `/v1/entities/${id}/comments`, body);
   }
   configureRecurrence(taskId: string, body: RecurrenceBody) {
     return this.request<RecurrenceRuleDTO>("POST", `/v1/tasks/${taskId}/recurrence`, body);
@@ -272,6 +278,7 @@ export interface OpeningBriefDTO {
   project: ProjectDTO | null;
   pinnedNotes: EntityDTO[];
   openTasks: EntityDTO[];
+  latestComments?: EntityDTO[];
   recentActivity: EntityDTO[];
   agentsMd: string;
   markdown: string;
@@ -317,6 +324,13 @@ export interface CreateNoteBody {
   parentId?: string | null;
   actorKind?: string;
   pinned?: boolean;
+  idempotencyKey?: string;
+}
+
+export interface CreateCommentBody {
+  body: string;
+  actorKind?: string;
+  metadata?: Record<string, unknown>;
   idempotencyKey?: string;
 }
 

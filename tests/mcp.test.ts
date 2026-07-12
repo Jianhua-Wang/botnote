@@ -65,6 +65,7 @@ describe("botnote MCP", () => {
   it("lists current tools + workspace resource", async () => {
     const tools = await client.listTools();
     expect(tools.tools.map((t) => t.name).sort()).toEqual([
+      "add_comment",
       "configure_recurrence",
       "context",
       "create_project",
@@ -75,6 +76,7 @@ describe("botnote MCP", () => {
       "get_project",
       "get_recurrence",
       "link",
+      "list_comments",
       "list_projects",
       "list_tags",
       "list_tasks",

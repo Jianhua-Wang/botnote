@@ -17,7 +17,7 @@ export interface McpServerContext {
 
 // Inline kind constants so the MCP package can be packaged without pulling
 // drizzle / the db schema module at runtime.
-const ENTITY_KINDS = ["task", "note"] as const;
+const ENTITY_KINDS = ["task", "note", "comment"] as const;
 const ACTOR_KINDS = ["human", "agent", "system"] as const;
 const TASK_STATUSES = [
   "open",
@@ -138,6 +138,9 @@ Task scope:
 
 References:
 - Refer to tasks and notes by their KEY-SEQ identifier (e.g. BOT-55) when talking to the user, never by UUID.
+
+Worklog:
+- When pausing or finishing work on a task, record progress with add_comment (what was done, what's next, blockers). The opening brief surfaces the latest comment per in_progress task, so this is how the next session resumes.
 
 Session start: call opening_brief first to load project context.`;
 
@@ -638,7 +641,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "Update fields on an existing task or note. Pass ONLY the fields you want to change — omitted fields are left untouched.\n" +
         "\n" +
         "Common transitions:\n" +
-        "- task completion: `status='done'`. Optionally `remember` a closing note with `parentId` set to this task.\n" +
+        "- task completion: `status='done'`. Add a closing `add_comment` worklog entry summarizing what was done.\n" +
         "- task cancellation / give up: `status='rejected'`.\n" +
         "- start work: `status='in_progress'` ONLY when work actually begins in this turn (not just on every mention).\n" +
         "- move between projects: pass `projectId` (or `null` to move to workspace scope).\n" +
@@ -697,6 +700,74 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         if (resolvedParentId !== undefined) defined.parentId = resolvedParentId;
         const updated = await c.updateEntity(resolvedId, defined);
         return { content: [{ type: "text", text: `updated ${await summarize(updated)}` }] };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "add_comment",
+    {
+      title: "Add Comment",
+      description:
+        "Append a comment (worklog entry) to a task or note. Use it to record progress, decisions, blockers, or a handoff summary when pausing work — the opening brief shows the latest comment for every in_progress task. Comments are append-only.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false
+      },
+      inputSchema: {
+        id: EntityRef.describe("Parent task/note: UUID, unique UUID prefix, or KEY-SEQ such as BOT-55."),
+        body: z.string().min(1).describe("The comment text. Markdown allowed."),
+        actorKind: z.enum(ACTOR_KINDS).default("agent"),
+        idempotencyKey: z.string().min(1).max(200).optional()
+      }
+    },
+    async ({ id, body, actorKind, idempotencyKey }) => {
+      try {
+        const resolvedId = await resolveEntityRef(c, id);
+        const comment = await c.addComment(resolvedId, { body, actorKind, idempotencyKey });
+        return {
+          content: [
+            { type: "text", text: `added comment ${comment.id.slice(0, 8)} on ${id}` }
+          ]
+        };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "list_comments",
+    {
+      title: "List Comments",
+      description:
+        "List the comments (worklog) on a task or note, oldest first. Read this when resuming an in_progress task to see what previous sessions did.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        id: EntityRef.describe("Parent task/note: UUID, unique UUID prefix, or KEY-SEQ such as BOT-55.")
+      }
+    },
+    async ({ id }) => {
+      try {
+        const resolvedId = await resolveEntityRef(c, id);
+        const rows = await c.listComments(resolvedId);
+        if (rows.length === 0) {
+          return { content: [{ type: "text", text: "no comments" }] };
+        }
+        const lines = rows.map((r) => {
+          const when = (r.createdAt ?? "").slice(0, 16).replace("T", " ");
+          return `[${when} · ${r.actorKind}]\n${r.body}`;
+        });
+        return { content: [{ type: "text", text: lines.join("\n\n---\n\n") }] };
       } catch (err: unknown) {
         return formatToolError(err);
       }

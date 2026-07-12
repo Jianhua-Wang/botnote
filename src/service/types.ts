@@ -80,6 +80,16 @@ export const CreateNoteInput = z.object({
 });
 export type CreateNoteInput = z.infer<typeof CreateNoteInput>;
 
+/** Append a comment (worklog entry) to a task or note. Comments are
+ *  append-only: they cannot be updated afterwards, only added or deleted. */
+export const CreateCommentInput = z.object({
+  body: z.string().min(1),
+  actorKind: ActorKindEnum.default("human"),
+  metadata: z.record(z.unknown()).default({}),
+  idempotencyKey: z.string().min(1).max(200).nullish()
+});
+export type CreateCommentInput = z.infer<typeof CreateCommentInput>;
+
 export const GetByKeyInput = z.object({
   projectKey: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
   sequenceId: z.number().int().positive()

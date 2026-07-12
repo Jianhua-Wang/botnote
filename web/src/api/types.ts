@@ -1,8 +1,8 @@
-export type EntityKind = "task" | "note";
-export const ENTITY_KINDS: EntityKind[] = ["task", "note"];
+export type EntityKind = "task" | "note" | "comment";
+export const ENTITY_KINDS: EntityKind[] = ["task", "note", "comment"];
 
-// Kinds the UI offers in QuickCreate. Mirrors the API surface — these are the
-// only kinds the backend now accepts.
+// Kinds the UI offers in QuickCreate. Comments are created from a task's
+// drawer / by agents via MCP, not from the global quick-create.
 export const CREATABLE_KINDS: EntityKind[] = ["task", "note"];
 
 export type ActorKind = "human" | "agent" | "system";

@@ -10,6 +10,9 @@ export interface OpeningBrief {
   agentsMd: string;
   pinnedNotes: Entity[];
   openTasks: Entity[];
+  /** Latest comment (worklog entry) per in_progress task, so a resuming
+   *  session sees where the previous one stopped. */
+  latestComments: Entity[];
   recent: Entity[];
   generatedAt: Date;
   timezone: string;
@@ -62,11 +65,31 @@ export async function openingBrief(
       .limit(input.recentLimit)
   ]);
 
+  const inProgressIds = openTasks
+    .filter((t) => t.status === "in_progress")
+    .map((t) => t.id);
+  let latestComments: Entity[] = [];
+  if (inProgressIds.length > 0) {
+    const rows = await db
+      .select()
+      .from(entities)
+      .where(and(eq(entities.kind, "comment"), inArray(entities.parentId, inProgressIds)))
+      .orderBy(desc(entities.createdAt))
+      .limit(inProgressIds.length * 10);
+    const seen = new Set<string>();
+    for (const row of rows) {
+      if (!row.parentId || seen.has(row.parentId)) continue;
+      seen.add(row.parentId);
+      latestComments.push(row);
+    }
+  }
+
   return {
     project,
     agentsMd: project?.agentsMd ?? "",
     pinnedNotes,
     openTasks,
+    latestComments,
     recent: recentRows,
     generatedAt: new Date(),
     timezone: settings.timezone
@@ -160,9 +183,22 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
   };
 
   if (inProgress.length) {
+    const worklogByTask = new Map(
+      brief.latestComments.map((c) => [c.parentId as string, c])
+    );
     lines.push(`## In Progress (${inProgress.length})`);
     lines.push("_Work already started. Check these before picking up anything new._");
-    for (const t of inProgress) lines.push(taskLine(t));
+    for (const t of inProgress) {
+      lines.push(taskLine(t));
+      const log = worklogByTask.get(t.id);
+      if (log) {
+        const when = log.createdAt.toISOString().slice(0, 16).replace("T", " ");
+        const excerpt = log.body.trim().replace(/\s+/g, " ");
+        lines.push(
+          `  ↳ last log ${when}: ${excerpt.length > 300 ? `${excerpt.slice(0, 300)}…` : excerpt}`
+        );
+      }
+    }
     lines.push("");
   }
 

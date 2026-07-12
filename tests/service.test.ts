@@ -6,7 +6,18 @@ import {
   getEmbeddingSettings,
   updateEmbeddingSettings
 } from "../src/service/embedding_settings.js";
-import { get, getLinks, link, listTags, recent, setBodyVec, update, write } from "../src/service/entities.js";
+import {
+  addComment,
+  get,
+  getLinks,
+  link,
+  listComments,
+  listTags,
+  recent,
+  setBodyVec,
+  update,
+  write
+} from "../src/service/entities.js";
 import { formatOpeningBrief, openingBrief } from "../src/service/opening_brief.js";
 import {
   createProject,
@@ -1036,6 +1047,85 @@ describe("botnote service", () => {
     expect(formatted).toContain("## Open Tasks (3)");
     expect(formatted).toContain("(OVERDUE 2026-01-05)");
     expect(formatted).toContain("!urgent");
+  });
+
+  it("addComment appends a worklog entry that inherits the project but no sequence id", async () => {
+    const p = await createProject(db, { key: "CMT", name: "CMT Project" });
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Task with worklog",
+      body: "",
+      tags: [],
+      status: "in_progress",
+      actorKind: "human",
+      metadata: {}
+    });
+
+    const c1 = await addComment(db, task.id, {
+      body: "Implemented the parser, tests green.",
+      actorKind: "agent",
+      metadata: {},
+      idempotencyKey: "cmt-1"
+    });
+    expect(c1.kind).toBe("comment");
+    expect(c1.parentId).toBe(task.id);
+    expect(c1.projectId).toBe(p.id);
+    expect(c1.sequenceId).toBeNull();
+
+    // idempotent re-write returns the same row
+    const again = await addComment(db, task.id, {
+      body: "Implemented the parser, tests green.",
+      actorKind: "agent",
+      metadata: {},
+      idempotencyKey: "cmt-1"
+    });
+    expect(again.id).toBe(c1.id);
+
+    await addComment(db, task.id, {
+      body: "Blocked on the flaky CI runner.",
+      actorKind: "agent",
+      metadata: {}
+    });
+    const all = await listComments(db, task.id);
+    expect(all.map((c) => c.body)).toEqual([
+      "Implemented the parser, tests green.",
+      "Blocked on the flaky CI runner."
+    ]);
+
+    // append-only: comments reject updates, nesting is refused
+    await expect(update(db, c1.id, { body: "rewritten" })).rejects.toThrow(/append-only/);
+    await expect(
+      addComment(db, c1.id, { body: "nested", actorKind: "agent", metadata: {} })
+    ).rejects.toThrow(/nested/);
+  });
+
+  it("openingBrief surfaces the latest worklog comment for in_progress tasks", async () => {
+    const p = await createProject(db, { key: "CMT2", name: "CMT2 Project" });
+    const task = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Resumable task",
+      body: "",
+      tags: [],
+      status: "in_progress",
+      actorKind: "human",
+      metadata: {}
+    });
+    await addComment(db, task.id, { body: "First log.", actorKind: "agent", metadata: {} });
+    await addComment(db, task.id, {
+      body: "Second log — stopped at the REST layer.",
+      actorKind: "agent",
+      metadata: {}
+    });
+
+    const brief = await openingBrief(db, { projectId: p.id, recentLimit: 10 });
+    expect(brief.latestComments.length).toBe(1);
+    expect(brief.latestComments[0]?.body).toContain("Second log");
+
+    const formatted = formatOpeningBrief(brief);
+    expect(formatted).toContain("↳ last log");
+    expect(formatted).toContain("stopped at the REST layer");
   });
 
   it("formatOpeningBrief truncates oversized pinned notes with a fetch hint", async () => {

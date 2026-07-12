@@ -10,7 +10,21 @@ import {
   upsertModifiedExceptionBaseline,
   type ContentFieldKey
 } from "./recurrence.js";
-import type { GetLinksInput, LinkInput, ListTagsInput, RecentInput, UpdateInput, WriteInput } from "./types.js";
+import type {
+  CreateCommentInput,
+  GetLinksInput,
+  LinkInput,
+  ListTagsInput,
+  RecentInput,
+  UpdateInput,
+  WriteInput
+} from "./types.js";
+
+function clientError(message: string, statusCode: number): Error {
+  const err = new Error(message) as Error & { statusCode: number };
+  err.statusCode = statusCode;
+  return err;
+}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -91,6 +105,54 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
   return row;
 }
 
+/**
+ * Append a comment (worklog entry) to a task or note. The comment inherits the
+ * parent's projectId so project-scoped search/recent include it, but never
+ * gets a KEY-SEQ number (the sequence trigger skips kind='comment').
+ */
+export async function addComment(
+  db: Database["db"],
+  parentIdOrPrefix: string,
+  input: CreateCommentInput
+): Promise<Entity> {
+  const parent = await get(db, parentIdOrPrefix);
+  if (!parent) throw clientError(`entity ${parentIdOrPrefix} not found`, 404);
+  if (parent.kind === "comment") {
+    throw clientError("comments cannot be nested; comment on the task itself", 400);
+  }
+  return write(db, {
+    kind: "comment",
+    projectId: parent.projectId,
+    title: null,
+    body: input.body,
+    tags: [],
+    status: "open",
+    parentId: parent.id,
+    actorKind: input.actorKind,
+    metadata: input.metadata,
+    dueAt: null,
+    priority: "none",
+    pinned: false,
+    idempotencyKey: input.idempotencyKey
+  });
+}
+
+/** Comments for one parent entity, oldest first (chronological worklog). */
+export async function listComments(
+  db: Database["db"],
+  parentIdOrPrefix: string,
+  limit = 50
+): Promise<Entity[]> {
+  const entityId = await resolveEntityId(db, parentIdOrPrefix);
+  if (!entityId) return [];
+  return db
+    .select()
+    .from(entities)
+    .where(and(eq(entities.parentId, entityId), eq(entities.kind, "comment")))
+    .orderBy(entities.createdAt)
+    .limit(limit);
+}
+
 const CONTENT_FIELDS: ContentFieldKey[] = ["title", "body", "tags", "priority"];
 
 export async function update(
@@ -129,9 +191,10 @@ export async function update(
   let enteredDone = false;
   let preEditSnapshot: Partial<Record<ContentFieldKey, unknown>> | null = null;
 
-  if (normalizedFields.status !== undefined || needsSnapshot) {
+  {
     const prior = await db
       .select({
+        kind: entities.kind,
         status: entities.status,
         title: entities.title,
         body: entities.body,
@@ -142,11 +205,18 @@ export async function update(
       .where(eq(entities.id, entityId))
       .limit(1);
     if (!prior[0]) throw new Error(`entity ${id} not found`);
-    const wasDone = prior[0].status === "done";
-    const isDone = normalizedFields.status === "done";
-    enteredDone = isDone && !wasDone;
-    if (isDone && !wasDone) set.completedAt = new Date();
-    else if (!isDone && wasDone) set.completedAt = null;
+    if (prior[0].kind === "comment") {
+      throw clientError("comments are append-only; add a new comment instead of editing", 400);
+    }
+    // Only touch completedAt when the status itself is changing — an unrelated
+    // field update on an already-done task must not clear its completion stamp.
+    if (normalizedFields.status !== undefined) {
+      const wasDone = prior[0].status === "done";
+      const isDone = normalizedFields.status === "done";
+      enteredDone = isDone && !wasDone;
+      if (isDone && !wasDone) set.completedAt = new Date();
+      else if (!isDone && wasDone) set.completedAt = null;
+    }
     if (needsSnapshot) {
       preEditSnapshot = {
         title: prior[0].title,

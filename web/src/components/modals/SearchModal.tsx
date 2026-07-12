@@ -9,7 +9,8 @@ import { ModalShell } from "../ModalShell";
 
 const KIND_LABELS: Record<EntityKind, string> = {
   task: "task",
-  note: "note"
+  note: "note",
+  comment: "comment"
 };
 
 export function SearchModal() {

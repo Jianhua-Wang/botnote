@@ -3,10 +3,12 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { Entity, Token } from "../db/schema.js";
 import {
+  addComment,
   get,
   getByKey,
   getLinks,
   link,
+  listComments,
   listRelated,
   listTags,
   recent,
@@ -48,6 +50,7 @@ import {
 import { tasksRange } from "../service/tasks.js";
 import { createToken, listTokens, revokeToken } from "../service/tokens.js";
 import {
+  CreateCommentInput,
   CreateNoteInput,
   CreateProjectInput,
   CreateTaskInput,
@@ -365,6 +368,7 @@ export async function registerRoutes(
         ...brief,
         pinnedNotes: serializeEntities(brief.pinnedNotes),
         openTasks: serializeEntities(brief.openTasks),
+        latestComments: serializeEntities(brief.latestComments),
         recent: serializeEntities(brief.recent),
         markdown: formatOpeningBrief(brief)
       };
@@ -391,6 +395,7 @@ export async function registerRoutes(
         ...brief,
         pinnedNotes: serializeEntities(brief.pinnedNotes),
         openTasks: serializeEntities(brief.openTasks),
+        latestComments: serializeEntities(brief.latestComments),
         recent: serializeEntities(brief.recent),
         markdown: formatOpeningBrief(brief)
       };
@@ -656,6 +661,44 @@ export async function registerRoutes(
         ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
       }
       return serializeEntity(entity);
+    }
+  );
+
+  app.post(
+    "/v1/entities/:id/comments",
+    {
+      schema: {
+        tags: ["entities"],
+        summary: "Append a comment (worklog entry) to a task or note",
+        description:
+          "Comments are append-only progress notes. The latest comment per in_progress task is surfaced in the opening brief.",
+        params: EntityIdParams,
+        body: CreateCommentInput
+      }
+    },
+    async (req) => {
+      const { id } = EntityIdParams.parse(req.params);
+      const body = CreateCommentInput.parse(req.body);
+      const entity = await addComment(ctx.db, id, body);
+      if (ctx.embedding.isEnabled()) {
+        ctx.embedding.enqueue(entity.id, entity.body);
+      }
+      return serializeEntity(entity);
+    }
+  );
+
+  app.get(
+    "/v1/entities/:id/comments",
+    {
+      schema: {
+        tags: ["entities"],
+        summary: "List comments for an entity, oldest first",
+        params: EntityIdParams
+      }
+    },
+    async (req) => {
+      const { id } = EntityIdParams.parse(req.params);
+      return serializeEntities(await listComments(ctx.db, id));
     }
   );
 
