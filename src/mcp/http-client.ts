@@ -125,7 +125,7 @@ export class BotnoteHttpClient {
     return this.request<EntityDTO>("POST", "/v1/tasks", body);
   }
   remember(body: CreateNoteBody) {
-    return this.request<EntityDTO>("POST", "/v1/notes", body);
+    return this.request<EntityDTO & { similar?: EntityDTO[] }>("POST", "/v1/notes", body);
   }
   updateEntity(id: string, body: UpdateEntityBody) {
     return this.request<EntityDTO>("PATCH", `/v1/entities/${id}`, body);
@@ -222,7 +222,7 @@ export interface ProjectDTO {
 export interface EntityDTO {
   id: string;
   projectId: string | null;
-  kind: "task" | "note";
+  kind: "task" | "note" | "comment";
   title: string | null;
   body: string;
   tags: string[];
@@ -235,6 +235,8 @@ export interface EntityDTO {
   pinned: boolean;
   sequenceId: number | null;
   completedAt: string | null;
+  lastAccessedAt: string | null;
+  accessCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -284,7 +286,7 @@ export interface OpeningBriefDTO {
   markdown: string;
 }
 
-export type LinkKind = "blocks" | "references" | "parent_of";
+export type LinkKind = "blocks" | "references" | "parent_of" | "supersedes";
 
 export interface CreateProjectBody {
   key: string;
@@ -324,6 +326,7 @@ export interface CreateNoteBody {
   parentId?: string | null;
   actorKind?: string;
   pinned?: boolean;
+  supersedes?: string | null;
   idempotencyKey?: string;
 }
 

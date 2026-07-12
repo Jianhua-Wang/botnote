@@ -8,11 +8,13 @@ import {
 } from "../src/service/embedding_settings.js";
 import {
   addComment,
+  bumpAccess,
   get,
   getLinks,
   link,
   listComments,
   listTags,
+  markSuperseded,
   recent,
   setBodyVec,
   update,
@@ -35,7 +37,7 @@ import {
 } from "../src/service/recurrence.js";
 import { eq, and } from "drizzle-orm";
 import { entities, recurrenceExceptions, recurrenceRules } from "../src/db/schema.js";
-import { search } from "../src/service/search.js";
+import { findSimilar, search } from "../src/service/search.js";
 import { tasksRange } from "../src/service/tasks.js";
 import { consumeToken, createToken, listTokens } from "../src/service/tokens.js";
 import {
@@ -747,6 +749,109 @@ describe("botnote service", () => {
     const hits = await search(db, { query: "RRF hybrid", projectId: p.id, limit: 5 });
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0]?.entity.title).toBe("Postgres hybrid retrieval");
+  });
+
+  it("supersedes edge downweights the outdated entity in search", async () => {
+    const p = await createProject(db, { key: "SUP", name: "Sup" });
+    const noteInput = {
+      kind: "note" as const,
+      projectId: p.id,
+      title: "Deploy requires manual cache flush",
+      body: "Run scripts/flush-cache.sh after every deploy",
+      tags: [],
+      status: "open",
+      actorKind: "human" as const,
+      metadata: {}
+    };
+    const replacement = await write(db, noteInput);
+    // The outdated note is created LAST so time decay would naturally rank it
+    // first — only the supersedes penalty can flip the order.
+    const outdated = await write(db, noteInput);
+    await markSuperseded(db, replacement.id, outdated.id);
+
+    const hits = await search(db, { query: "cache flush deploy", projectId: p.id, limit: 5 });
+    const ids = hits.map((h) => h.entity.id);
+    expect(ids.indexOf(replacement.id)).toBeLessThan(ids.indexOf(outdated.id));
+    expect(hits.find((h) => h.entity.id === outdated.id)?.superseded).toBe(true);
+    expect(hits.find((h) => h.entity.id === replacement.id)?.superseded).toBeUndefined();
+  });
+
+  it("markSuperseded rejects self-reference and missing targets", async () => {
+    const p = await createProject(db, { key: "SUX", name: "Sux" });
+    const note = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Lone note",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    await expect(markSuperseded(db, note.id, note.id)).rejects.toThrow(/supersede itself/);
+    await expect(
+      markSuperseded(db, note.id, "00000000-0000-0000-0000-000000000000")
+    ).rejects.toThrow(/not found/);
+  });
+
+  it("findSimilar surfaces near-duplicate notes and excludes the new note itself", async () => {
+    const p = await createProject(db, { key: "DUP", name: "Dup" });
+    const existing = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Staging DB password lives in 1Password",
+      body: "Vault: infra / item: staging-postgres",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const fresh = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Staging DB password lives in 1Password",
+      body: "Duplicate capture from another session",
+      tags: [],
+      status: "open",
+      actorKind: "agent",
+      metadata: {}
+    });
+
+    const similar = await findSimilar(db, {
+      title: fresh.title,
+      body: fresh.body,
+      projectId: p.id,
+      excludeId: fresh.id
+    });
+    expect(similar.map((h) => h.entity.id)).toContain(existing.id);
+    expect(similar.map((h) => h.entity.id)).not.toContain(fresh.id);
+  });
+
+  it("bumpAccess tracks reads and boosts frequently-recalled entities in search", async () => {
+    const p = await createProject(db, { key: "ACC", name: "Acc" });
+    const noteInput = {
+      kind: "note" as const,
+      projectId: p.id,
+      title: "Redis eviction policy is allkeys-lru",
+      body: "Set on the prod cluster; do not change without capacity review",
+      tags: [],
+      status: "open",
+      actorKind: "human" as const,
+      metadata: {}
+    };
+    const recalled = await write(db, noteInput);
+    // Newer twin would win on time decay if access count did not matter.
+    const untouched = await write(db, noteInput);
+
+    for (let i = 0; i < 20; i += 1) await bumpAccess(db, recalled.id);
+    const fetched = await get(db, recalled.id);
+    expect(fetched?.accessCount).toBe(20);
+    expect(fetched?.lastAccessedAt).not.toBeNull();
+
+    const hits = await search(db, { query: "redis eviction policy", projectId: p.id, limit: 5 });
+    const ids = hits.map((h) => h.entity.id);
+    expect(ids.indexOf(recalled.id)).toBeLessThan(ids.indexOf(untouched.id));
+    expect(hits.find((h) => h.entity.id === recalled.id)?.components.accessBoost).toBeGreaterThan(0);
   });
 
   it("embedding queue is no-op when disabled", async () => {

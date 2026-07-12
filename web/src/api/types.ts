@@ -8,7 +8,7 @@ export const CREATABLE_KINDS: EntityKind[] = ["task", "note"];
 export type ActorKind = "human" | "agent" | "system";
 export const ACTOR_KINDS: ActorKind[] = ["human", "agent", "system"];
 
-export type EdgeKind = "blocks" | "references" | "parent_of";
+export type EdgeKind = "blocks" | "references" | "parent_of" | "supersedes";
 export type ProjectStatus = "planned" | "active" | "watching" | "paused" | "archived";
 export const PROJECT_STATUSES: ProjectStatus[] = [
   "planned",
@@ -52,6 +52,8 @@ export interface Entity {
   sequenceId: number | null;
   pinned: boolean;
   completedAt: string | null;
+  lastAccessedAt: string | null;
+  accessCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -148,7 +150,9 @@ export interface SearchHit {
     bm25?: number;
     cosine?: number;
     timeDecay?: number;
+    accessBoost?: number;
   };
+  superseded?: boolean;
 }
 
 export interface SearchResponse {
@@ -232,6 +236,8 @@ export interface CreateNoteInput {
   actorKind?: ActorKind;
   metadata?: Record<string, unknown>;
   pinned?: boolean;
+  /** Existing note this one replaces (downweighted in search). */
+  supersedes?: string | null;
   idempotencyKey?: string | null;
 }
 

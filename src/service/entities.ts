@@ -293,6 +293,43 @@ export async function listRelated(
     .orderBy(desc(entities.createdAt));
 }
 
+/**
+ * Record an explicit read of an entity. Called from the REST get-by-id and
+ * get-by-key handlers (not from internal lookups) so access stats reflect
+ * deliberate recalls; search gives frequently-recalled entities a light boost.
+ */
+export async function bumpAccess(db: Database["db"], id: string): Promise<void> {
+  await db
+    .update(entities)
+    .set({
+      accessCount: sql`${entities.accessCount} + 1`,
+      lastAccessedAt: new Date()
+    })
+    .where(eq(entities.id, id));
+}
+
+/**
+ * Mark `oldIdOrPrefix` as superseded by `newId` (kind='supersedes' edge from
+ * the replacement to the outdated entity). Superseded entities stay readable
+ * but are downweighted in search.
+ */
+export async function markSuperseded(
+  db: Database["db"],
+  newId: string,
+  oldIdOrPrefix: string
+): Promise<string> {
+  // get() (not resolveEntityId) so a full-UUID reference to a deleted or
+  // never-existing row still 404s instead of tripping the FK constraint.
+  const old = await get(db, oldIdOrPrefix);
+  if (!old) throw clientError(`supersedes target ${oldIdOrPrefix} not found`, 404);
+  if (old.id === newId) throw clientError("an entity cannot supersede itself", 400);
+  await db
+    .insert(edges)
+    .values({ fromId: newId, toId: old.id, kind: "supersedes" })
+    .onConflictDoNothing();
+  return old.id;
+}
+
 export async function get(db: Database["db"], id: string): Promise<Entity | null> {
   const entityId = await resolveEntityId(db, id);
   if (!entityId) return null;

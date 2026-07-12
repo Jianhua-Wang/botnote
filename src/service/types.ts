@@ -76,6 +76,9 @@ export const CreateNoteInput = z.object({
   actorKind: ActorKindEnum.default("human"),
   metadata: z.record(z.unknown()).default({}),
   pinned: z.boolean().default(false),
+  /** Id (or unambiguous prefix) of an existing entity this note replaces.
+   *  A 'supersedes' edge is created and the old entity is downweighted in search. */
+  supersedes: z.string().min(4).max(64).nullish(),
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type CreateNoteInput = z.infer<typeof CreateNoteInput>;

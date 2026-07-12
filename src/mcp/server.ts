@@ -26,7 +26,7 @@ const TASK_STATUSES = [
   "rejected"
 ] as const;
 const PRIORITIES = ["urgent", "high", "medium", "low", "none"] as const;
-const EDGE_KINDS = ["blocks", "references", "parent_of"] as const;
+const EDGE_KINDS = ["blocks", "references", "parent_of", "supersedes"] as const;
 const RECURRENCE_PRESETS = ["hourly", "daily", "weekly", "monthly", "yearly"] as const;
 const RECURRENCE_ANCHORS = ["scheduled", "completion"] as const;
 const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
@@ -141,6 +141,10 @@ References:
 
 Worklog:
 - When pausing or finishing work on a task, record progress with add_comment (what was done, what's next, blockers). The opening brief surfaces the latest comment per in_progress task, so this is how the next session resumes.
+
+Memory hygiene:
+- When a stored fact becomes outdated (changed decision, corrected detail), remember the new fact with supersedes=<old note id> instead of leaving both or editing history away. Superseded notes are downweighted in search but stay readable.
+- If remember reports similar existing notes, check them before piling on duplicates — supersede or update instead.
 
 Session start: call opening_brief first to load project context.`;
 
@@ -591,7 +595,10 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "- `tags`: 2-4 short lowercase kebab-case tokens inferred from content. Re-use existing tags — recall similar memories first if unsure of vocabulary.\n" +
         "- `projectId`: pick the most specific project. If unclear, omit (workspace-scope is fine; better than wrong-project).\n" +
         "- `parentId`: pass a task's UUID when the note is a follow-up on a specific task — this surfaces the note when the task is opened.\n" +
-        "- `pinned=true`: ONLY for must-read context (deployment steps, hidden gotchas, AGENTS-style conventions). Pinned notes appear in every future opening_brief — abuse them and the brief becomes noise.",
+        "- `pinned=true`: ONLY for must-read context (deployment steps, hidden gotchas, AGENTS-style conventions). Pinned notes appear in every future opening_brief — abuse them and the brief becomes noise.\n" +
+        "- `supersedes`: pass an existing note's id when this note REPLACES an outdated memory (changed decision, corrected fact). The old note is downweighted in search but stays readable — prefer this over editing history away.\n" +
+        "\n" +
+        "The result may list `similar existing notes` — near-duplicates already stored. If one of them covers the same fact, mark it superseded via `link` (from=new note, to=old note, kind='supersedes') or update the existing note instead of keeping both.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -606,6 +613,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         parentId: EntityRef.optional().describe("Link this note under a task or other entity. Accepts UUID, UUID prefix, or KEY-SEQ such as BOT-55."),
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
         pinned: z.boolean().default(false).describe("Pin to project opening brief (must-read context)."),
+        supersedes: EntityRef.optional().describe("Existing note this one replaces. Accepts UUID, UUID prefix, or KEY-SEQ such as BOT-55. The old note is downweighted in search."),
         idempotencyKey: z.string().min(1).max(200).optional()
       }
     },
@@ -613,6 +621,9 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       try {
         const resolvedParentId = input.parentId
           ? await resolveEntityRef(c, input.parentId)
+          : null;
+        const resolvedSupersedes = input.supersedes
+          ? await resolveEntityRef(c, input.supersedes)
           : null;
         const entity = await c.remember({
           projectId: input.projectId ?? null,
@@ -622,9 +633,23 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           parentId: resolvedParentId,
           actorKind: input.actorKind,
           pinned: input.pinned,
+          supersedes: resolvedSupersedes,
           idempotencyKey: input.idempotencyKey
         });
-        return { content: [{ type: "text", text: `remembered ${await summarize(entity)}\nid: ${entity.id}` }] };
+        let text = `remembered ${await summarize(entity)}\nid: ${entity.id}`;
+        if (resolvedSupersedes) {
+          text += `\nsupersedes: ${resolvedSupersedes}`;
+        }
+        const similar = entity.similar ?? [];
+        if (similar.length > 0) {
+          const lines = await Promise.all(
+            similar.map(async (s) => `- ${await summarize(s)} (id: ${s.id})`)
+          );
+          text +=
+            `\n\nsimilar existing notes (possible duplicates):\n${lines.join("\n")}\n` +
+            `If one covers the same fact, run link(fromId=${entity.id}, toId=<old id>, kind='supersedes') or update the existing note instead of keeping both.`;
+        }
+        return { content: [{ type: "text", text }] };
       } catch (err: unknown) {
         return formatToolError(err);
       }
@@ -1003,7 +1028,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Link Entities",
       description:
-        "Create a typed edge between two entities. `blocks` = source blocks target, `references` = source references target (citation/see-also), `parent_of` = source is the parent (e.g. task is parent of a sub-note).",
+        "Create a typed edge between two entities. `blocks` = source blocks target, `references` = source references target (citation/see-also), `parent_of` = source is the parent (e.g. task is parent of a sub-note), `supersedes` = source replaces target (the outdated entity is downweighted in search but stays readable).",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -1147,7 +1172,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       },
       inputSchema: {
         id: EntityRef,
-        kind: z.enum(EDGE_KINDS).optional().describe("Edge type filter: blocks, references, or parent_of."),
+        kind: z.enum(EDGE_KINDS).optional().describe("Edge type filter: blocks, references, parent_of, or supersedes."),
         direction: z.enum(["outgoing", "incoming", "both"]).default("both").describe("Edge direction relative to the given entity.")
       }
     },

@@ -41,7 +41,7 @@ export type EntityKind = (typeof ENTITY_KINDS)[number];
 export const ACTOR_KINDS = ["human", "agent", "system"] as const;
 export type ActorKind = (typeof ACTOR_KINDS)[number];
 
-export const EDGE_KINDS = ["blocks", "references", "parent_of"] as const;
+export const EDGE_KINDS = ["blocks", "references", "parent_of", "supersedes"] as const;
 export type EdgeKind = (typeof EDGE_KINDS)[number];
 
 export const PROJECT_STATUSES = ["planned", "active", "watching", "paused", "archived"] as const;
@@ -94,6 +94,10 @@ export const entities = pgTable(
     // completedAt rather than dueAt so the timeline reflects what actually
     // happened.
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    // Bumped on explicit reads (GET by id / by key); feeds a light boost
+    // into hybrid search so frequently-recalled memories rank higher.
+    lastAccessedAt: timestamp("last_accessed_at", { withTimezone: true }),
+    accessCount: integer("access_count").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },

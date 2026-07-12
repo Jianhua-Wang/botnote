@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Entity, Token } from "../db/schema.js";
 import {
   addComment,
+  bumpAccess,
   get,
   getByKey,
   getLinks,
@@ -11,6 +12,7 @@ import {
   listComments,
   listRelated,
   listTags,
+  markSuperseded,
   recent,
   remove,
   update,
@@ -24,7 +26,7 @@ import {
   listProjects,
   updateProject
 } from "../service/projects.js";
-import { search } from "../service/search.js";
+import { findSimilar, search } from "../service/search.js";
 import {
   embeddingCoverage,
   getEmbeddingSettings,
@@ -411,6 +413,7 @@ export async function registerRoutes(
       const { id } = EntityIdParams.parse(req.params);
       const e = await get(ctx.db, id);
       if (!e) return reply.code(404).send({ error: "not_found" });
+      await bumpAccess(ctx.db, e.id);
       return serializeEntity(e);
     }
   );
@@ -428,6 +431,7 @@ export async function registerRoutes(
       const { key, seq } = KeySeqParams.parse(req.params);
       const e = await getByKey(ctx.db, key, seq);
       if (!e) return reply.code(404).send({ error: "not_found" });
+      await bumpAccess(ctx.db, e.id);
       return serializeEntity(e);
     }
   );
@@ -648,8 +652,14 @@ export async function registerRoutes(
         body: CreateNoteInput
       }
     },
-    async (req) => {
-      const body = CreateNoteInput.parse(req.body);
+    async (req, reply) => {
+      const { supersedes, ...body } = CreateNoteInput.parse(req.body);
+      // Resolve the supersedes target BEFORE writing so a bad reference
+      // fails the whole request instead of leaving an orphaned note.
+      const supersededId = supersedes ? (await get(ctx.db, supersedes))?.id ?? null : null;
+      if (supersedes && !supersededId) {
+        return reply.code(404).send({ error: `supersedes target ${supersedes} not found` });
+      }
       const entity = await write(ctx.db, {
         ...body,
         kind: "note",
@@ -657,10 +667,29 @@ export async function registerRoutes(
         priority: "none",
         dueAt: null
       });
+      if (supersededId) {
+        await markSuperseded(ctx.db, entity.id, supersededId);
+      }
       if (ctx.embedding.isEnabled()) {
         ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
       }
-      return serializeEntity(entity);
+      // Dedup hint: surface near-duplicate notes so the caller can decide to
+      // supersede or update instead of accumulating parallel memories. Skipped
+      // when the caller already declared a supersedes target.
+      let similar: Entity[] = [];
+      if (!supersededId) {
+        const label = (entity.title ?? entity.body.split("\n")[0] ?? "").trim().slice(0, 200);
+        const queryEmbedding = label ? await ctx.embedding.embedQuery(label) : null;
+        const hits = await findSimilar(ctx.db, {
+          title: entity.title,
+          body: entity.body,
+          projectId: entity.projectId,
+          excludeId: entity.id,
+          queryEmbedding: queryEmbedding ?? undefined
+        });
+        similar = hits.map((h) => h.entity);
+      }
+      return { ...serializeEntity(entity), similar: serializeEntities(similar) };
     }
   );
 

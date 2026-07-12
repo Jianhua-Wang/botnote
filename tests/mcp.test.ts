@@ -181,6 +181,48 @@ describe("botnote MCP", () => {
     expect(updateByPrefixText).toContain("Adopt MCP annotations with short ids");
   });
 
+  it("remember flags near-duplicates and supports supersedes", async () => {
+    const createResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "MEM", name: "Memory MCP" }
+    });
+    const projectId = (createResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    expect(projectId).toBeTruthy();
+
+    const firstResp = await client.callTool({
+      name: "remember",
+      arguments: { projectId, title: "CI cache key uses pnpm lockfile hash", body: "See .github/workflows/ci.yml" }
+    });
+    const firstText = (firstResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    const firstId = firstText.match(/id: ([0-9a-f-]{36})/)?.[1];
+    expect(firstId).toBeTruthy();
+
+    // A second capture of the same fact should come back with a dedup hint.
+    const dupResp = await client.callTool({
+      name: "remember",
+      arguments: { projectId, title: "CI cache key uses pnpm lockfile hash", body: "Captured again in another session" }
+    });
+    const dupText = (dupResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(dupText).toMatch(/similar existing notes/);
+    expect(dupText).toContain(firstId!);
+
+    // Superseding skips the dedup hint and records the replacement.
+    const supResp = await client.callTool({
+      name: "remember",
+      arguments: {
+        projectId,
+        title: "CI cache key now includes the Node version",
+        body: "Replaces the lockfile-only cache key",
+        supersedes: firstId
+      }
+    });
+    const supText = (supResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(supText).toContain(`supersedes: ${firstId}`);
+    expect(supText).not.toMatch(/similar existing notes/);
+  });
+
   it("archives and restores projects via MCP", async () => {
     const createResp = await client.callTool({
       name: "create_project",
