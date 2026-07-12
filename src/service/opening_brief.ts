@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type Project } from "../db/schema.js";
 import { getProject } from "./projects.js";
@@ -36,8 +36,23 @@ export async function openingBrief(
     db
       .select()
       .from(entities)
-      .where(and(projectFilter, eq(entities.kind, "task"), eq(entities.status, "open")))
-      .orderBy(desc(entities.createdAt))
+      .where(
+        and(
+          projectFilter,
+          eq(entities.kind, "task"),
+          inArray(entities.status, ["open", "in_progress"])
+        )
+      )
+      // in_progress first (that's what a resuming session needs), then by
+      // urgency: earliest due date (overdue sorts first naturally), then
+      // priority, then recency. Tasks without a due date rank after dated ones.
+      .orderBy(
+        sql`CASE WHEN ${entities.status} = 'in_progress' THEN 0 ELSE 1 END`,
+        sql`CASE WHEN ${entities.dueAt} IS NULL THEN 1 ELSE 0 END`,
+        asc(entities.dueAt),
+        sql`CASE ${entities.priority} WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`,
+        desc(entities.createdAt)
+      )
       .limit(20),
     db
       .select()
@@ -66,6 +81,12 @@ function refFor(e: Entity, projectKey: string | null): string {
   if (projectKey && e.sequenceId != null) return `${projectKey}-${e.sequenceId}`;
   return `${e.kind}/${e.id.slice(0, 8)}`;
 }
+
+// Character budgets for pinned-note bodies. Pinned notes are injected into
+// every session start, so an unbounded dump can eat a large slice of the
+// agent's context window. Chars ≈ tokens × 4.
+const PINNED_NOTE_CHAR_BUDGET = 2000;
+const PINNED_TOTAL_CHAR_BUDGET = 8000;
 
 function titleFor(e: Entity): string {
   if (e.title && e.title.trim()) return e.title;
@@ -97,20 +118,57 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     lines.push(`## Pinned Notes (${brief.pinnedNotes.length})`);
     lines.push("_These are pinned by the user as always-relevant context for this project. Read them before acting._");
     lines.push("");
+    let remaining = PINNED_TOTAL_CHAR_BUDGET;
     for (const n of brief.pinnedNotes) {
+      const ref = refFor(n, projectKey);
+      const body = n.body.trim();
+      if (remaining <= 0) {
+        lines.push(`### 📌 ${titleFor(n)}`);
+        lines.push(`_[body omitted — pinned budget spent; fetch ${ref} to read it]_`);
+        lines.push("");
+        continue;
+      }
       lines.push(`### 📌 ${titleFor(n)}`);
-      if (n.body.trim()) {
-        lines.push(n.body.trim());
+      if (body) {
+        const cap = Math.min(PINNED_NOTE_CHAR_BUDGET, remaining);
+        if (body.length > cap) {
+          lines.push(body.slice(0, cap));
+          lines.push(`_[truncated — fetch ${ref} for the full note]_`);
+          remaining -= cap;
+        } else {
+          lines.push(body);
+          remaining -= body.length;
+        }
       }
       lines.push("");
     }
   }
 
-  if (brief.openTasks.length) {
-    lines.push(`## Open Tasks (${brief.openTasks.length})`);
-    for (const t of brief.openTasks) {
-      lines.push(`- [${refFor(t, projectKey)}] ${titleFor(t)}${t.tags.length ? ` [${t.tags.join(", ")}]` : ""}`);
+  const inProgress = brief.openTasks.filter((t) => t.status === "in_progress");
+  const openOnly = brief.openTasks.filter((t) => t.status !== "in_progress");
+
+  const now = brief.generatedAt.getTime();
+  const taskLine = (t: Entity): string => {
+    const parts = [`- [${refFor(t, projectKey)}] ${titleFor(t)}`];
+    if (t.dueAt) {
+      const day = t.dueAt.toISOString().slice(0, 10);
+      parts.push(t.dueAt.getTime() < now ? `(OVERDUE ${day})` : `(due ${day})`);
     }
+    if (t.priority && t.priority !== "none") parts.push(`!${t.priority}`);
+    if (t.tags.length) parts.push(`[${t.tags.join(", ")}]`);
+    return parts.join(" ");
+  };
+
+  if (inProgress.length) {
+    lines.push(`## In Progress (${inProgress.length})`);
+    lines.push("_Work already started. Check these before picking up anything new._");
+    for (const t of inProgress) lines.push(taskLine(t));
+    lines.push("");
+  }
+
+  if (openOnly.length) {
+    lines.push(`## Open Tasks (${openOnly.length})`);
+    for (const t of openOnly) lines.push(taskLine(t));
     lines.push("");
   }
 

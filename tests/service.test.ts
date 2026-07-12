@@ -1005,6 +1005,60 @@ describe("botnote service", () => {
     expect(formatted).toMatch(/OBR-\d+ · Open task A/);
   });
 
+  it("openingBrief surfaces in_progress tasks first and orders open tasks by urgency", async () => {
+    const p = await createProject(db, { key: "OBR2", name: "OBR2 Project" });
+    const base = {
+      kind: "task" as const,
+      projectId: p.id,
+      body: "",
+      tags: [],
+      actorKind: "human" as const,
+      metadata: {}
+    };
+    const backlog = await write(db, { ...base, title: "Backlog idea", status: "open" });
+    const started = await write(db, { ...base, title: "Started yesterday", status: "in_progress" });
+    const overdue = await write(db, {
+      ...base,
+      title: "Overdue chore",
+      status: "open",
+      dueAt: new Date("2026-01-05T12:00:00.000Z")
+    });
+    const urgent = await write(db, { ...base, title: "Urgent no date", status: "open", priority: "urgent" });
+    await write(db, { ...base, title: "Already done", status: "done" });
+
+    const brief = await openingBrief(db, { projectId: p.id, recentLimit: 10 });
+    const ids = brief.openTasks.map((t) => t.id);
+    expect(ids).toEqual([started.id, overdue.id, urgent.id, backlog.id]);
+
+    const formatted = formatOpeningBrief(brief);
+    expect(formatted).toContain("## In Progress (1)");
+    expect(formatted).toContain("Started yesterday");
+    expect(formatted).toContain("## Open Tasks (3)");
+    expect(formatted).toContain("(OVERDUE 2026-01-05)");
+    expect(formatted).toContain("!urgent");
+  });
+
+  it("formatOpeningBrief truncates oversized pinned notes with a fetch hint", async () => {
+    const p = await createProject(db, { key: "OBR3", name: "OBR3 Project" });
+    await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Huge pinned doc",
+      body: "x".repeat(5000),
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      pinned: true
+    });
+    const brief = await openingBrief(db, { projectId: p.id, recentLimit: 5 });
+    const formatted = formatOpeningBrief(brief);
+    expect(formatted).toContain("truncated — fetch");
+    // 2000-char per-note cap plus surrounding sections; the raw 5000-char body must not appear.
+    expect(formatted).not.toContain("x".repeat(2001));
+    expect(formatted).toContain("x".repeat(2000));
+  });
+
   // ---------------------------------------------------------------------------
   // allDayDueAtInZone unit tests
 
