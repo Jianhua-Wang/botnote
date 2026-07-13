@@ -1,6 +1,7 @@
 import { Inbox } from "lucide-react";
 import { useMemo } from "react";
 import { useProjects, useTasksRange } from "../../api/hooks";
+import type { Entity, Project } from "../../api/types";
 import { TaskRow } from "./TaskRow";
 import { projectLookup } from "./utils";
 
@@ -21,6 +22,27 @@ export function InboxRail({
   const { data: projects } = useProjects();
   const projectMap = useMemo(() => projectLookup(projects), [projects]);
   const inboxTasks = (tasksData?.backlog ?? []).filter((t) => t.status !== "rejected");
+
+  // Group by project so rows don't need per-row project keys.
+  const groups = useMemo(() => {
+    const byProject = new Map<string | null, Entity[]>();
+    for (const t of inboxTasks) {
+      const key = t.projectId ?? null;
+      const list = byProject.get(key);
+      if (list) list.push(t);
+      else byProject.set(key, [t]);
+    }
+    const entries: { project: Project | undefined; tasks: Entity[] }[] = [];
+    for (const [pid, tasks] of byProject) {
+      entries.push({ project: pid ? projectMap.get(pid) : undefined, tasks });
+    }
+    entries.sort((a, b) => {
+      if (!a.project) return 1;
+      if (!b.project) return -1;
+      return a.project.key.localeCompare(b.project.key);
+    });
+    return entries;
+  }, [inboxTasks, projectMap]);
 
   if (collapsed) {
     return (
@@ -62,13 +84,21 @@ export function InboxRail({
             <div className="text-faint mt-1">Tasks without due date appear here.</div>
           </div>
         ) : (
-          inboxTasks.map((t) => (
-            <TaskRow
-              key={t.id}
-              task={t}
-              project={t.projectId ? projectMap.get(t.projectId) : undefined}
-              compact
-            />
+          groups.map(({ project, tasks }) => (
+            <div key={project?.id ?? "none"}>
+              <div className="sticky top-0 z-10 flex items-center gap-1.5 px-3 py-1 bg-surface border-b border-lineSoft">
+                <span className="font-mono text-xxs text-faint tabular-nums">
+                  {project?.key ?? "—"}
+                </span>
+                <span className="text-xxs text-muted truncate">
+                  {project?.name ?? "No project"}
+                </span>
+                <span className="ml-auto text-xxs text-faint tabular-nums">{tasks.length}</span>
+              </div>
+              {tasks.map((t) => (
+                <TaskRow key={t.id} task={t} project={project} showProject={false} compact />
+              ))}
+            </div>
           ))
         )}
       </div>

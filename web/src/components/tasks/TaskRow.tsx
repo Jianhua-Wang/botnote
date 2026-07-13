@@ -56,11 +56,13 @@ export function TaskRow({
         {displayTitle(task)}
       </span>
 
-      {task.tags.slice(0, 2).map((t) => (
-        <span key={t} className="chip shrink-0 hidden md:inline-flex">
-          {t}
-        </span>
-      ))}
+      {/* Compact rows (inbox rail) give every pixel to the title. */}
+      {!compact &&
+        task.tags.slice(0, 2).map((t) => (
+          <span key={t} className="chip shrink-0 hidden md:inline-flex">
+            {t}
+          </span>
+        ))}
 
       {showProject && project && compact && (
         <span className="font-mono text-xxs text-faint shrink-0">{project.key}</span>
