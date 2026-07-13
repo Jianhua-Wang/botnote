@@ -48,11 +48,21 @@ export function useGlobalKeys() {
         return;
       }
       if (e.key === "g") {
+        // g-prefixed navigation: g d → Tasks, g t → Today, g i → Inbox,
+        // g w → Workspace.
         const handler = (ev: KeyboardEvent) => {
           window.removeEventListener("keydown", handler);
-          if (ev.key === "d") {
+          if (isEditableTarget(ev)) return;
+          const to: Record<string, string> = {
+            d: "/",
+            t: "/today",
+            i: "/inbox",
+            w: "/dashboard"
+          };
+          const path = to[ev.key];
+          if (path) {
             ev.preventDefault();
-            navigate("/");
+            navigate(path);
           }
         };
         window.addEventListener("keydown", handler, { once: true });

@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { useProjects, useTasksRange, useUpdateEntity } from "../../api/hooks";
 import type { Entity, Project, VirtualOccurrence } from "../../api/types";
 import { useModals } from "../../state/modals";
-import { GhostChip, TaskChip } from "./TaskChip";
+import { GhostChips, TaskChip } from "./TaskChip";
 import { compareByStatus, dayKey, daysBetween, groupTasksByDay, groupVirtualsByDay, projectLookup, viewRange } from "./utils";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -164,13 +164,7 @@ function DayCell({
         )}
         {/* Ghost chips for future virtual occurrences — rendered after real tasks,
             not counted in done/total or +N more, pointer-events-none */}
-        {virtuals.map((v) => (
-          <GhostChip
-            key={v.id}
-            virtual={v}
-            project={v.projectId ? projectMap.get(v.projectId) : undefined}
-          />
-        ))}
+        <GhostChips virtuals={virtuals} projectMap={projectMap} />
       </div>
     </div>
   );

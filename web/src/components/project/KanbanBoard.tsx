@@ -31,6 +31,11 @@ export function KanbanBoard({
     const key = COLUMNS.find((c) => c.status === t.status)?.status ?? "open";
     byStatus[key]!.push(t);
   }
+  // Done reads as a recency log, newest completion first.
+  byStatus.done!.sort(
+    (a, b) =>
+      +new Date(b.completedAt ?? b.updatedAt) - +new Date(a.completedAt ?? a.updatedAt)
+  );
 
   function handleDrop(toStatus: string, taskId: string) {
     update.mutate({ id: taskId, fields: { status: toStatus } });
@@ -48,6 +53,7 @@ export function KanbanBoard({
             project={project}
             onDropTask={(id) => handleDrop(col.status, id)}
             onAdd={() => open({ kind: "quick-create", projectId: project.id })}
+            initialLimit={col.status === "done" ? 8 : undefined}
           />
         ))}
       </div>
@@ -61,7 +67,8 @@ function KanbanColumn({
   tasks,
   project,
   onDropTask,
-  onAdd
+  onAdd,
+  initialLimit
 }: {
   label: string;
   intent: string;
@@ -69,8 +76,12 @@ function KanbanColumn({
   project: Project;
   onDropTask: (id: string) => void;
   onAdd: () => void;
+  initialLimit?: number;
 }) {
   const [over, setOver] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const limited = initialLimit != null && !showAll ? tasks.slice(0, initialLimit) : tasks;
+  const hiddenCount = tasks.length - limited.length;
   return (
     <div
       className={`w-72 shrink-0 flex flex-col rounded-md border ${
@@ -105,7 +116,27 @@ function KanbanColumn({
         {tasks.length === 0 ? (
           <div className="text-xxs text-faint text-center py-4">No tasks</div>
         ) : (
-          tasks.map((t) => <KanbanCard key={t.id} task={t} project={project} />)
+          <>
+            {limited.map((t) => (
+              <KanbanCard key={t.id} task={t} project={project} />
+            ))}
+            {hiddenCount > 0 && (
+              <button
+                className="w-full text-xxs text-muted hover:text-ink py-1.5"
+                onClick={() => setShowAll(true)}
+              >
+                Show all {tasks.length}
+              </button>
+            )}
+            {showAll && initialLimit != null && tasks.length > initialLimit && (
+              <button
+                className="w-full text-xxs text-muted hover:text-ink py-1.5"
+                onClick={() => setShowAll(false)}
+              >
+                Show latest {initialLimit}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -133,10 +164,10 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
         <StatusPickerButton task={task} size={13} className="mt-0.5" />
         <span
           className={`flex-1 min-w-0 text-sm leading-snug ${
-            task.status === "done"
-              ? "text-muted line-through"
-              : task.status === "rejected"
-                ? "text-muted"
+            // No strikethrough here: the Done column already says it, and a
+            // whole column of struck text is unreadable.
+            task.status === "done" || task.status === "rejected"
+              ? "text-muted"
               : isUntitled(task)
                 ? "italic text-muted"
                 : "text-ink"

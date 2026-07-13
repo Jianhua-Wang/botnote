@@ -1,7 +1,8 @@
 import { format } from "date-fns";
-import { useDeleteEntity, useUpdateEntity } from "../../api/hooks";
+import { useUpdateEntity } from "../../api/hooks";
 import type { Entity, Priority, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
+import { useUndoableDelete } from "../../hooks/useUndoableDelete";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { PriorityIcon, PRIORITY_LABEL, RecurrenceIcon } from "./icons";
 import { PopoverMenu } from "./PopoverMenu";
@@ -23,7 +24,7 @@ export function TaskRow({
 }) {
   const drawer = useDrawer();
   const update = useUpdateEntity();
-  const del = useDeleteEntity();
+  const deleteWithUndo = useUndoableDelete();
 
   const idLabel = project && task.sequenceId ? `${project.key}-${task.sequenceId}` : null;
   const overdue = isTaskOverdue(task);
@@ -120,9 +121,7 @@ export function TaskRow({
         className="shrink-0 p-1 -m-1 rounded text-faint opacity-0 group-hover:opacity-100 hover:bg-danger/10 hover:text-danger transition-opacity"
         onClick={(e) => {
           e.stopPropagation();
-          if (confirm(`Delete task "${displayTitle(task)}"?`)) {
-            del.mutate(task.id);
-          }
+          deleteWithUndo(task);
         }}
         title="Delete"
       >

@@ -67,21 +67,30 @@ export function ProjectsSidebar() {
   return (
     <aside className="w-52 shrink-0 border-r border-line bg-sidebar flex flex-col scrollbar-thin overflow-y-auto text-sm">
       <nav className="px-1.5 pt-2 space-y-px">
-        <SidebarLink to="/" end icon={<Calendar size={12} className="opacity-70" />} label="Tasks" />
+        <SidebarLink
+          to="/"
+          end
+          icon={<Calendar size={12} className="opacity-70" />}
+          label="Tasks"
+          shortcut="g d"
+        />
         <SidebarLink
           to="/today"
           icon={<Sunrise size={12} className="opacity-70" />}
           label="Today"
+          shortcut="g t"
         />
         <SidebarLink
           to="/inbox"
           icon={<Inbox size={12} className="opacity-70" />}
           label="Inbox"
+          shortcut="g i"
         />
         <SidebarLink
           to="/dashboard"
           icon={<LayoutDashboard size={12} className="opacity-70" />}
           label="Workspace"
+          shortcut="g w"
         />
       </nav>
 
@@ -207,25 +216,33 @@ function SidebarLink({
   to,
   end,
   icon,
-  label
+  label,
+  shortcut
 }: {
   to: string;
   end?: boolean;
   icon: React.ReactNode;
   label: string;
+  shortcut?: string;
 }) {
   return (
     <NavLink
       to={to}
       end={end}
       className={({ isActive }) =>
-        `flex items-center gap-2 px-2 py-1 rounded text-xs ${
+        `group flex items-center gap-2 px-2 py-1 rounded text-xs ${
           isActive ? "bg-accentSoft text-accentText" : "text-ink2 hover:bg-sidebarHover"
         }`
       }
+      title={shortcut ? `${label} (${shortcut})` : label}
     >
       {icon}
       <span>{label}</span>
+      {shortcut && (
+        <kbd className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+          {shortcut}
+        </kbd>
+      )}
     </NavLink>
   );
 }

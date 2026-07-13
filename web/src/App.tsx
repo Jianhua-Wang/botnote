@@ -12,10 +12,12 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { TasksPage } from "./pages/TasksPage";
 import { TodayPage } from "./pages/TodayPage";
 import { ModalsProvider } from "./state/modals";
+import { ToastsProvider } from "./state/toasts";
 
 export default function App() {
   return (
-    <ModalsProvider>
+    <ToastsProvider>
+      <ModalsProvider>
       <Routes>
         {/* Login lives outside AppShell so the sidebar/topbar don't render
             while unauthenticated. */}
@@ -32,7 +34,8 @@ export default function App() {
           <Route path="/search" element={<SearchPage />} />
         </Route>
       </Routes>
-      <ModalRoot />
-    </ModalsProvider>
+        <ModalRoot />
+      </ModalsProvider>
+    </ToastsProvider>
   );
 }

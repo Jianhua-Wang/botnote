@@ -28,6 +28,40 @@ export function GhostChip({ virtual: v, project }: { virtual: VirtualOccurrence;
   );
 }
 
+/**
+ * Renders a day's ghost occurrences: a single ghost keeps its own chip, but
+ * several on the same day collapse into one "+N recurring" chip so recurring
+ * series don't drown out the real tasks.
+ */
+export function GhostChips({
+  virtuals,
+  projectMap
+}: {
+  virtuals: VirtualOccurrence[];
+  projectMap: Map<string, Project>;
+}) {
+  if (virtuals.length === 0) return null;
+  if (virtuals.length === 1) {
+    const v = virtuals[0]!;
+    return <GhostChip virtual={v} project={v.projectId ? projectMap.get(v.projectId) : undefined} />;
+  }
+  const titles = virtuals
+    .map((v) => (v.title && v.title.trim() ? v.title : "Untitled"))
+    .join("\n");
+  return (
+    <div
+      title={titles}
+      aria-label={`${virtuals.length} upcoming recurring tasks: ${titles}`}
+      className="w-full flex items-center gap-1.5 pl-1 pr-1.5 py-1 rounded text-xs opacity-40 border border-dashed border-current"
+    >
+      <RecurrenceIcon size={11} className="text-faint shrink-0" />
+      <span className="truncate flex-1 min-w-0 text-ink2 italic">
+        +{virtuals.length} recurring
+      </span>
+    </div>
+  );
+}
+
 export function TaskChip({ task, project }: { task: Entity; project?: Project }) {
   const drawer = useDrawer();
   const overdue = isTaskOverdue(task);

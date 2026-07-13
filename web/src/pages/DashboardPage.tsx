@@ -1,13 +1,14 @@
 import { Activity, Check, ChevronDown, ChevronRight, FolderKanban, Megaphone, X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useFeedback, useProjects, useRecent, useUpdateEntity } from "../api/hooks";
+import { useFeedback, useProjects, useRecent, useTasksRange, useUpdateEntity } from "../api/hooks";
 import type { FeedbackCategory, FeedbackStatus, Project, ProjectStatus } from "../api/types";
 import { FEEDBACK_CATEGORIES } from "../api/types";
 import { KindBadge } from "../components/KindBadge";
 import { ProjectIcon } from "../components/ProjectIcon";
 import { useDrawer } from "../hooks/useDrawer";
 import { usePersistedState } from "../hooks/usePersistedState";
+import { isTaskOverdue } from "../components/tasks/utils";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
 import { PROJECT_STATUS_GROUPS, PROJECT_STATUS_LABEL } from "../lib/projectStatus";
 
@@ -18,7 +19,22 @@ const DEFAULT_COLLAPSED_GROUPS: Partial<Record<ProjectStatus, boolean>> = {
 export function DashboardPage() {
   const { data: projects } = useProjects({ includeArchived: true });
   const { data: recent } = useRecent({ limit: 20 });
+  // One workspace-wide query feeds every card's open/overdue counts.
+  const { data: openTasks } = useTasksRange({ includeBacklog: true, includeDone: false });
   const drawer = useDrawer();
+
+  const counts = new Map<string, { open: number; overdue: number }>();
+  if (openTasks) {
+    const now = new Date();
+    const all = [...openTasks.scheduled, ...openTasks.overdue, ...openTasks.backlog];
+    for (const t of all) {
+      if (!t.projectId || t.status === "rejected") continue;
+      const c = counts.get(t.projectId) ?? { open: 0, overdue: 0 };
+      c.open += 1;
+      if (isTaskOverdue(t, now)) c.overdue += 1;
+      counts.set(t.projectId, c);
+    }
+  }
   const [collapsedGroups, setCollapsedGroups] = usePersistedState<
     Partial<Record<ProjectStatus, boolean>>
   >("botnote.workspace.projectGroups.collapsed", DEFAULT_COLLAPSED_GROUPS);
@@ -60,6 +76,7 @@ export function DashboardPage() {
                 key={group.status}
                 status={group.status}
                 projects={group.projects}
+                counts={counts}
                 collapsed={groupCollapsed(group.status)}
                 onToggle={() => toggleGroup(group.status)}
               />
@@ -241,11 +258,13 @@ function FeedbackSection() {
 function ProjectGroup({
   status,
   projects,
+  counts,
   collapsed,
   onToggle
 }: {
   status: ProjectStatus;
   projects: Project[];
+  counts: Map<string, { open: number; overdue: number }>;
   collapsed: boolean;
   onToggle: () => void;
 }) {
@@ -265,7 +284,7 @@ function ProjectGroup({
       {!collapsed && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
           {projects.map((p) => (
-            <ProjectCard key={p.id} project={p} />
+            <ProjectCard key={p.id} project={p} counts={counts.get(p.id)} />
           ))}
         </div>
       )}
@@ -273,7 +292,13 @@ function ProjectGroup({
   );
 }
 
-function ProjectCard({ project }: { project: Project }) {
+function ProjectCard({
+  project,
+  counts
+}: {
+  project: Project;
+  counts?: { open: number; overdue: number };
+}) {
   return (
     <Link
       to={`/p/${project.key}`}
@@ -289,15 +314,17 @@ function ProjectCard({ project }: { project: Project }) {
           </span>
         </div>
         <span className="text-xxs text-faint shrink-0">
-          {new Date(project.updatedAt).toLocaleDateString()}
+          Updated {new Date(project.updatedAt).toLocaleDateString()}
         </span>
       </div>
       <div className="text-sm font-medium text-ink mt-1 truncate">{project.name}</div>
-      {project.agentsMd && (
-        <div className="text-xxs text-muted mt-1 truncate">
-          AGENTS.md · {project.agentsMd.length} chars
-        </div>
-      )}
+      <div className="text-xxs text-muted mt-1 flex items-center gap-2">
+        <span>{counts?.open ?? 0} open</span>
+        {counts && counts.overdue > 0 && (
+          <span className="text-danger font-medium">{counts.overdue} overdue</span>
+        )}
+        {project.agentsMd && <span className="text-faint">· AGENTS.md</span>}
+      </div>
     </Link>
   );
 }

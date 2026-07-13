@@ -18,7 +18,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   useConfigureRecurrence,
-  useDeleteEntity,
   useEntity,
   useProjects,
   useRecurrence,
@@ -40,6 +39,7 @@ import {
   type RecurrenceWeekday
 } from "../api/types";
 import { useDrawer } from "../hooks/useDrawer";
+import { useUndoableDelete } from "../hooks/useUndoableDelete";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
 import { useModals } from "../state/modals";
 import { parseRRule, RECURRENCE_PRESETS, RECURRENCE_WEEKDAYS } from "../lib/rrule";
@@ -114,7 +114,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: parentEntity } = useEntity(entity?.parentId ?? undefined);
   const { data: recurrence } = useRecurrence(entity?.kind === "task" ? id : undefined);
   const update = useUpdateEntity();
-  const del = useDeleteEntity();
+  const deleteWithUndo = useUndoableDelete();
   const configureRecurrence = useConfigureRecurrence();
   const skipOccurrence = useSkipOccurrence();
   const stopRecurrence = useStopRecurrence();
@@ -247,8 +247,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   }
 
   async function remove() {
-    if (!confirm(`Delete "${displayTitle(entity!)}"? This cannot be undone.`)) return;
-    await del.mutateAsync(entity!.id);
+    deleteWithUndo(entity!);
     onClose();
   }
 

@@ -1,7 +1,7 @@
 import { format, isToday } from "date-fns";
-import { Sunrise } from "lucide-react";
-import { useMemo } from "react";
-import { useProjects, useTasksRange } from "../api/hooks";
+import { Plus, Sunrise } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useProjects, useTasksRange, useWriteEntity } from "../api/hooks";
 import type { Entity, Project } from "../api/types";
 import { ProjectIcon } from "../components/ProjectIcon";
 import { TaskRow } from "../components/tasks/TaskRow";
@@ -67,9 +67,48 @@ export function TodayPage() {
                 </button>
               }
             />
+            <QuickAdd />
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Inline quick-add: type a title, hit Enter, and the task lands on today's
+ * list (due at local noon, matching calendar drag-drop). Stays on the page —
+ * no modal round-trip for the common "one more thing today" capture.
+ */
+function QuickAdd() {
+  const [title, setTitle] = useState("");
+  const write = useWriteEntity();
+
+  function submit() {
+    const trimmed = title.trim();
+    if (!trimmed || write.isPending) return;
+    const due = new Date();
+    due.setHours(12, 0, 0, 0);
+    write.mutate(
+      { kind: "task", title: trimmed, dueAt: due.toISOString() },
+      { onSuccess: () => setTitle("") }
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 border border-dashed border-line rounded-md px-3 py-1.5 focus-within:border-accent transition-colors">
+      <Plus size={12} className="text-faint shrink-0" />
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+        }}
+        placeholder="Add a task for today…"
+        className="flex-1 bg-transparent text-xs outline-none placeholder:text-faint"
+        disabled={write.isPending}
+      />
+      {write.isPending && <span className="text-xxs text-faint">Adding…</span>}
     </div>
   );
 }
