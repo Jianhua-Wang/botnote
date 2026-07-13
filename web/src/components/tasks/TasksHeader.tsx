@@ -32,8 +32,8 @@ export function TasksHeader({
     <div className="border-b border-line bg-surface">
       <div className="flex items-center justify-between h-11 px-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-xs font-semibold text-ink">Tasks</h1>
-          <div className="seg">
+          <h1 className="text-xs font-semibold text-ink hidden sm:block">Tasks</h1>
+          <div className="seg hidden md:flex">
             {(["day", "week", "month"] as const).map((v) => (
               <button
                 key={v}
@@ -87,8 +87,8 @@ export function TasksHeader({
             title="New task (c)"
           >
             <Plus size={11} />
-            <span className="text-xs">Task</span>
-            <kbd className="!bg-white/15 !border-white/25 !text-white">c</kbd>
+            <span className="text-xs hidden sm:inline">Task</span>
+            <kbd className="!bg-white/15 !border-white/25 !text-white hidden md:inline-block">c</kbd>
           </button>
         </div>
       </div>
