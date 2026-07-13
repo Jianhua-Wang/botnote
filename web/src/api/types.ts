@@ -301,6 +301,14 @@ export interface RecentInput {
   limit?: number;
 }
 
+export type FeedbackStatus = "open" | "in_progress" | "done" | "rejected";
+
+export interface ListFeedbackInput {
+  category?: FeedbackCategory | null;
+  status?: FeedbackStatus | null;
+  limit?: number;
+}
+
 export interface SearchInput {
   query: string;
   projectId?: string | null;

@@ -1,7 +1,9 @@
-import { Activity, ChevronDown, ChevronRight, FolderKanban } from "lucide-react";
+import { Activity, Check, ChevronDown, ChevronRight, FolderKanban, Megaphone, X } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useProjects, useRecent } from "../api/hooks";
-import type { Project, ProjectStatus } from "../api/types";
+import { useFeedback, useProjects, useRecent, useUpdateEntity } from "../api/hooks";
+import type { FeedbackCategory, FeedbackStatus, Project, ProjectStatus } from "../api/types";
+import { FEEDBACK_CATEGORIES } from "../api/types";
 import { KindBadge } from "../components/KindBadge";
 import { ProjectIcon } from "../components/ProjectIcon";
 import { useDrawer } from "../hooks/useDrawer";
@@ -65,6 +67,8 @@ export function DashboardPage() {
           )}
         </section>
 
+        <FeedbackSection />
+
         <section>
           <div className="flex items-center gap-2 mb-3 text-muted">
             <Activity size={14} />
@@ -105,6 +109,132 @@ export function DashboardPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+const CATEGORY_STYLE: Record<FeedbackCategory, string> = {
+  bug: "text-red-700 bg-red-50 border-red-100",
+  feature: "text-blue-700 bg-blue-50 border-blue-100",
+  friction: "text-amber-700 bg-amber-50 border-amber-100",
+  idea: "text-purple-700 bg-purple-50 border-purple-100"
+};
+
+const FEEDBACK_STATUSES: { value: FeedbackStatus; label: string }[] = [
+  { value: "open", label: "Open" },
+  { value: "in_progress", label: "In progress" },
+  { value: "done", label: "Done" },
+  { value: "rejected", label: "Rejected" }
+];
+
+function FeedbackSection() {
+  const [category, setCategory] = useState<FeedbackCategory | null>(null);
+  const [status, setStatus] = useState<FeedbackStatus>("open");
+  const { data: feedback } = useFeedback({ category, status, limit: 50 });
+  const update = useUpdateEntity();
+  const drawer = useDrawer();
+
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-3 text-muted">
+        <Megaphone size={14} />
+        <h2 className="text-xs uppercase tracking-wider font-medium">Product feedback</h2>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 mb-2">
+        <div className="seg">
+          {FEEDBACK_STATUSES.map((s) => (
+            <button
+              key={s.value}
+              onClick={() => setStatus(s.value)}
+              data-active={status === s.value}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <div className="w-px h-4 bg-line mx-1" />
+        <button
+          className={`h-6 px-2.5 text-xxs rounded-full border transition-colors ${
+            !category
+              ? "bg-accentSoft text-accentText border-accent/30"
+              : "bg-surface text-muted border-line hover:text-ink"
+          }`}
+          onClick={() => setCategory(null)}
+        >
+          All
+        </button>
+        {FEEDBACK_CATEGORIES.map((c) => (
+          <button
+            key={c}
+            className={`h-6 px-2.5 text-xxs rounded-full border capitalize transition-colors ${
+              category === c ? CATEGORY_STYLE[c] : "bg-surface text-muted border-line hover:text-ink"
+            }`}
+            onClick={() => setCategory(category === c ? null : c)}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
+      {feedback && feedback.length === 0 ? (
+        <div className="border border-dashed border-line rounded-md p-4 text-center text-xs text-muted">
+          No {status.replace("_", " ")} feedback{category ? ` in “${category}”` : ""}.
+        </div>
+      ) : (
+        <div className="bg-surface border border-line rounded-md divide-y divide-line/60">
+          {feedback?.map((f) => {
+            const cat = (f.metadata.category as FeedbackCategory | undefined) ?? "idea";
+            const tool = f.metadata.tool as string | undefined;
+            const resolvable = f.status === "open" || f.status === "in_progress";
+            return (
+              <div
+                key={f.id}
+                className="flex items-start gap-3 px-3 py-2 row-hover cursor-pointer group"
+                onClick={() => drawer.open(f.id)}
+              >
+                <span
+                  className={`inline-flex items-center px-1.5 h-5 mt-0.5 text-xxs rounded border capitalize shrink-0 ${CATEGORY_STYLE[cat]}`}
+                >
+                  {cat}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div
+                    className={`text-sm truncate ${isUntitled(f) ? "text-muted italic" : "text-ink"}`}
+                  >
+                    {displayTitle(f)}
+                  </div>
+                  <div className="text-xxs text-muted mt-0.5">
+                    {tool && <span className="font-mono">{tool} · </span>}
+                    {f.actorKind} · {timeAgo(f.createdAt)}
+                  </div>
+                </div>
+                {resolvable && (
+                  <div
+                    className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      className="btn btn-ghost !h-6 !px-2 text-xxs gap-1"
+                      title="Mark done"
+                      onClick={() => update.mutate({ id: f.id, fields: { status: "done" } })}
+                    >
+                      <Check size={11} /> Done
+                    </button>
+                    <button
+                      className="btn btn-ghost !h-6 !px-2 text-xxs gap-1 hover:!text-red-600"
+                      title="Reject"
+                      onClick={() => update.mutate({ id: f.id, fields: { status: "rejected" } })}
+                    >
+                      <X size={11} /> Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 

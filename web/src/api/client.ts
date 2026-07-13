@@ -4,6 +4,7 @@ import type {
   CreateTaskInput,
   CreatedToken,
   Entity,
+  ListFeedbackInput,
   OpeningBriefResponse,
   Project,
   RecentInput,
@@ -139,6 +140,15 @@ export const api = {
 
   search: (input: SearchInput) =>
     request<SearchResponse>("/v1/search", { method: "POST", body: JSON.stringify(input) }),
+
+  listFeedback: (input: ListFeedbackInput = {}) => {
+    const params = new URLSearchParams();
+    if (input.category) params.set("category", input.category);
+    if (input.status) params.set("status", input.status);
+    if (input.limit) params.set("limit", String(input.limit));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return request<Entity[]>(`/v1/feedback${suffix}`);
+  },
 
   getEmbeddingSettings: () =>
     request<EmbeddingSettings>("/v1/settings/embedding"),

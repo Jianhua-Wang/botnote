@@ -3,6 +3,7 @@ import { api } from "./client";
 import type {
   CreateProjectInput,
   EntityKind,
+  ListFeedbackInput,
   RecentInput,
   RecurrenceInput,
   SearchInput,
@@ -106,6 +107,14 @@ export function useSearch(input: SearchInput | null) {
     queryKey: ["search", input],
     queryFn: () => api.search(input!),
     enabled: Boolean(input && input.query.length > 0)
+  });
+}
+
+export function useFeedback(input: ListFeedbackInput = {}, opts: { poll?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["feedback", input],
+    queryFn: () => api.listFeedback(input),
+    refetchInterval: opts.poll === false ? false : POLL_INTERVAL
   });
 }
 
@@ -283,6 +292,7 @@ export function useUpdateEntity() {
       qc.invalidateQueries({ queryKey: ["opening-brief", entity.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["tasks-range"] });
       qc.invalidateQueries({ queryKey: ["related"] });
+      if (entity.kind === "feedback") qc.invalidateQueries({ queryKey: ["feedback"] });
     }
   });
 }
