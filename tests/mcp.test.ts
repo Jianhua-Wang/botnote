@@ -183,6 +183,28 @@ describe("botnote MCP", () => {
     expect(updateByPrefixText).toContain("Adopt MCP annotations with short ids");
   });
 
+  it("unexpected tool errors nudge toward submit_feedback, client errors do not", async () => {
+    // update on a nonexistent UUID surfaces as an unexpected (5xx) error.
+    const unexpectedResp = await client.callTool({
+      name: "update_entity",
+      arguments: { id: "00000000-0000-0000-0000-000000000000", title: "x" }
+    });
+    const unexpectedText =
+      (unexpectedResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(unexpectedResp.isError).toBe(true);
+    expect(unexpectedText).toContain("submit_feedback");
+
+    // A malformed KEY-SEQ lookup is the caller's mistake (404) — no nudge.
+    const clientErrResp = await client.callTool({
+      name: "get_entity_by_key",
+      arguments: { projectKey: "NOPE", sequenceId: 999 }
+    });
+    const clientErrText =
+      (clientErrResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(clientErrResp.isError).toBe(true);
+    expect(clientErrText).not.toContain("submit_feedback");
+  });
+
   it("submit_feedback files and list_feedback filters product feedback", async () => {
     const submitResp = await client.callTool({
       name: "submit_feedback",

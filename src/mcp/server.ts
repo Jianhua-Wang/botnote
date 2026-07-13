@@ -95,9 +95,18 @@ function summarizeEntity(e: EntityDTO, projectKey: string | null): string {
  * Format a caught error from a write-tool handler into a structured isError
  * response. For BotnoteHttpError produces a human-readable hint keyed to the
  * status code; for everything else falls back to the error message.
+ *
+ * Unexpected failures (5xx / non-HTTP errors) additionally nudge the agent to
+ * file the problem with submit_feedback: the error text is the one message an
+ * agent is guaranteed to read at the exact moment botnote friction occurs.
+ * Client errors (400/404/422) are the caller's mistake and get no nudge.
  */
+const FEEDBACK_NUDGE =
+  "\n\nIf this looks like a botnote bug rather than a mistake in your request, file it with submit_feedback (category 'bug', include the tool name and this error text).";
+
 function formatToolError(err: unknown): { isError: true; content: Array<{ type: "text"; text: string }> } {
   let text: string;
+  let unexpected = false;
   if (err instanceof BotnoteHttpError) {
     const body = err.body?.trim() || err.statusText;
     if (err.status === 404) {
@@ -106,11 +115,14 @@ function formatToolError(err: unknown): { isError: true; content: Array<{ type: 
       text = `invalid request: ${body}`;
     } else {
       text = `HTTP ${err.status} ${err.statusText}: ${body}`;
+      unexpected = err.status >= 500;
     }
   } else {
     const e = err as Error | undefined;
     text = String(e?.message ?? err);
+    unexpected = true;
   }
+  if (unexpected) text += FEEDBACK_NUDGE;
   return { isError: true, content: [{ type: "text", text }] };
 }
 
