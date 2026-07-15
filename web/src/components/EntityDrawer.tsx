@@ -107,6 +107,14 @@ export function EntityDrawer() {
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
+// ISO timestamp → value for an <input type="datetime-local"> in the user's timezone.
+function toDatetimeLocalValue(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: entity, isLoading } = useEntity(id);
   const { data: projects } = useProjects();
@@ -127,11 +135,16 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   const [tagsStr, setTagsStr] = useState("");
   const [status, setStatus] = useState("open");
   const [dueDate, setDueDate] = useState("");
+  const [completedAtStr, setCompletedAtStr] = useState("");
   const [priority, setPriority] = useState<Priority>("none");
   const [isEditing, setIsEditing] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [occurrenceScope, setOccurrenceScope] = useState<"this" | "future">("future");
   const initializedFor = useRef<string | null>(null);
+  // Only send completedAt when the user touched the field — the server
+  // auto-stamps it on status transitions, and echoing a stale draft back
+  // would clear that stamp.
+  const completedAtDirty = useRef(false);
 
   // Hydrate local draft when the entity ID changes. Don't reset on object identity
   // change to avoid clobbering user input while a save is in flight.
@@ -143,11 +156,20 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     setTagsStr(entity.tags.join(", "));
     setStatus(entity.status);
     setDueDate(entity.dueAt ? entity.dueAt.slice(0, 10) : "");
+    setCompletedAtStr(toDatetimeLocalValue(entity.completedAt));
+    completedAtDirty.current = false;
     setPriority(entity.priority);
     setIsEditing(false);
     setSaveState("idle");
     initializedFor.current = entity.id;
   }, [entity?.id, entity]);
+
+  // Keep the draft in sync when the server stamps completedAt (e.g. marking
+  // done auto-fills it) and the user hasn't edited the field themselves.
+  useEffect(() => {
+    if (!entity || completedAtDirty.current) return;
+    setCompletedAtStr(toDatetimeLocalValue(entity.completedAt));
+  }, [entity, entity?.completedAt]);
 
   // Compute the diff between local draft and persisted entity.
   const diff = useMemo(() => {
@@ -172,8 +194,15 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     if (dueDate !== currentDueDate) {
       out.dueAt = dueDate ? new Date(dueDate).toISOString() : null;
     }
+    // The server only accepts completedAt on a done task.
+    if (entity.kind === "task" && status === "done" && completedAtDirty.current) {
+      const currentCompleted = toDatetimeLocalValue(entity.completedAt);
+      if (completedAtStr !== currentCompleted) {
+        out.completedAt = completedAtStr ? new Date(completedAtStr).toISOString() : null;
+      }
+    }
     return out;
-  }, [isEditing, entity, title, body, tagsStr, status, priority, dueDate]);
+  }, [isEditing, entity, title, body, tagsStr, status, priority, dueDate, completedAtStr]);
 
   // Whether the entity is a recurring occurrence
   const isRecurringOccurrence =
@@ -387,6 +416,11 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
             tagsStr={tagsStr}
             setTagsStr={setTagsStr}
             completedAt={entity.completedAt}
+            completedAtStr={completedAtStr}
+            setCompletedAtStr={(v) => {
+              completedAtDirty.current = true;
+              setCompletedAtStr(v);
+            }}
             createdAt={entity.createdAt}
             actorKind={entity.actorKind}
             task={loadedEntity.kind === "task" ? { ...loadedEntity, status } : undefined}
@@ -787,6 +821,8 @@ function MetaRow({
   tagsStr,
   setTagsStr,
   completedAt,
+  completedAtStr,
+  setCompletedAtStr,
   createdAt,
   actorKind,
   task,
@@ -812,6 +848,8 @@ function MetaRow({
   tagsStr: string;
   setTagsStr: (s: string) => void;
   completedAt: string | null;
+  completedAtStr: string;
+  setCompletedAtStr: (v: string) => void;
   createdAt: string;
   actorKind: string;
   task?: Entity;
@@ -941,9 +979,30 @@ function MetaRow({
           {status === "done" && (
             <>
               <span className="text-faint">Completed</span>
-              <span className="text-muted">
-                {completedAt ? new Date(completedAt).toLocaleString() : "Not recorded"}
-              </span>
+              {isEditing ? (
+                <span className="flex items-center gap-1.5">
+                  <input
+                    type="datetime-local"
+                    className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                    value={completedAtStr}
+                    onChange={(e) => setCompletedAtStr(e.target.value)}
+                  />
+                  {!completedAtStr && <span className="text-faint text-xxs">auto</span>}
+                  {completedAtStr && (
+                    <button
+                      className="text-faint hover:text-danger text-xxs"
+                      onClick={() => setCompletedAtStr("")}
+                      title="Clear"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </span>
+              ) : (
+                <span className="text-muted">
+                  {completedAt ? new Date(completedAt).toLocaleString() : "Not recorded"}
+                </span>
+              )}
             </>
           )}
         </>

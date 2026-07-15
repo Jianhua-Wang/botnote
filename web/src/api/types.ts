@@ -260,6 +260,7 @@ export interface UpdateEntityInput {
   dueAt?: string | null;
   priority?: Priority;
   pinned?: boolean;
+  completedAt?: string | null;
   recurrenceScope?: "this" | "future";
 }
 

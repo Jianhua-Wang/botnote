@@ -569,6 +569,13 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
         dueAt: z.string().datetime().optional().describe("ISO datetime."),
         priority: z.enum(PRIORITIES).default("none"),
+        completedAt: z
+          .string()
+          .datetime()
+          .optional()
+          .describe(
+            "Only with status 'done': when the work was actually finished (ISO datetime). Use to backdate completions, e.g. the user says they finished it yesterday. Defaults to now."
+          ),
         idempotencyKey: z.string().min(1).max(200).optional()
       }
     },
@@ -587,6 +594,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           actorKind: input.actorKind,
           dueAt: input.dueAt ?? null,
           priority: input.priority,
+          completedAt: input.completedAt ?? null,
           idempotencyKey: input.idempotencyKey
         });
         return { content: [{ type: "text", text: `created task ${await summarize(entity)}\nid: ${entity.id}` }] };
@@ -688,7 +696,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "- move between projects: pass `projectId` (or `null` to move to workspace scope).\n" +
         "- re-parent: pass `parentId` (or `null` to detach).\n" +
         "- pin/unpin: `pinned: true/false`. Pinned notes drive opening_brief — use sparingly.\n" +
-        "- title=null clears the title (notes only).",
+        "- title=null clears the title (notes only).\n" +
+        "- fix completion time: `completedAt` overrides the automatic stamp on a done task (e.g. the user actually finished it yesterday). Combine with `status='done'` in the same call to complete-and-backdate at once.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -722,6 +731,14 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear."),
         priority: z.enum(PRIORITIES).optional(),
         pinned: z.boolean().optional().describe("Pin or unpin from project opening brief."),
+        completedAt: z
+          .string()
+          .datetime()
+          .nullable()
+          .optional()
+          .describe(
+            "Override the completion timestamp of a done task (ISO datetime), e.g. to backdate when the work actually finished; null clears it. Only valid when the task is done (or becomes done in this call)."
+          ),
         recurrenceScope: z
           .enum(["this", "future"])
           .optional()
@@ -1319,6 +1336,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear."),
     priority: z.enum(PRIORITIES).optional(),
     pinned: z.boolean().optional(),
+    completedAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .optional()
+      .describe("Override the completion timestamp of a done task; null clears it."),
     recurrenceScope: z.enum(["this", "future"]).optional()
   });
 

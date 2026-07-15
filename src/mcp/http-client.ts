@@ -326,6 +326,7 @@ export interface CreateTaskBody {
   actorKind?: string;
   dueAt?: string | null;
   priority?: string;
+  completedAt?: string | null;
   idempotencyKey?: string;
 }
 
@@ -370,6 +371,7 @@ export interface UpdateEntityBody {
   dueAt?: string | null;
   priority?: string;
   pinned?: boolean;
+  completedAt?: string | null;
   recurrenceScope?: "this" | "future";
 }
 

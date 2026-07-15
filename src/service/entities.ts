@@ -72,6 +72,9 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
   }
 
   const status = normalizeStatus(input.status);
+  if (input.completedAt != null && !(input.kind === "task" && status === "done")) {
+    throw clientError("completedAt is only valid on a task created with status 'done'", 400);
+  }
   const [row] = await db
     .insert(entities)
     .values({
@@ -89,7 +92,8 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
       pinned: input.pinned,
       // Mirror the PATCH path: a task created already-done gets a
       // completedAt stamp so the calendar renders it on the right day.
-      completedAt: status === "done" ? new Date() : null,
+      // An explicit completedAt (backdated completion) wins over the stamp.
+      completedAt: input.completedAt ?? (status === "done" ? new Date() : null),
       idempotencyKey: input.idempotencyKey ?? null
     })
     .returning();
@@ -216,6 +220,18 @@ export async function update(
       enteredDone = isDone && !wasDone;
       if (isDone && !wasDone) set.completedAt = new Date();
       else if (!isDone && wasDone) set.completedAt = null;
+    }
+    // An explicit completedAt always wins over the automatic stamp, but only
+    // makes sense on a task that is (or is becoming) done. null clears it.
+    if (fields.completedAt !== undefined) {
+      if (prior[0].kind !== "task") {
+        throw clientError("completedAt applies to tasks only", 400);
+      }
+      const statusAfter = normalizedFields.status ?? prior[0].status;
+      if (fields.completedAt !== null && statusAfter !== "done") {
+        throw clientError("completedAt can only be set on a done task", 400);
+      }
+      set.completedAt = fields.completedAt;
     }
     if (needsSnapshot) {
       preEditSnapshot = {

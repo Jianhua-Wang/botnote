@@ -16,10 +16,12 @@ When the user signals something is finished:
    - Ask before writing: `I do not see a matching task. Should I create a completed task for "<short title>"?`
    - Infer `projectId` from the active project/context when obvious; otherwise ask for the project.
    - Use `mcp__botnote__create_task` with `status: "done"` when the user confirms.
+   - If the user indicates when the work was actually finished (e.g. "did this yesterday"), pass `completedAt` with that datetime so the calendar shows it on the right day.
    - Use an executable, specific title inferred from the completed work.
    - Do not create a task silently.
 
 3. Mark an existing task done. Call `mcp__botnote__update_entity` with the task's `id` and `status: "done"`.
+   - If the user indicates the work was finished earlier (e.g. "actually finished it last Friday"), also pass `completedAt` with that datetime to backdate the completion. `completedAt` can likewise fix the timestamp on an already-done task.
    - If the task is recurring, completing it may generate the next occurrence. When recurrence matters to the user's next step, call `mcp__botnote__get_recurrence` after completion and mention the next due date if one exists.
 
 4. Write a closing worklog entry with `mcp__botnote__add_comment` on the task:

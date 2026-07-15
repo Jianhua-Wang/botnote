@@ -45,6 +45,8 @@ export const WriteInput = z.object({
   dueAt: z.coerce.date().nullish(),
   priority: PriorityEnum.default("none"),
   pinned: z.boolean().default(false),
+  /** Explicit completion timestamp; only valid on a task written with status 'done'. */
+  completedAt: z.coerce.date().nullish(),
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type WriteInput = z.infer<typeof WriteInput>;
@@ -62,6 +64,8 @@ export const CreateTaskInput = z.object({
   metadata: z.record(z.unknown()).default({}),
   dueAt: z.coerce.date().nullish(),
   priority: PriorityEnum.default("none"),
+  /** Backdated completion timestamp; only valid together with status 'done'. */
+  completedAt: z.coerce.date().nullish(),
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type CreateTaskInput = z.infer<typeof CreateTaskInput>;
@@ -138,6 +142,8 @@ export const UpdateInput = z
     dueAt: z.coerce.date().nullable().optional(),
     priority: PriorityEnum.optional(),
     pinned: z.boolean().optional(),
+    /** Override the completion timestamp of a done task; null clears it. */
+    completedAt: z.coerce.date().nullable().optional(),
     recurrenceScope: z.enum(["this", "future"]).optional()
   })
   .refine((v) => !(v.body !== undefined && v.bodyAppend !== undefined), {

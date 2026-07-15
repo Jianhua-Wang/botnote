@@ -293,6 +293,76 @@ describe("botnote service", () => {
     expect(archived.completedAt).not.toBeNull();
   });
 
+  it("allows explicit completedAt on done tasks and rejects it elsewhere", async () => {
+    const p = await createProject(db, { key: "CMPL", name: "Completion stamps" });
+    const backdated = new Date("2026-07-01T09:00:00.000Z");
+
+    // Create already-done with a backdated completion.
+    const created = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Backdated at creation",
+      body: "",
+      tags: [],
+      status: "done",
+      actorKind: "human",
+      metadata: {},
+      completedAt: backdated
+    });
+    expect(created.completedAt?.toISOString()).toBe(backdated.toISOString());
+
+    // Complete-and-backdate in one update: explicit value beats the auto stamp.
+    const open = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Complete and backdate",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const doneAt = new Date("2026-07-05T18:00:00.000Z");
+    const done = await update(db, open.id, { status: "done", completedAt: doneAt });
+    expect(done.completedAt?.toISOString()).toBe(doneAt.toISOString());
+
+    // Fix the timestamp on an already-done task without touching status.
+    const fixedAt = new Date("2026-07-06T08:00:00.000Z");
+    const fixed = await update(db, open.id, { completedAt: fixedAt });
+    expect(fixed.status).toBe("done");
+    expect(fixed.completedAt?.toISOString()).toBe(fixedAt.toISOString());
+
+    // Rejected: setting completedAt on a task that is not done.
+    const stillOpen = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Still open",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    await expect(
+      update(db, stillOpen.id, { completedAt: new Date() })
+    ).rejects.toThrow(/only be set on a done task/);
+
+    // Rejected: creating a non-done task with completedAt.
+    await expect(
+      write(db, {
+        kind: "task",
+        projectId: p.id,
+        title: "Open with stamp",
+        body: "",
+        tags: [],
+        status: "open",
+        actorKind: "human",
+        metadata: {},
+        completedAt: new Date()
+      })
+    ).rejects.toThrow(/status 'done'/);
+  });
+
   it("tasksRange displays done tasks on completion day, not due day", async () => {
     const p = await createProject(db, { key: "CAL", name: "Calendar" });
     const dueAt = new Date("2026-06-01T12:00:00.000Z");
