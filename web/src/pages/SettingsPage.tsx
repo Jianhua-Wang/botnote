@@ -3,10 +3,10 @@ import {
   AlertTriangle,
   BrainCircuit,
   Check,
+  ChevronRight,
   Cog,
   Command,
   Copy,
-  Download,
   ExternalLink,
   Info,
   KeyRound,
@@ -17,7 +17,8 @@ import {
   Puzzle,
   RefreshCw,
   Terminal,
-  Trash2
+  Trash2,
+  UserRound
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -48,7 +49,7 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { id: "account", label: "Account", icon: KeyRound },
+  { id: "account", label: "Account", icon: UserRound },
   { id: "tokens", label: "API tokens", icon: KeyRound },
   { id: "cli", label: "CLI", icon: Terminal },
   { id: "plugin", label: "Plugin", icon: Puzzle },
@@ -63,22 +64,25 @@ export function SettingsPage() {
   return (
     <div className="h-full flex bg-bg overflow-hidden">
       <nav className="w-52 shrink-0 border-r border-line bg-sidebar/60 overflow-y-auto scrollbar-thin">
-        <div className="px-4 py-4 flex items-center gap-2 border-b border-lineSoft">
+        <div className="px-4 pt-4 pb-2 flex items-center gap-2">
           <Cog size={14} className="text-accent" />
           <span className="text-sm font-semibold">Settings</span>
         </div>
-        <ul className="py-2">
+        <ul className="px-2 pb-4 space-y-0.5">
           {TABS.map((t) => (
             <li key={t.id}>
               <button
                 onClick={() => setTab(t.id)}
-                className={`w-full text-left px-4 py-1.5 text-sm flex items-center gap-2 transition-colors ${
+                className={`w-full text-left px-2.5 py-1.5 text-sm rounded-md flex items-center gap-2.5 transition-colors ${
                   tab === t.id
-                    ? "bg-accentSoft/60 text-accent font-medium"
-                    : "text-muted hover:bg-sidebar hover:text-ink"
+                    ? "bg-accentSoft/70 text-accentText font-medium"
+                    : "text-muted hover:bg-sidebarHover hover:text-ink"
                 }`}
               >
-                <t.icon size={12} />
+                <t.icon
+                  size={13}
+                  className={tab === t.id ? "text-accent" : "text-faint"}
+                />
                 {t.label}
               </button>
             </li>
@@ -87,11 +91,7 @@ export function SettingsPage() {
       </nav>
 
       <main className="flex-1 min-w-0 overflow-y-auto scrollbar-thin">
-        <div
-          className={`mx-auto px-6 py-6 space-y-6 ${
-            tab === "plugin" ? "max-w-5xl" : "max-w-3xl"
-          }`}
-        >
+        <div className="mx-auto max-w-3xl px-8 py-8 space-y-6">
           {tab === "account" && <AccountSection />}
           {tab === "tokens" && <TokensSection />}
           {tab === "cli" && <CliSection />}
@@ -109,10 +109,19 @@ export function SettingsPage() {
 
 function SectionHeader({ title, blurb }: { title: string; blurb?: string }) {
   return (
-    <header className="space-y-1.5">
+    <header className="pb-4 border-b border-lineSoft space-y-1.5">
       <h1 className="text-lg font-semibold text-ink">{title}</h1>
-      {blurb && <p className="text-xs text-muted leading-relaxed">{blurb}</p>}
+      {blurb && <p className="text-xs text-muted leading-relaxed max-w-xl">{blurb}</p>}
     </header>
+  );
+}
+
+function SubHeader({ title, blurb }: { title: string; blurb?: string }) {
+  return (
+    <div className="pt-2">
+      <h2 className="text-sm font-semibold text-ink">{title}</h2>
+      {blurb && <p className="text-xs text-muted leading-relaxed mt-0.5">{blurb}</p>}
+    </div>
   );
 }
 
@@ -239,27 +248,56 @@ function WorkspaceTimezoneCard() {
 // ----------------------------------------------------------------------------
 
 function CliSection() {
-  const installBlock = `# Global install (any machine with node + npm).
-npm i -g botnote
+  const installSteps: Step[] = [
+    {
+      note: "Global install on any machine with node + npm:",
+      code: "npm i -g botnote"
+    },
+    {
+      note: (
+        <>
+          One-time login. Default URL is <code className="text-ink">https://botnote.net</code> —
+          paste a bearer token from Settings → API tokens. On the daemon host itself, override the
+          URL to <code className="text-ink">http://127.0.0.1:4280</code> (no token needed, loopback
+          is trusted).
+        </>
+      ),
+      code: "botnote login"
+    }
+  ];
 
-# One-time login. Default URL is https://botnote.net — paste a bearer token
-# from Settings → API tokens. On the daemon host itself, override the URL
-# to http://127.0.0.1:4280 (no token needed, loopback is trusted).
-botnote login`;
+  const dailyCommands = [
+    { code: "botnote today", desc: "today + overdue" },
+    { code: "botnote tasks --status open", desc: "list open tasks" },
+    {
+      code: 'botnote task "Ship the CLI" --project BOT --priority high --due 2026-06-10',
+      desc: "create a task"
+    },
+    { code: 'botnote note "Random capture" --project BOT --pin', desc: "capture a pinned note" },
+    { code: 'botnote search "deployment"', desc: "hybrid search" },
+    { code: "botnote projects", desc: "list project keys" }
+  ];
 
-  const useBlock = `botnote today                          # today + overdue
-botnote tasks --status open            # list open tasks
-botnote task "Ship the CLI" --project BOT --priority high --due 2026-06-10
-botnote note "Random capture" --project BOT --pin
-botnote search "deployment"
-botnote projects                       # list project keys`;
-
-  const envBlock = `# Per-shell override (skips ~/.config/botnote/config.json)
-BOTNOTE_URL=http://127.0.0.1:4280 botnote today
-
-# Config file (preferred for the daemon host):
-#   ~/.config/botnote/config.json
-#   { "baseUrl": "http://127.0.0.1:4280" }`;
+  const overrideSteps: Step[] = [
+    {
+      note: (
+        <>
+          Per-shell override — skips{" "}
+          <code className="text-ink">~/.config/botnote/config.json</code>:
+        </>
+      ),
+      code: "BOTNOTE_URL=http://127.0.0.1:4280 botnote today"
+    },
+    {
+      note: (
+        <>
+          Config file, preferred for the daemon host —{" "}
+          <code className="text-ink">~/.config/botnote/config.json</code>:
+        </>
+      ),
+      code: '{ "baseUrl": "http://127.0.0.1:4280" }'
+    }
+  ];
 
   return (
     <>
@@ -268,68 +306,18 @@ BOTNOTE_URL=http://127.0.0.1:4280 botnote today
         blurb="The botnote npm package ships a binary that talks to this daemon over HTTP. Same tool for quick capture, today review, and ad-hoc search from any terminal."
       />
 
-      <CodeBlock title="Install + login" code={installBlock} />
-      <CodeBlock title="Daily commands" code={useBlock} />
-      <CodeBlock title="Override the URL" code={envBlock} />
+      <StepsCard title="Install + login" steps={installSteps} />
+      <CommandList title="Daily commands" items={dailyCommands} />
+      <StepsCard title="Override the URL" steps={overrideSteps} />
     </>
   );
 }
 
 // ----------------------------------------------------------------------------
 
-function PluginSection() {
-  const cliInstallBlock = `# Optional helper CLI for login and manual commands.
-# Plugins can run without a global CLI by using npx.
-npm i -g botnote@latest
+type PluginClientId = "claude" | "codex" | "cursor" | "cli";
 
-# Remote clients: save https://botnote.net + a bearer token.
-# Daemon host: use http://127.0.0.1:4280 and skip the token.
-botnote login`;
-
-  const cliUpdateBlock = `# If you installed the optional helper CLI, keep it current.
-npm i -g botnote@latest
-botnote --version`;
-
-  const claudeInstallBlock = `# In Claude Code
-/plugin marketplace add jianhua-wang/botnote
-/plugin install botnote@botnote
-
-# Claude Code will prompt for:
-#   botnote_url    -> default https://botnote.net (use http://127.0.0.1:4280 on daemon host)
-#   botnote_token  -> bearer from Settings → API tokens (skip on loopback)`;
-
-  const claudeUpdateBlock = `# Claude Code does not expose auto-update in every build.
-/plugin
-# Marketplaces -> botnote -> Update, if your build shows it.
-
-# If there is no Update action:
-# 1. Remove/uninstall botnote from /plugin.
-# 2. Install it again.
-/plugin install botnote@botnote
-
-# Apply changes in this session:
-/reload-plugins`;
-
-  const codexInstallBlock = `# No full source checkout required.
-codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \\
-  --sparse .agents/plugins \\
-  --sparse plugins/botnote
-
-codex plugin add botnote@botnote-plugins
-
-# Restart Codex: exit this session, then run codex again.
-# In the new session, check /mcp.`;
-
-  const codexUpdateBlock = `# Codex refreshes Git marketplaces, then installs from the fresh snapshot.
-codex plugin marketplace upgrade botnote-plugins
-codex plugin remove botnote@botnote-plugins
-codex plugin add botnote@botnote-plugins
-
-# Open a new Codex session after updating.`;
-
-  const repoMarketplaceBlock = `// Advanced: repo-local marketplace entry for .agents/plugins/marketplace.json.
-// Use this only when the repo already vendors ./plugins/botnote.
-{
+const REPO_MARKETPLACE_JSON = `{
   "name": "botnote-plugins",
   "interface": { "displayName": "botnote Plugins" },
   "plugins": [
@@ -342,27 +330,199 @@ codex plugin add botnote@botnote-plugins
   ]
 }`;
 
-  const cursorInstallBlock = `# Cursor plugin clients can use the repository marketplace.
-# Marketplace metadata lives at .cursor-plugin/marketplace.json.
-https://github.com/jianhua-wang/botnote
+function PluginSection() {
+  const [client, setClient] = useState<PluginClientId>("claude");
 
-# Then install:
-botnote@botnote-plugins`;
+  const clients: {
+    id: PluginClientId;
+    label: string;
+    icon: typeof Cog;
+    subtitle: string;
+    cards: { title: string; steps: Step[] }[];
+  }[] = [
+    {
+      id: "claude",
+      label: "Claude Code",
+      icon: Command,
+      subtitle:
+        "Recommended for day-to-day work. Update through /plugin, then reload plugins in-session with /reload-plugins.",
+      cards: [
+        {
+          title: "Install",
+          steps: [
+            {
+              note: "In Claude Code, add the marketplace and install the plugin:",
+              code: "/plugin marketplace add jianhua-wang/botnote\n/plugin install botnote@botnote"
+            },
+            {
+              note: (
+                <>
+                  Claude Code prompts for <code className="text-ink">botnote_url</code> — default{" "}
+                  <code className="text-ink">https://botnote.net</code>, use{" "}
+                  <code className="text-ink">http://127.0.0.1:4280</code> on the daemon host — and{" "}
+                  <code className="text-ink">botnote_token</code>, a bearer from Settings → API
+                  tokens (skip on loopback).
+                </>
+              )
+            }
+          ]
+        },
+        {
+          title: "Update",
+          steps: [
+            {
+              note: (
+                <>
+                  Not every build exposes auto-update. Try the marketplace update first: open{" "}
+                  <code className="text-ink">/plugin</code>, then Marketplaces → botnote → Update,
+                  if your build shows it.
+                </>
+              ),
+              code: "/plugin"
+            },
+            {
+              note: "If there is no Update action, remove botnote in /plugin, then install it again:",
+              code: "/plugin install botnote@botnote"
+            },
+            {
+              note: "Apply changes in the current session:",
+              code: "/reload-plugins"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: "codex",
+      label: "Codex",
+      icon: Terminal,
+      subtitle:
+        "Git marketplace flow with sparse checkout — no full botnote source checkout. Restart Codex after install or update.",
+      cards: [
+        {
+          title: "Install",
+          steps: [
+            {
+              note: "Add the Git marketplace. Sparse checkout keeps it light:",
+              code: "codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \\\n  --sparse .agents/plugins \\\n  --sparse plugins/botnote"
+            },
+            {
+              note: "Install the plugin from it:",
+              code: "codex plugin add botnote@botnote-plugins"
+            },
+            {
+              note: (
+                <>
+                  Restart Codex — exit this session, then run{" "}
+                  <code className="text-ink">codex</code> again. In the new session, check{" "}
+                  <code className="text-ink">/mcp</code>.
+                </>
+              )
+            }
+          ]
+        },
+        {
+          title: "Update",
+          steps: [
+            {
+              note: "Refresh the Git marketplace snapshot, then reinstall from it:",
+              code: "codex plugin marketplace upgrade botnote-plugins\ncodex plugin remove botnote@botnote-plugins\ncodex plugin add botnote@botnote-plugins"
+            },
+            { note: "Open a new Codex session after updating." }
+          ]
+        }
+      ]
+    },
+    {
+      id: "cursor",
+      label: "Cursor",
+      icon: Puzzle,
+      subtitle:
+        "Uses the same plugin bundle. Keep the CLI installed only if you want terminal commands or offline fallback.",
+      cards: [
+        {
+          title: "Install",
+          steps: [
+            {
+              note: (
+                <>
+                  Add the repository marketplace in Cursor's plugin UI — metadata lives at{" "}
+                  <code className="text-ink">.cursor-plugin/marketplace.json</code>:
+                </>
+              ),
+              code: "https://github.com/jianhua-wang/botnote"
+            },
+            {
+              note: "Then install:",
+              code: "botnote@botnote-plugins"
+            }
+          ]
+        },
+        {
+          title: "Update",
+          steps: [
+            {
+              note: "Refresh the marketplace in Cursor's plugin UI. If an explicit update action is unavailable, remove and install again from the same repository marketplace."
+            },
+            {
+              note: "Keep the shared runtime current too:",
+              code: "npm i -g botnote@latest"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id: "cli",
+      label: "CLI runtime",
+      icon: Package,
+      subtitle:
+        "Optional helper for login, manual CLI commands, and offline fallback. Plugin MCP can run through npx without a global CLI.",
+      cards: [
+        {
+          title: "Install runtime",
+          steps: [
+            {
+              note: "Global install on any machine with node + npm:",
+              code: "npm i -g botnote@latest"
+            },
+            {
+              note: (
+                <>
+                  One-time login. Remote clients: save{" "}
+                  <code className="text-ink">https://botnote.net</code> plus a bearer token from
+                  Settings → API tokens. On the daemon host, use{" "}
+                  <code className="text-ink">http://127.0.0.1:4280</code> and skip the token.
+                </>
+              ),
+              code: "botnote login"
+            }
+          ]
+        },
+        {
+          title: "Update runtime",
+          steps: [
+            {
+              note: "If you installed the optional helper CLI, keep it current:",
+              code: "npm i -g botnote@latest\nbotnote --version"
+            }
+          ]
+        }
+      ]
+    }
+  ];
 
-  const cursorUpdateBlock = `# Refresh the marketplace in Cursor's plugin UI.
-# If an explicit update action is unavailable, remove and install again
-# from the same repository marketplace.
+  const slashCommands = [
+    { code: "/botnote:today", desc: "today + overdue" },
+    { code: "/botnote:show-todo", desc: "open work across projects" },
+    { code: '/botnote:add-task "..."', desc: "create a task" },
+    { code: "/botnote:start-work DEMO-12", desc: "pick up a task with project context" },
+    { code: '/botnote:remember "..."', desc: "capture a note" },
+    { code: '/botnote:recall "..."', desc: "hybrid search" },
+    { code: "/botnote:done", desc: "mark current focus done" }
+  ];
 
-# Keep the shared runtime current too:
-npm i -g botnote@latest`;
-
-  const useBlock = `/botnote:today              # today + overdue
-/botnote:show-todo          # open work across projects
-/botnote:add-task "..."     # create a task
-/botnote:start-work DEMO-12 # pick up a task with project context
-/botnote:remember "..."     # capture a note
-/botnote:recall "..."       # hybrid search
-/botnote:done               # mark current focus done`;
+  const active = clients.find((c) => c.id === client) ?? clients[0]!;
 
   return (
     <>
@@ -371,23 +531,23 @@ npm i -g botnote@latest`;
         blurb="Add botnote as the plugin-backed MCP + workflow layer for each agent client. Letheia / Plane MCP setup should stay retired."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+      <ol className="grid grid-cols-1 md:grid-cols-3 gap-2">
         <PluginStep
-          icon={Package}
-          title="1. Optional CLI"
+          n={1}
+          title="Optional CLI"
           body="Install the npm binary when you want botnote login or terminal commands. Plugins can run without it via npx."
         />
         <PluginStep
-          icon={Download}
-          title="2. Client plugin"
+          n={2}
+          title="Client plugin"
           body="Install the marketplace plugin in Claude Code, Codex, Cursor, or another agent client."
         />
         <PluginStep
-          icon={RefreshCw}
-          title="3. Reload client"
+          n={3}
+          title="Reload client"
           body="Claude Code reloads plugins in-session. Codex needs a new session after install or update."
         />
-      </div>
+      </ol>
 
       <div className="border border-accent/20 bg-accentSoft/50 rounded-md px-4 py-3 text-xs text-accentText leading-relaxed">
         Use <code className="text-ink">https://botnote.net</code> with an API token from this
@@ -395,59 +555,55 @@ npm i -g botnote@latest`;
         <code className="text-ink">http://127.0.0.1:4280</code> and skip the token.
       </div>
 
-      <PluginClientHeader
-        icon={Package}
-        title="Runtime"
-        subtitle="Optional helper for login, manual CLI commands, and offline fallback. Plugin MCP can run through npx without a global CLI."
-      />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <CodeBlock title="Install runtime" code={cliInstallBlock} />
-        <CodeBlock title="Update runtime" code={cliUpdateBlock} />
-      </div>
+      <section className="space-y-3">
+        <div className="flex items-center border-b border-line">
+          {clients.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setClient(c.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 -mb-px text-xs font-medium border-b-2 transition-colors ${
+                client === c.id
+                  ? "border-accent text-ink"
+                  : "border-transparent text-muted hover:text-ink"
+              }`}
+            >
+              <c.icon size={12} className={client === c.id ? "text-accent" : ""} />
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-muted leading-relaxed">{active.subtitle}</p>
+        {active.cards.map((c) => (
+          <StepsCard key={`${active.id}-${c.title}`} title={c.title} steps={c.steps} />
+        ))}
+      </section>
 
-      <PluginClientHeader
-        icon={Command}
-        title="Claude Code"
-        subtitle="Recommended for day-to-day work. Update through /plugin, then reload plugins in-session."
-      />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <CodeBlock title="Install" code={claudeInstallBlock} />
-        <CodeBlock title="Update" code={claudeUpdateBlock} />
-      </div>
-
-      <PluginClientHeader
-        icon={Terminal}
-        title="Codex"
-        subtitle="Use the Git marketplace flow; sparse checkout means no full botnote source checkout. Restart Codex after install or update."
-      />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <CodeBlock title="Install" code={codexInstallBlock} />
-        <CodeBlock title="Update" code={codexUpdateBlock} />
-      </div>
-
-      <PluginClientHeader
-        icon={Puzzle}
-        title="Cursor"
-        subtitle="Uses the same plugin bundle. Keep the CLI installed only if you want terminal commands or offline fallback."
-      />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <CodeBlock title="Install" code={cursorInstallBlock} />
-        <CodeBlock title="Update" code={cursorUpdateBlock} />
-      </div>
-
-      <PluginClientHeader
-        icon={Cog}
-        title="Advanced"
-        subtitle="Only needed when a repo vendors the plugin files locally."
-      />
-      <CodeBlock title="Repo-local marketplace entry" code={repoMarketplaceBlock} />
-
-      <PluginClientHeader
-        icon={Plug}
+      <SubHeader
         title="Slash commands"
-        subtitle="Available after Claude Code reloads plugins or Codex starts a new session with the plugin installed."
+        blurb="Available after Claude Code reloads plugins or Codex starts a new session with the plugin installed."
       />
-      <CodeBlock title="Commands" code={useBlock} />
+      <CommandList title="Commands" items={slashCommands} />
+
+      <details className="border border-line rounded-md bg-surface group open:pb-4">
+        <summary className="px-4 py-3 text-sm text-ink cursor-pointer select-none flex items-center gap-2 list-none [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            size={13}
+            className="text-faint transition-transform group-open:rotate-90"
+          />
+          <span className="font-medium">Advanced: repo-local marketplace entry</span>
+          <span className="text-xxs text-faint ml-1">
+            only when a repo vendors the plugin files
+          </span>
+        </summary>
+        <div className="px-4 space-y-2">
+          <p className="text-xs text-muted leading-relaxed">
+            Marketplace entry for <code className="text-ink">.agents/plugins/marketplace.json</code>.
+            Use this only when the repo already vendors{" "}
+            <code className="text-ink">./plugins/botnote</code>.
+          </p>
+          <Snippet code={REPO_MARKETPLACE_JSON} />
+        </div>
+      </details>
 
       <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted leading-relaxed flex items-start gap-3">
         <ExternalLink size={13} className="mt-0.5 shrink-0 text-accent" />
@@ -473,47 +629,17 @@ npm i -g botnote@latest`;
   );
 }
 
-function PluginStep({
-  icon: Icon,
-  title,
-  body
-}: {
-  icon: typeof Cog;
-  title: string;
-  body: string;
-}) {
+function PluginStep({ n, title, body }: { n: number; title: string; body: string }) {
   return (
-    <div className="border border-line rounded-md bg-surface px-4 py-3 min-h-[104px]">
-      <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-        <span className="w-6 h-6 rounded-md bg-accentSoft text-accent flex items-center justify-center shrink-0">
-          <Icon size={13} />
+    <li className="border border-line rounded-md bg-surface px-4 py-3">
+      <div className="flex items-center gap-2">
+        <span className="w-5 h-5 rounded-full bg-accentSoft text-accent text-xxs font-semibold flex items-center justify-center shrink-0">
+          {n}
         </span>
-        {title}
+        <span className="text-sm font-medium text-ink">{title}</span>
       </div>
-      <p className="mt-2 text-xs text-muted leading-relaxed">{body}</p>
-    </div>
-  );
-}
-
-function PluginClientHeader({
-  icon: Icon,
-  title,
-  subtitle
-}: {
-  icon: typeof Cog;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <div className="pt-2 border-t border-lineSoft flex items-start gap-2">
-      <span className="mt-0.5 w-6 h-6 rounded-md bg-sidebar text-muted border border-line flex items-center justify-center shrink-0">
-        <Icon size={13} />
-      </span>
-      <div>
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
-        <p className="text-xs text-muted leading-relaxed mt-0.5">{subtitle}</p>
-      </div>
-    </div>
+      <p className="mt-1.5 text-xs text-muted leading-relaxed">{body}</p>
+    </li>
   );
 }
 
@@ -810,39 +936,55 @@ function McpSection() {
   }
 }`;
 
-  const codexToml = `# ~/.codex/config.toml
-[mcp_servers.botnote]
+  const codexToml = `[mcp_servers.botnote]
 command = "botnote"
 args = ["mcp"]
 
 [mcp_servers.botnote.env]
 BOTNOTE_URL = "https://botnote.net"
-BOTNOTE_TOKEN = "bn_..."
+BOTNOTE_TOKEN = "bn_..."`;
 
-# On the daemon host, drop BOTNOTE_TOKEN and set
-# BOTNOTE_URL = "http://127.0.0.1:4280" (loopback is trusted).`;
+  const codexSteps: Step[] = [
+    {
+      note: (
+        <>
+          Add to <code className="text-ink">~/.codex/config.toml</code>. On the daemon host, drop{" "}
+          <code className="text-ink">BOTNOTE_TOKEN</code> and set{" "}
+          <code className="text-ink">BOTNOTE_URL = "http://127.0.0.1:4280"</code> (loopback is
+          trusted).
+        </>
+      ),
+      code: codexToml
+    }
+  ];
 
-  const curlExample = `# Create a task via REST
-curl -X POST '${BOTNOTE_HOST}/v1/tasks' \\
+  const curlSteps: Step[] = [
+    {
+      note: "Create a task:",
+      code: `curl -X POST '${BOTNOTE_HOST}/v1/tasks' \\
   -H 'authorization: Bearer bn_...' \\
   -H 'content-type: application/json' \\
   -d '{
     "title": "Finish migration",
     "projectId": "<uuid>",
     "priority": "high"
-  }'
-
-# Create a note
-curl -X POST '${BOTNOTE_HOST}/v1/notes' \\
+  }'`
+    },
+    {
+      note: "Create a note:",
+      code: `curl -X POST '${BOTNOTE_HOST}/v1/notes' \\
   -H 'authorization: Bearer bn_...' \\
   -H 'content-type: application/json' \\
-  -d '{ "body": "Quick capture", "pinned": false }'
-
-# Hybrid search
-curl -X POST '${BOTNOTE_HOST}/v1/search' \\
+  -d '{ "body": "Quick capture", "pinned": false }'`
+    },
+    {
+      note: "Hybrid search:",
+      code: `curl -X POST '${BOTNOTE_HOST}/v1/search' \\
   -H 'authorization: Bearer bn_...' \\
   -H 'content-type: application/json' \\
-  -d '{ "query": "deployment", "limit": 10 }'`;
+  -d '{ "query": "deployment", "limit": 10 }'`
+    }
+  ];
 
   return (
     <>
@@ -852,8 +994,8 @@ curl -X POST '${BOTNOTE_HOST}/v1/search' \\
       />
 
       <CodeBlock title="Claude Code (~/.claude.json or project-local .mcp.json)" code={claudeJson} />
-      <CodeBlock title="Codex (~/.codex/config.toml)" code={codexToml} />
-      <CodeBlock title="REST · curl" code={curlExample} />
+      <StepsCard title="Codex (~/.codex/config.toml)" steps={codexSteps} />
+      <StepsCard title="REST · curl" steps={curlSteps} />
 
       <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted leading-relaxed">
         Raw MCP configuration requires the <code className="text-ink">botnote</code> binary in
@@ -899,6 +1041,111 @@ function AboutSection() {
 }
 
 // ----------------------------------------------------------------------------
+
+interface Step {
+  note?: React.ReactNode;
+  code?: string;
+}
+
+/** Card of prose steps interleaved with pure-command snippets. Copy buttons
+ *  live on the snippets only, so copying never picks up explanatory text. */
+function StepsCard({ title, steps }: { title: string; steps: Step[] }) {
+  return (
+    <div className="border border-line rounded-md bg-surface overflow-hidden">
+      <div className="px-3 py-1.5 border-b border-lineSoft bg-sidebar/40">
+        <span className="text-xxs uppercase tracking-wider text-muted font-medium">{title}</span>
+      </div>
+      <div className="px-3 py-3 space-y-3">
+        {steps.map((s, i) => (
+          <div key={i} className="space-y-1.5">
+            {s.note && <p className="text-xs text-muted leading-relaxed">{s.note}</p>}
+            {s.code && <Snippet code={s.code} />}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Snippet({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    });
+  }
+
+  return (
+    <div className="relative border border-lineSoft rounded-md bg-sidebar/30">
+      <pre className="px-3 py-2 pr-9 text-xs font-mono leading-relaxed overflow-x-auto whitespace-pre text-ink2">
+        {code}
+      </pre>
+      <button
+        onClick={copy}
+        className="absolute top-1.5 right-1.5 p-1 rounded text-faint hover:text-ink hover:bg-sidebarHover transition-colors"
+        title="Copy command"
+      >
+        {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+      </button>
+    </div>
+  );
+}
+
+/** Cheat-sheet list: one command per row with its description as plain text
+ *  and a per-row copy button that copies only the command. */
+function CommandList({
+  title,
+  items
+}: {
+  title: string;
+  items: { code: string; desc: string }[];
+}) {
+  return (
+    <div className="border border-line rounded-md bg-surface overflow-hidden">
+      <div className="px-3 py-1.5 border-b border-lineSoft bg-sidebar/40">
+        <span className="text-xxs uppercase tracking-wider text-muted font-medium">{title}</span>
+      </div>
+      <ul className="divide-y divide-lineSoft">
+        {items.map((it) => (
+          <CommandRow key={it.code} code={it.code} desc={it.desc} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CommandRow({ code, desc }: { code: string; desc: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    });
+  }
+
+  return (
+    <li className="group flex items-center gap-3 px-3 py-1.5">
+      <code className="font-mono text-xs text-ink whitespace-nowrap overflow-x-auto scrollbar-thin">
+        {code}
+      </code>
+      <span className="flex-1 text-xs text-muted text-right truncate">{desc}</span>
+      <button
+        onClick={copy}
+        className={`p-1 rounded transition-colors ${
+          copied
+            ? "text-success"
+            : "text-faint hover:text-ink opacity-0 group-hover:opacity-100 focus:opacity-100"
+        }`}
+        title="Copy command"
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+      </button>
+    </li>
+  );
+}
 
 function CodeBlock({ title, code }: { title: string; code: string }) {
   const [copied, setCopied] = useState(false);
