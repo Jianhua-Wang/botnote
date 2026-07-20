@@ -1,0 +1,15 @@
+{
+  "description": "Session wrap-up feedback check: once per session, the Stop hook asks the agent to file botnote product feedback (bug/feature/friction/idea) before finishing.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/stop-feedback-nudge.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

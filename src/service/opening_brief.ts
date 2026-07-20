@@ -221,6 +221,10 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     "_Reminders: when discussion turns into work, or new out-of-scope work appears mid-task, propose creating a task (confirm before creating; keep each task ≤1 focused session). Refer to entities by KEY-SEQ (e.g. BOT-55), never UUID._"
   );
   lines.push("");
+  lines.push(
+    "_Feedback: if botnote ITSELF misbehaves or gets in your way this session — a bug, a missing capability, an awkward workflow, a product idea — file it with submit_feedback before wrapping up (check list_feedback first to avoid duplicates)._"
+  );
+  lines.push("");
   lines.push(`_Generated at ${brief.generatedAt.toISOString()}_`);
   return lines.join("\n");
 }
