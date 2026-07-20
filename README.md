@@ -191,11 +191,46 @@ The plugin bundles the MCP server, workflow skills/commands, and a curator
 subagent. All workflows route through MCP, so no separate task or memory MCP
 setup is required.
 
+### Quick install: skills CLI (any client)
+
+The fastest way to get the workflow skills into Claude Code, Codex, Cursor, or
+any of the 70+ agents the [skills CLI](https://github.com/vercel-labs/skills)
+supports:
+
+```bash
+npx skills add Jianhua-Wang/botnote   # install all 7 skills
+npx skills update                     # refresh to the latest version later
+npx skills list                       # see what is installed where
+```
+
+The skills CLI installs `SKILL.md` files only — it does not set up the botnote
+MCP server the skills depend on, and it does not install plugin hooks (the
+session-close feedback nudge ships only with the Claude Code plugin below).
+Wire up the MCP server once per machine:
+
+```bash
+# Claude Code
+claude mcp add botnote \
+  -e BOTNOTE_URL=https://botnote.net \
+  -e BOTNOTE_TOKEN=<token from Settings -> API tokens> \
+  -- npx -y botnote mcp
+
+# Codex
+codex mcp add botnote \
+  --env BOTNOTE_URL=https://botnote.net \
+  --env BOTNOTE_TOKEN=<token> \
+  -- npx -y botnote mcp
+```
+
+On the daemon host use `BOTNOTE_URL=http://127.0.0.1:4280` and skip the token.
+Prefer the full plugin installs below when you want the bundled MCP wiring
+(URL/token prompts) and hooks instead of manual setup.
+
 ### Claude Code
 
 ```text
 # In Claude Code
-/plugin marketplace add jianhua-wang/botnote
+/plugin marketplace add Jianhua-Wang/botnote
 /plugin install botnote@botnote
 
 # Claude Code will prompt for:
@@ -217,7 +252,7 @@ Slash commands:
 ```
 
 Plugin distribution lives at
-[jianhua-wang/botnote](https://github.com/jianhua-wang/botnote). The MCP server
+[Jianhua-Wang/botnote](https://github.com/Jianhua-Wang/botnote). The MCP server
 inside the plugin uses the URL + token from the install prompt. A global
 `botnote` CLI install is optional: the plugin runs `npx -y botnote@<plugin-version> mcp`
 when no matching local CLI is available.
@@ -228,7 +263,7 @@ Add the plugin through `/settings -> plugin` in Codex, or add this marketplace
 from the public repository without a full source checkout:
 
 ```bash
-codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \
+codex plugin marketplace add https://github.com/Jianhua-Wang/botnote.git \
   --sparse .agents/plugins \
   --sparse plugins/botnote
 
@@ -289,7 +324,7 @@ same MCP server and workflow skills without a second plugin implementation.
 
 ```bash
 # Marketplace root for Cursor plugin clients:
-https://github.com/jianhua-wang/botnote
+https://github.com/Jianhua-Wang/botnote
 ```
 
 The Cursor plugin manifest is `plugins/botnote/.cursor-plugin/plugin.json` and

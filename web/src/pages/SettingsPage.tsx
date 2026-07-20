@@ -18,7 +18,8 @@ import {
   RefreshCw,
   Terminal,
   Trash2,
-  UserRound
+  UserRound,
+  Zap
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -315,7 +316,7 @@ function CliSection() {
 
 // ----------------------------------------------------------------------------
 
-type PluginClientId = "claude" | "codex" | "cursor" | "cli";
+type PluginClientId = "skills" | "claude" | "codex" | "cursor" | "cli";
 
 const REPO_MARKETPLACE_JSON = `{
   "name": "botnote-plugins",
@@ -331,7 +332,7 @@ const REPO_MARKETPLACE_JSON = `{
 }`;
 
 function PluginSection() {
-  const [client, setClient] = useState<PluginClientId>("claude");
+  const [client, setClient] = useState<PluginClientId>("skills");
 
   const clients: {
     id: PluginClientId;
@@ -340,6 +341,56 @@ function PluginSection() {
     subtitle: string;
     cards: { title: string; steps: Step[] }[];
   }[] = [
+    {
+      id: "skills",
+      label: "Skills CLI",
+      icon: Zap,
+      subtitle:
+        "Fastest path: one command installs the workflow skills into Claude Code, Codex, Cursor, and 70+ other agents. Wire the MCP server once per machine; hooks still require the Claude Code plugin.",
+      cards: [
+        {
+          title: "Install",
+          steps: [
+            {
+              note: "Install all botnote skills straight from the GitHub repo:",
+              code: "npx skills add Jianhua-Wang/botnote"
+            },
+            {
+              note: (
+                <>
+                  One-time MCP wiring — the skills call botnote MCP tools, which the skills CLI
+                  does not set up. Use the command for your client:
+                </>
+              ),
+              code:
+                "# Claude Code\nclaude mcp add botnote \\\n  -e BOTNOTE_URL=https://botnote.net \\\n  -e BOTNOTE_TOKEN=<token> \\\n  -- npx -y botnote mcp\n\n# Codex\ncodex mcp add botnote \\\n  --env BOTNOTE_URL=https://botnote.net \\\n  --env BOTNOTE_TOKEN=<token> \\\n  -- npx -y botnote mcp"
+            },
+            {
+              note: (
+                <>
+                  On the daemon host use <code className="text-ink">http://127.0.0.1:4280</code> and
+                  skip the token. Want the bundled MCP prompts and the session-close feedback hook?
+                  Use the Claude Code plugin tab instead.
+                </>
+              )
+            }
+          ]
+        },
+        {
+          title: "Update",
+          steps: [
+            {
+              note: "Refresh every installed skill from its source repo:",
+              code: "npx skills update"
+            },
+            {
+              note: "Inspect or prune what is installed:",
+              code: "npx skills list\nnpx skills remove <name>"
+            }
+          ]
+        }
+      ]
+    },
     {
       id: "claude",
       label: "Claude Code",
@@ -352,7 +403,7 @@ function PluginSection() {
           steps: [
             {
               note: "In Claude Code, add the marketplace and install the plugin:",
-              code: "/plugin marketplace add jianhua-wang/botnote\n/plugin install botnote@botnote"
+              code: "/plugin marketplace add Jianhua-Wang/botnote\n/plugin install botnote@botnote"
             },
             {
               note: (
@@ -404,7 +455,7 @@ function PluginSection() {
           steps: [
             {
               note: "Add the Git marketplace. Sparse checkout keeps it light:",
-              code: "codex plugin marketplace add https://github.com/jianhua-wang/botnote.git \\\n  --sparse .agents/plugins \\\n  --sparse plugins/botnote"
+              code: "codex plugin marketplace add https://github.com/Jianhua-Wang/botnote.git \\\n  --sparse .agents/plugins \\\n  --sparse plugins/botnote"
             },
             {
               note: "Install the plugin from it:",
@@ -450,7 +501,7 @@ function PluginSection() {
                   <code className="text-ink">.cursor-plugin/marketplace.json</code>:
                 </>
               ),
-              code: "https://github.com/jianhua-wang/botnote"
+              code: "https://github.com/Jianhua-Wang/botnote"
             },
             {
               note: "Then install:",
@@ -539,8 +590,8 @@ function PluginSection() {
         />
         <PluginStep
           n={2}
-          title="Client plugin"
-          body="Install the marketplace plugin in Claude Code, Codex, Cursor, or another agent client."
+          title="Skills or plugin"
+          body="Quickest: npx skills add Jianhua-Wang/botnote for any client. Or install the marketplace plugin for bundled MCP wiring and hooks."
         />
         <PluginStep
           n={3}
@@ -610,12 +661,12 @@ function PluginSection() {
         <div>
           Plugin distribution lives at{" "}
           <a
-            href="https://github.com/jianhua-wang/botnote"
+            href="https://github.com/Jianhua-Wang/botnote"
             target="_blank"
             className="text-accent hover:underline"
             rel="noreferrer"
           >
-            jianhua-wang/botnote
+            Jianhua-Wang/botnote
           </a>
           {". "}
           Claude Code updates through <code className="text-ink">/plugin</code>; after updating or
