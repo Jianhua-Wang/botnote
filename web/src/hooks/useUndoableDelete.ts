@@ -6,7 +6,13 @@ import { displayTitle } from "../lib/entityTitle";
 import { useToasts } from "../state/toasts";
 
 /** Query keys whose cached data may contain the entity being deleted. */
-const LIST_KEYS = [["tasks-range"], ["recent"], ["entity-list"], ["feedback"]] as const;
+const LIST_KEYS = [
+  ["tasks-range"],
+  ["recent"],
+  ["entity-list"],
+  ["feedback"],
+  ["trash"]
+] as const;
 
 function stripEntity<T>(data: T, id: string): T {
   if (Array.isArray(data)) {
@@ -25,14 +31,18 @@ function stripEntity<T>(data: T, id: string): T {
 }
 
 /**
- * Delete with a grace period instead of a native confirm(): the entity is
- * removed from all cached lists immediately, a toast offers Undo, and the
- * actual DELETE only fires when the toast expires. Undo restores the caches
- * and never touches the server.
+ * Soft delete with an Undo toast. The DELETE fires immediately (the server
+ * moves the entity to the trash, so nothing is lost), cached lists drop the
+ * entity right away, and Undo calls the restore endpoint. Even after the
+ * toast expires the entity stays recoverable from the trash view.
  */
 export function useUndoableDelete() {
   const qc = useQueryClient();
   const { show } = useToasts();
+
+  const invalidateAll = useCallback(() => {
+    for (const key of LIST_KEYS) qc.invalidateQueries({ queryKey: key });
+  }, [qc]);
 
   return useCallback(
     (entity: Entity) => {
@@ -47,27 +57,25 @@ export function useUndoableDelete() {
         }
       }
 
+      api.deleteEntity(entity.id).catch(() => {
+        // Server refused; put the entity back so the UI stays truthful.
+        for (const [queryKey, data] of snapshots) qc.setQueryData(queryKey, data);
+      });
+
       show({
-        message: `Deleted “${displayTitle(entity)}”`,
+        message: `Moved “${displayTitle(entity)}” to trash`,
         action: {
           label: "Undo",
           onClick: () => {
-            for (const [queryKey, data] of snapshots) qc.setQueryData(queryKey, data);
+            api
+              .restoreEntity(entity.id)
+              .then(invalidateAll)
+              .catch(invalidateAll);
           }
         },
-        onExpire: () => {
-          api
-            .deleteEntity(entity.id)
-            .then(() => {
-              for (const key of LIST_KEYS) qc.invalidateQueries({ queryKey: key });
-            })
-            .catch(() => {
-              // Server refused; put the entity back so the UI stays truthful.
-              for (const [queryKey, data] of snapshots) qc.setQueryData(queryKey, data);
-            });
-        }
+        onExpire: invalidateAll
       });
     },
-    [qc, show]
+    [qc, show, invalidateAll]
   );
 }

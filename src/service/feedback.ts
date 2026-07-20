@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type FeedbackCategory } from "../db/schema.js";
 import { write } from "./entities.js";
@@ -39,7 +39,7 @@ export async function listFeedback(
   db: Database["db"],
   input: ListFeedbackInput
 ): Promise<Entity[]> {
-  const conds = [eq(entities.kind, "feedback")];
+  const conds = [eq(entities.kind, "feedback"), isNull(entities.deletedAt)];
   if (input.status) conds.push(eq(entities.status, input.status));
   if (input.category) {
     conds.push(

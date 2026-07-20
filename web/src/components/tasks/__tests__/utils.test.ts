@@ -46,6 +46,7 @@ function makeTask(overrides: Partial<Entity> = {}): Entity {
     completedAt: null,
     lastAccessedAt: null,
     accessCount: 0,
+    deletedAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides

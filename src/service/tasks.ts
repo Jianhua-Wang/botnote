@@ -87,7 +87,7 @@ export async function tasksRange(
 
   // Base filter applied to every bucket: only tasks, optional project filter,
   // and the includeDone toggle.
-  const baseConds: SQL[] = [eq(entities.kind, "task")];
+  const baseConds: SQL[] = [eq(entities.kind, "task"), isNull(entities.deletedAt)];
   if (!input.includeDone) {
     baseConds.push(or(ne(entities.status, "done"), isNull(entities.status))!);
   }
@@ -124,6 +124,7 @@ export async function tasksRange(
   if (input.includeDone) {
     const doneByCompletedConds: SQL[] = [
       eq(entities.kind, "task"),
+      isNull(entities.deletedAt),
       eq(entities.status, "done"),
       isNotNull(entities.completedAt),
       ...inRange(entities.completedAt)
@@ -138,6 +139,7 @@ export async function tasksRange(
 
     const legacyDoneConds: SQL[] = [
       eq(entities.kind, "task"),
+      isNull(entities.deletedAt),
       eq(entities.status, "done"),
       isNull(entities.completedAt),
       ...inRange(entities.updatedAt)
@@ -160,7 +162,11 @@ export async function tasksRange(
     (!input.from || now >= new Date(input.from)) &&
     (!input.to || now < new Date(input.to));
   if (todayInRange) {
-    const ipConds: SQL[] = [eq(entities.kind, "task"), eq(entities.status, "in_progress")];
+    const ipConds: SQL[] = [
+      eq(entities.kind, "task"),
+      isNull(entities.deletedAt),
+      eq(entities.status, "in_progress")
+    ];
     if (projectFilter) ipConds.push(projectFilter);
     if (activeProjectFilter) ipConds.push(activeProjectFilter);
     inProgressToday = await db
@@ -184,6 +190,7 @@ export async function tasksRange(
   const overdueCutoff = input.from ?? now;
   const overdueConds: SQL[] = [
     eq(entities.kind, "task"),
+    isNull(entities.deletedAt),
     isNotNull(entities.dueAt),
     lt(entities.dueAt, overdueCutoff),
     or(ne(entities.status, "done"), isNull(entities.status))!,

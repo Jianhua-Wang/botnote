@@ -118,6 +118,41 @@ export function useFeedback(input: ListFeedbackInput = {}, opts: { poll?: boolea
   });
 }
 
+export function useTrash(limit = 100) {
+  return useQuery({
+    queryKey: ["trash", limit],
+    queryFn: () => api.listTrash(limit)
+  });
+}
+
+const TRASH_AFFECTED_KEYS = [
+  ["trash"],
+  ["tasks-range"],
+  ["recent"],
+  ["entity-list"],
+  ["feedback"]
+] as const;
+
+export function useRestoreEntity() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.restoreEntity(id),
+    onSuccess: () => {
+      for (const key of TRASH_AFFECTED_KEYS) qc.invalidateQueries({ queryKey: key });
+    }
+  });
+}
+
+export function usePurgeEntity() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.purgeEntity(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["trash"] });
+    }
+  });
+}
+
 export function useEmbeddingSettings() {
   return useQuery({
     queryKey: ["settings", "embedding"],

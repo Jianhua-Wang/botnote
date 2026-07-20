@@ -132,6 +132,11 @@ export const api = {
 
   deleteEntity: (id: string) =>
     request<void>(`/v1/entities/${id}`, { method: "DELETE" }),
+  purgeEntity: (id: string) =>
+    request<void>(`/v1/entities/${id}?purge=true`, { method: "DELETE" }),
+  restoreEntity: (id: string) =>
+    request<Entity>(`/v1/entities/${id}/restore`, { method: "POST" }),
+  listTrash: (limit = 100) => request<Entity[]>(`/v1/trash?limit=${limit}`),
 
   relatedEntities: (id: string) => request<Entity[]>(`/v1/entities/${id}/related`),
 

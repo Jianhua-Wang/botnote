@@ -33,7 +33,7 @@ export async function openingBrief(
     db
       .select()
       .from(entities)
-      .where(and(projectFilter, eq(entities.pinned, true)))
+      .where(and(projectFilter, eq(entities.pinned, true), isNull(entities.deletedAt)))
       .orderBy(desc(entities.updatedAt))
       .limit(20),
     db
@@ -43,7 +43,8 @@ export async function openingBrief(
         and(
           projectFilter,
           eq(entities.kind, "task"),
-          inArray(entities.status, ["open", "in_progress"])
+          inArray(entities.status, ["open", "in_progress"]),
+          isNull(entities.deletedAt)
         )
       )
       // in_progress first (that's what a resuming session needs), then by
@@ -60,7 +61,7 @@ export async function openingBrief(
     db
       .select()
       .from(entities)
-      .where(projectFilter)
+      .where(and(projectFilter, isNull(entities.deletedAt)))
       .orderBy(desc(entities.createdAt))
       .limit(input.recentLimit)
   ]);
@@ -73,7 +74,13 @@ export async function openingBrief(
     const rows = await db
       .select()
       .from(entities)
-      .where(and(eq(entities.kind, "comment"), inArray(entities.parentId, inProgressIds)))
+      .where(
+        and(
+          eq(entities.kind, "comment"),
+          inArray(entities.parentId, inProgressIds),
+          isNull(entities.deletedAt)
+        )
+      )
       .orderBy(desc(entities.createdAt))
       .limit(inProgressIds.length * 10);
     const seen = new Set<string>();

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { edges, entities, projects, type Entity, type EdgeKind } from "../db/schema.js";
 import { normalizeDueAt } from "./dates.js";
@@ -152,7 +152,13 @@ export async function listComments(
   return db
     .select()
     .from(entities)
-    .where(and(eq(entities.parentId, entityId), eq(entities.kind, "comment")))
+    .where(
+      and(
+        eq(entities.parentId, entityId),
+        eq(entities.kind, "comment"),
+        isNull(entities.deletedAt)
+      )
+    )
     .orderBy(entities.createdAt)
     .limit(limit);
 }
@@ -305,7 +311,7 @@ export async function listRelated(
   return db
     .select()
     .from(entities)
-    .where(eq(entities.parentId, entityId))
+    .where(and(eq(entities.parentId, entityId), isNull(entities.deletedAt)))
     .orderBy(desc(entities.createdAt));
 }
 
@@ -372,15 +378,76 @@ export async function getByKey(
   return rows[0]?.e ?? null;
 }
 
+/**
+ * Soft delete: move the entity to the trash. Read paths hide trashed rows;
+ * restore() brings them back, purge()/purgeExpired() hard-delete them.
+ * Idempotent — re-deleting a trashed entity keeps its original trash time.
+ */
 export async function remove(db: Database["db"], id: string): Promise<boolean> {
   const entityId = await resolveEntityId(db, id);
   if (!entityId) return false;
 
   const res = await db
-    .delete(entities)
+    .update(entities)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(entities.id, entityId), isNull(entities.deletedAt)))
+    .returning({ id: entities.id });
+  if (res.length > 0) return true;
+
+  const exists = await db
+    .select({ id: entities.id })
+    .from(entities)
     .where(eq(entities.id, entityId))
+    .limit(1);
+  return exists.length > 0;
+}
+
+/** Bring a trashed entity back. Returns null when the id resolves to nothing. */
+export async function restore(db: Database["db"], id: string): Promise<Entity | null> {
+  const entityId = await resolveEntityId(db, id);
+  if (!entityId) return null;
+
+  const [row] = await db
+    .update(entities)
+    .set({ deletedAt: null })
+    .where(eq(entities.id, entityId))
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * Hard-delete a trashed entity ("delete forever"). Refuses to touch live
+ * rows — an entity must go through the trash first.
+ */
+export async function purge(db: Database["db"], id: string): Promise<boolean> {
+  const entityId = await resolveEntityId(db, id);
+  if (!entityId) return false;
+
+  const res = await db
+    .delete(entities)
+    .where(and(eq(entities.id, entityId), isNotNull(entities.deletedAt)))
     .returning({ id: entities.id });
   return res.length > 0;
+}
+
+/** Trashed entities, most recently deleted first. */
+export async function listTrash(db: Database["db"], limit = 100): Promise<Entity[]> {
+  return db
+    .select()
+    .from(entities)
+    .where(isNotNull(entities.deletedAt))
+    .orderBy(desc(entities.deletedAt))
+    .limit(limit);
+}
+
+/** Hard-delete trash older than the retention window. Returns rows purged. */
+export async function purgeExpired(db: Database["db"], retentionDays: number): Promise<number> {
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+  const res = await db
+    .delete(entities)
+    .where(and(isNotNull(entities.deletedAt), sql`${entities.deletedAt} < ${cutoff}`))
+    .returning({ id: entities.id });
+  return res.length;
 }
 
 export async function recent(db: Database["db"], input: RecentInput): Promise<Entity[]> {
@@ -388,6 +455,7 @@ export async function recent(db: Database["db"], input: RecentInput): Promise<En
   if (input.projectId) conds.push(eq(entities.projectId, input.projectId));
   else if (input.projectId === null) conds.push(isNull(entities.projectId));
   else conds.push(activeProjectVisibility());
+  conds.push(isNull(entities.deletedAt));
   if (input.since) conds.push(gte(entities.createdAt, input.since));
   if (input.kinds?.length) conds.push(inArray(entities.kind, input.kinds));
   const where = conds.length ? and(...conds) : undefined;
@@ -426,9 +494,12 @@ export async function listChildren(db: Database["db"], parentId: string): Promis
     .select()
     .from(entities)
     .where(
-      inArray(
-        entities.id,
-        childIds.map((c) => c.toId)
+      and(
+        inArray(
+          entities.id,
+          childIds.map((c) => c.toId)
+        ),
+        isNull(entities.deletedAt)
       )
     )
     .orderBy(desc(entities.createdAt));
@@ -465,7 +536,7 @@ export async function listTags(
   const rows = await db.execute<{ tag: string; count: string }>(sql`
     SELECT tag, COUNT(*)::int AS count
     FROM entities, unnest(tags) AS tag
-    WHERE true ${projectFilter}
+    WHERE deleted_at IS NULL ${projectFilter}
     GROUP BY tag
     ORDER BY count DESC, tag ASC
   `);
@@ -507,7 +578,7 @@ export async function getLinks(
       const entityRows = await db
         .select()
         .from(entities)
-        .where(inArray(entities.id, toIds));
+        .where(and(inArray(entities.id, toIds), isNull(entities.deletedAt)));
       const entityById = new Map(entityRows.map((en) => [en.id, en]));
       for (const row of rows.rows) {
         const entity = entityById.get(row.to_id);
@@ -533,7 +604,7 @@ export async function getLinks(
       const entityRows = await db
         .select()
         .from(entities)
-        .where(inArray(entities.id, fromIds));
+        .where(and(inArray(entities.id, fromIds), isNull(entities.deletedAt)));
       const entityById = new Map(entityRows.map((en) => [en.id, en]));
       for (const row of rows.rows) {
         const entity = entityById.get(row.from_id);

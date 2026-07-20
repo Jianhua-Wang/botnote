@@ -57,6 +57,7 @@ export interface Entity {
   completedAt: string | null;
   lastAccessedAt: string | null;
   accessCount: number;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

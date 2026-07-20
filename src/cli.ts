@@ -4,6 +4,7 @@ import { migrate } from "./db/migrate.js";
 import { BotnoteHttpClient } from "./mcp/http-client.js";
 import { buildMcpServer } from "./mcp/server.js";
 import { EmbeddingService } from "./service/embedding.js";
+import { purgeExpired } from "./service/entities.js";
 import { materializeScheduledRecurrences } from "./service/recurrence.js";
 import { buildServer } from "./rest/server.js";
 import { VERSION } from "./version.js";
@@ -13,6 +14,9 @@ import { VERSION } from "./version.js";
 // via BOTNOTE_URL in its Codex / Claude Code config to skip the tunnel.
 const DEFAULT_MCP_BASE_URL = "https://botnote.net";
 const DEFAULT_RECURRENCE_MATERIALIZE_INTERVAL_MS = 5 * 60 * 1000;
+// Trashed entities are hard-deleted after this many days. 0 disables auto-purge.
+const DEFAULT_TRASH_RETENTION_DAYS = 30;
+const TRASH_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 function endOfToday(): Date {
   const end = new Date();
@@ -56,9 +60,29 @@ async function runRest(): Promise<void> {
   const recurrenceTimer =
     recurrenceIntervalMs > 0 ? setInterval(materializeRecurrences, recurrenceIntervalMs) : null;
 
+  const trashRetentionDays = Number(
+    process.env.BOTNOTE_TRASH_RETENTION_DAYS ?? DEFAULT_TRASH_RETENTION_DAYS
+  );
+  const purgeTrash = async () => {
+    try {
+      const purged = await purgeExpired(db, trashRetentionDays);
+      if (purged > 0) {
+        app.log.info(`purged ${purged} trashed entit(ies) older than ${trashRetentionDays}d`);
+      }
+    } catch (err) {
+      app.log.error({ err }, "trash purge failed");
+    }
+  };
+  let trashTimer: NodeJS.Timeout | null = null;
+  if (trashRetentionDays > 0) {
+    await purgeTrash();
+    trashTimer = setInterval(purgeTrash, TRASH_PURGE_INTERVAL_MS);
+  }
+
   const shutdown = async (sig: string) => {
     app.log.info(`shutting down on ${sig}`);
     if (recurrenceTimer) clearInterval(recurrenceTimer);
+    if (trashTimer) clearInterval(trashTimer);
     await app.close();
     process.exit(0);
   };

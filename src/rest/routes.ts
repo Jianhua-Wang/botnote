@@ -12,9 +12,12 @@ import {
   listComments,
   listRelated,
   listTags,
+  listTrash,
   markSuperseded,
+  purge,
   recent,
   remove,
+  restore,
   update,
   write
 } from "../service/entities.js";
@@ -796,20 +799,64 @@ export async function registerRoutes(
     }
   );
 
+  const DeleteEntityQuery = z.object({
+    // ?purge=true permanently deletes an already-trashed entity; without it,
+    // delete is a soft delete (moves the entity to the trash).
+    purge: z.coerce.boolean().optional()
+  });
+
   app.delete(
     "/v1/entities/:id",
     {
       schema: {
         tags: ["entities"],
-        summary: "Delete an entity",
+        summary: "Move an entity to the trash (soft delete); ?purge=true permanently deletes a trashed entity",
+        params: EntityIdParams,
+        querystring: DeleteEntityQuery
+      }
+    },
+    async (req, reply) => {
+      const { id } = EntityIdParams.parse(req.params);
+      const query = DeleteEntityQuery.parse(req.query);
+      const ok = query.purge ? await purge(ctx.db, id) : await remove(ctx.db, id);
+      if (!ok) return reply.code(404).send({ error: "not_found" });
+      return reply.code(204).send();
+    }
+  );
+
+  app.post(
+    "/v1/entities/:id/restore",
+    {
+      schema: {
+        tags: ["entities"],
+        summary: "Restore a trashed entity",
         params: EntityIdParams
       }
     },
     async (req, reply) => {
       const { id } = EntityIdParams.parse(req.params);
-      const ok = await remove(ctx.db, id);
-      if (!ok) return reply.code(404).send({ error: "not_found" });
-      return reply.code(204).send();
+      const restored = await restore(ctx.db, id);
+      if (!restored) return reply.code(404).send({ error: "not_found" });
+      return serializeEntity(restored);
+    }
+  );
+
+  const TrashQuery = z.object({
+    limit: z.coerce.number().int().positive().max(500).default(100)
+  });
+
+  app.get(
+    "/v1/trash",
+    {
+      schema: {
+        tags: ["entities"],
+        summary: "List trashed entities, most recently deleted first",
+        querystring: TrashQuery
+      }
+    },
+    async (req) => {
+      const query = TrashQuery.parse(req.query);
+      return serializeEntities(await listTrash(ctx.db, query.limit));
     }
   );
 

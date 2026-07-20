@@ -55,13 +55,14 @@ export async function search(
     : sql`AND (project_id IS NULL OR project_id IN (
         SELECT id FROM projects WHERE status <> 'archived'
       ))`;
+  const notTrashed = sql`AND deleted_at IS NULL`;
   const fetchN = Math.max(input.limit * 4, 40);
 
   const bm25Rows = (
     await db.execute<RankRow>(sql`
       SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(body_tsv, q) DESC) AS rank_pos
       FROM entities, websearch_to_tsquery('simple', ${input.query}) q
-      WHERE body_tsv @@ q ${projectFilter} ${kindFilter} ${activeProjectFilter}
+      WHERE body_tsv @@ q ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}
       ORDER BY ts_rank_cd(body_tsv, q) DESC
       LIMIT ${fetchN}
     `)
@@ -74,7 +75,7 @@ export async function search(
                  ROW_NUMBER() OVER (ORDER BY created_at DESC) AS rank_pos
           FROM entities
           WHERE (title ILIKE ${`%${input.query}%`} OR body ILIKE ${`%${input.query}%`})
-            ${projectFilter} ${kindFilter} ${activeProjectFilter}
+            ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}
           LIMIT ${fetchN}
         `)
       ).rows
@@ -87,7 +88,7 @@ export async function search(
       await db.execute<RankRow>(sql`
         SELECT id, ROW_NUMBER() OVER (ORDER BY body_vec <=> ${vecLiteral}::vector) AS rank_pos
         FROM entities
-        WHERE body_vec IS NOT NULL ${projectFilter} ${kindFilter} ${activeProjectFilter}
+        WHERE body_vec IS NOT NULL ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}
         ORDER BY body_vec <=> ${vecLiteral}::vector
         LIMIT ${fetchN}
       `)
@@ -98,7 +99,7 @@ export async function search(
     await db.execute<RankRow>(sql`
       SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) AS rank_pos
       FROM entities
-      WHERE 1=1 ${projectFilter} ${kindFilter} ${activeProjectFilter}
+      WHERE 1=1 ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}
       ORDER BY created_at DESC
       LIMIT ${fetchN}
     `)

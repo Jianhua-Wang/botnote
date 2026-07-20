@@ -101,6 +101,9 @@ export const entities = pgTable(
     // into hybrid search so frequently-recalled memories rank higher.
     lastAccessedAt: timestamp("last_accessed_at", { withTimezone: true }),
     accessCount: integer("access_count").notNull().default(0),
+    // Soft delete: non-null = in the trash. Read paths exclude trashed rows;
+    // restore clears it; the retention purge hard-deletes expired rows.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
