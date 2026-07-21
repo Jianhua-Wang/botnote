@@ -1,26 +1,7 @@
-import {
-  Activity,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  FolderKanban,
-  Megaphone,
-  RotateCcw,
-  Trash2,
-  X
-} from "lucide-react";
+import { Activity, Check, ChevronDown, ChevronRight, FolderKanban, Megaphone, X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  useFeedback,
-  useProjects,
-  usePurgeEntity,
-  useRecent,
-  useRestoreEntity,
-  useTasksRange,
-  useTrash,
-  useUpdateEntity
-} from "../api/hooks";
+import { useFeedback, useProjects, useRecent, useTasksRange, useUpdateEntity } from "../api/hooks";
 import type { FeedbackCategory, FeedbackStatus, Project, ProjectStatus } from "../api/types";
 import { FEEDBACK_CATEGORIES } from "../api/types";
 import { KindBadge } from "../components/KindBadge";
@@ -104,8 +85,6 @@ export function DashboardPage() {
         </section>
 
         <FeedbackSection />
-
-        <TrashSection />
 
         <section>
           <div className="flex items-center gap-2 mb-3 text-muted">
@@ -272,100 +251,6 @@ function FeedbackSection() {
           })}
         </div>
       )}
-    </section>
-  );
-}
-
-function TrashSection() {
-  const [expanded, setExpanded] = useState(false);
-  const { data: trash } = useTrash(100);
-  const restore = useRestoreEntity();
-  const purge = usePurgeEntity();
-
-  const count = trash?.length ?? 0;
-
-  const emptyTrash = () => {
-    if (!trash || trash.length === 0) return;
-    if (!window.confirm(`Permanently delete all ${trash.length} item(s) in the trash? This cannot be undone.`)) {
-      return;
-    }
-    for (const e of trash) purge.mutate(e.id);
-  };
-
-  return (
-    <section>
-      <div className="flex items-center gap-2 mb-3 text-muted">
-        <Trash2 size={14} />
-        <button
-          type="button"
-          className="flex items-center gap-1.5 hover:text-ink"
-          onClick={() => setExpanded((v) => !v)}
-          title={expanded ? "Collapse trash" : "Expand trash"}
-        >
-          <h2 className="text-xs uppercase tracking-wider font-medium">Trash ({count})</h2>
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </button>
-        {expanded && count > 0 && (
-          <button
-            className="btn btn-ghost !h-6 !px-2 text-xxs gap-1 ml-auto hover:!text-red-600"
-            onClick={emptyTrash}
-          >
-            <X size={11} /> Empty trash
-          </button>
-        )}
-      </div>
-
-      {expanded &&
-        (count === 0 ? (
-          <div className="border border-dashed border-line rounded-md p-4 text-center text-xs text-muted">
-            Trash is empty. Deleted items land here and are purged after 30 days.
-          </div>
-        ) : (
-          <div className="bg-surface border border-line rounded-md divide-y divide-line/60">
-            {trash?.map((e) => (
-              <div key={e.id} className="flex items-center gap-3 px-3 py-2 row-hover group">
-                <KindBadge kind={e.kind} />
-                <div className="flex-1 min-w-0">
-                  <div
-                    className={`text-sm truncate ${isUntitled(e) ? "text-muted italic" : "text-ink"}`}
-                  >
-                    {displayTitle(e)}
-                  </div>
-                  <div className="text-xxs text-muted mt-0.5">
-                    deleted {e.deletedAt ? timeAgo(e.deletedAt) : "—"} ·{" "}
-                    <span className="opacity-70">{e.actorKind}</span>
-                  </div>
-                </div>
-                <div
-                  className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <button
-                    className="btn btn-ghost !h-6 !px-2 text-xxs gap-1"
-                    title="Restore"
-                    onClick={() => restore.mutate(e.id)}
-                  >
-                    <RotateCcw size={11} /> Restore
-                  </button>
-                  <button
-                    className="btn btn-ghost !h-6 !px-2 text-xxs gap-1 hover:!text-red-600"
-                    title="Delete forever"
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Permanently delete “${displayTitle(e)}”? This cannot be undone.`
-                        )
-                      ) {
-                        purge.mutate(e.id);
-                      }
-                    }}
-                  >
-                    <Trash2 size={11} /> Delete forever
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
     </section>
   );
 }

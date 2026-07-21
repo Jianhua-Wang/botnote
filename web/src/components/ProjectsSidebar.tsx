@@ -6,11 +6,12 @@ import {
   Inbox,
   LayoutDashboard,
   Plus,
-  Sunrise
+  Sunrise,
+  Trash2
 } from "lucide-react";
 import { NavLink, useParams } from "react-router-dom";
 import { useMemo } from "react";
-import { useProjects } from "../api/hooks";
+import { useProjects, useTrash } from "../api/hooks";
 import type { Project, ProjectStatus } from "../api/types";
 import { usePersistedState } from "../hooks/usePersistedState";
 import { PROJECT_STATUS_GROUPS, PROJECT_STATUS_LABEL } from "../lib/projectStatus";
@@ -43,6 +44,8 @@ export function ProjectsSidebar() {
     Partial<Record<ProjectStatus, boolean>>
   >("botnote.sidebar.projectGroups.collapsed", DEFAULT_COLLAPSED_GROUPS);
   const { data: projects, isLoading } = useProjects({ includeArchived: true });
+  const { data: trash } = useTrash(200);
+  const trashCount = trash?.length ?? 0;
 
   const groupedProjects = useMemo(() => {
     const all = projects ?? [];
@@ -170,7 +173,13 @@ export function ProjectsSidebar() {
         })}
       </nav>
 
-      <div className="border-t border-line/60 px-1.5 py-1.5">
+      <div className="border-t border-line/60 px-1.5 py-1.5 space-y-px">
+        <SidebarLink
+          to="/trash"
+          icon={<Trash2 size={12} className="opacity-70" />}
+          label="Trash"
+          badge={trashCount > 0 ? trashCount : undefined}
+        />
         <SidebarLink
           to="/settings"
           icon={<Cog size={12} className="opacity-70" />}
@@ -217,13 +226,15 @@ function SidebarLink({
   end,
   icon,
   label,
-  shortcut
+  shortcut,
+  badge
 }: {
   to: string;
   end?: boolean;
   icon: React.ReactNode;
   label: string;
   shortcut?: string;
+  badge?: number;
 }) {
   return (
     <NavLink
@@ -238,6 +249,9 @@ function SidebarLink({
     >
       {icon}
       <span>{label}</span>
+      {badge != null && (
+        <span className="ml-auto text-xxs text-faint tabular-nums">{badge}</span>
+      )}
       {shortcut && (
         <kbd className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
           {shortcut}

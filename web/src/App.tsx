@@ -11,6 +11,7 @@ import { SearchPage } from "./pages/SearchPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TasksPage } from "./pages/TasksPage";
 import { TodayPage } from "./pages/TodayPage";
+import { TrashPage } from "./pages/TrashPage";
 import { ModalsProvider } from "./state/modals";
 import { ToastsProvider } from "./state/toasts";
 
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/today" element={<TodayPage />} />
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/trash" element={<TrashPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/p/:key" element={<ProjectPage />} />
           <Route path="/p/:key/e/:id" element={<EntityDetailPage />} />
