@@ -191,40 +191,9 @@ The plugin bundles the MCP server, workflow skills/commands, and a curator
 subagent. All workflows route through MCP, so no separate task or memory MCP
 setup is required.
 
-### Quick install: skills CLI (any client)
-
-The fastest way to get the workflow skills into Claude Code, Codex, Cursor, or
-any of the 70+ agents the [skills CLI](https://github.com/vercel-labs/skills)
-supports:
-
-```bash
-npx skills add Jianhua-Wang/botnote   # install all 7 skills
-npx skills update                     # refresh to the latest version later
-npx skills list                       # see what is installed where
-```
-
-The skills CLI installs `SKILL.md` files only — it does not set up the botnote
-MCP server the skills depend on, and it does not install plugin hooks (the
-session-close feedback nudge ships only with the Claude Code plugin below).
-Wire up the MCP server once per machine:
-
-```bash
-# Claude Code
-claude mcp add botnote \
-  -e BOTNOTE_URL=https://botnote.net \
-  -e BOTNOTE_TOKEN=<token from Settings -> API tokens> \
-  -- npx -y botnote mcp
-
-# Codex
-codex mcp add botnote \
-  --env BOTNOTE_URL=https://botnote.net \
-  --env BOTNOTE_TOKEN=<token> \
-  -- npx -y botnote mcp
-```
-
-On the daemon host use `BOTNOTE_URL=http://127.0.0.1:4280` and skip the token.
-Prefer the full plugin installs below when you want the bundled MCP wiring
-(URL/token prompts) and hooks instead of manual setup.
+Prefer the plugin installs below: they bundle MCP wiring (URL/token prompts),
+hooks, and skills in one step. The skills CLI at the end of this section is a
+skills-only fallback for agents without a plugin system.
 
 ### Claude Code
 
@@ -330,6 +299,39 @@ https://github.com/Jianhua-Wang/botnote
 The Cursor plugin manifest is `plugins/botnote/.cursor-plugin/plugin.json` and
 uses the same `botnote_url` / `botnote_token` settings as the Claude Code
 plugin.
+
+### Skills-only fallback: skills CLI
+
+For agents without a plugin system, the
+[skills CLI](https://github.com/vercel-labs/skills) can install the workflow
+skills into 70+ agents:
+
+```bash
+npx skills add Jianhua-Wang/botnote   # install all 7 skills
+npx skills update                     # refresh to the latest version later
+npx skills list                       # see what is installed where
+```
+
+The skills CLI installs `SKILL.md` files only — it does not set up the botnote
+MCP server the skills depend on, and it does not install plugin hooks (the
+session-close feedback nudge ships only with the Claude Code plugin above).
+Wire up the MCP server once per machine:
+
+```bash
+# Claude Code
+claude mcp add botnote \
+  -e BOTNOTE_URL=https://botnote.net \
+  -e BOTNOTE_TOKEN=<token from Settings -> API tokens> \
+  -- npx -y botnote mcp
+
+# Codex
+codex mcp add botnote \
+  --env BOTNOTE_URL=https://botnote.net \
+  --env BOTNOTE_TOKEN=<token> \
+  -- npx -y botnote mcp
+```
+
+On the daemon host use `BOTNOTE_URL=http://127.0.0.1:4280` and skip the token.
 
 ## MCP tools
 

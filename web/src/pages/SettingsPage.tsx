@@ -332,7 +332,7 @@ const REPO_MARKETPLACE_JSON = `{
 }`;
 
 function PluginSection() {
-  const [client, setClient] = useState<PluginClientId>("skills");
+  const [client, setClient] = useState<PluginClientId>("claude");
 
   const clients: {
     id: PluginClientId;
@@ -341,56 +341,6 @@ function PluginSection() {
     subtitle: string;
     cards: { title: string; steps: Step[] }[];
   }[] = [
-    {
-      id: "skills",
-      label: "Skills CLI",
-      icon: Zap,
-      subtitle:
-        "Fastest path: one command installs the workflow skills into Claude Code, Codex, Cursor, and 70+ other agents. Wire the MCP server once per machine; hooks still require the Claude Code plugin.",
-      cards: [
-        {
-          title: "Install",
-          steps: [
-            {
-              note: "Install all botnote skills straight from the GitHub repo:",
-              code: "npx skills add Jianhua-Wang/botnote"
-            },
-            {
-              note: (
-                <>
-                  One-time MCP wiring — the skills call botnote MCP tools, which the skills CLI
-                  does not set up. Use the command for your client:
-                </>
-              ),
-              code:
-                "# Claude Code\nclaude mcp add botnote \\\n  -e BOTNOTE_URL=https://botnote.net \\\n  -e BOTNOTE_TOKEN=<token> \\\n  -- npx -y botnote mcp\n\n# Codex\ncodex mcp add botnote \\\n  --env BOTNOTE_URL=https://botnote.net \\\n  --env BOTNOTE_TOKEN=<token> \\\n  -- npx -y botnote mcp"
-            },
-            {
-              note: (
-                <>
-                  On the daemon host use <code className="text-ink">http://127.0.0.1:4280</code> and
-                  skip the token. Want the bundled MCP prompts and the session-close feedback hook?
-                  Use the Claude Code plugin tab instead.
-                </>
-              )
-            }
-          ]
-        },
-        {
-          title: "Update",
-          steps: [
-            {
-              note: "Refresh every installed skill from its source repo:",
-              code: "npx skills update"
-            },
-            {
-              note: "Inspect or prune what is installed:",
-              code: "npx skills list\nnpx skills remove <name>"
-            }
-          ]
-        }
-      ]
-    },
     {
       id: "claude",
       label: "Claude Code",
@@ -524,6 +474,56 @@ function PluginSection() {
       ]
     },
     {
+      id: "skills",
+      label: "Skills CLI",
+      icon: Zap,
+      subtitle:
+        "Skills-only alternative: installs the workflow skills into 70+ agents, but NOT the MCP server or hooks. Prefer the plugin install above; use this when your agent has no plugin system.",
+      cards: [
+        {
+          title: "Install",
+          steps: [
+            {
+              note: "Install all botnote skills straight from the GitHub repo:",
+              code: "npx skills add Jianhua-Wang/botnote"
+            },
+            {
+              note: (
+                <>
+                  One-time MCP wiring — the skills call botnote MCP tools, which the skills CLI
+                  does not set up. Use the command for your client:
+                </>
+              ),
+              code:
+                "# Claude Code\nclaude mcp add botnote \\\n  -e BOTNOTE_URL=https://botnote.net \\\n  -e BOTNOTE_TOKEN=<token> \\\n  -- npx -y botnote mcp\n\n# Codex\ncodex mcp add botnote \\\n  --env BOTNOTE_URL=https://botnote.net \\\n  --env BOTNOTE_TOKEN=<token> \\\n  -- npx -y botnote mcp"
+            },
+            {
+              note: (
+                <>
+                  On the daemon host use <code className="text-ink">http://127.0.0.1:4280</code> and
+                  skip the token. Want the bundled MCP prompts and the session-close feedback hook?
+                  Use the Claude Code plugin tab instead.
+                </>
+              )
+            }
+          ]
+        },
+        {
+          title: "Update",
+          steps: [
+            {
+              note: "Refresh every installed skill from its source repo:",
+              code: "npx skills update"
+            },
+            {
+              note: "Inspect or prune what is installed:",
+              code: "npx skills list\nnpx skills remove <name>"
+            }
+          ]
+        }
+      ]
+    },
+    {
       id: "cli",
       label: "CLI runtime",
       icon: Package,
@@ -590,8 +590,8 @@ function PluginSection() {
         />
         <PluginStep
           n={2}
-          title="Skills or plugin"
-          body="Quickest: npx skills add Jianhua-Wang/botnote for any client. Or install the marketplace plugin for bundled MCP wiring and hooks."
+          title="Install the plugin"
+          body="Install the marketplace plugin for your client — it bundles MCP wiring, hooks, and skills. The Skills CLI tab is a skills-only fallback for agents without a plugin system."
         />
         <PluginStep
           n={3}
