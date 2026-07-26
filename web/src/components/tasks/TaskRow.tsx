@@ -4,6 +4,7 @@ import type { Entity, Priority, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { useUndoableDelete } from "../../hooks/useUndoableDelete";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
+import { TagChip } from "../TagChip";
 import { PriorityIcon, PRIORITY_LABEL, RecurrenceIcon } from "./icons";
 import { PopoverMenu } from "./PopoverMenu";
 import { StatusPickerButton } from "./StatusPickerButton";
@@ -60,9 +61,7 @@ export function TaskRow({
       {/* Compact rows (inbox rail) give every pixel to the title. */}
       {!compact &&
         task.tags.slice(0, 2).map((t) => (
-          <span key={t} className="chip shrink-0 hidden md:inline-flex">
-            {t}
-          </span>
+          <TagChip key={t} tag={t} className="hidden md:inline-flex" />
         ))}
 
       {showProject && project && compact && (

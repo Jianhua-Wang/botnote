@@ -4,6 +4,7 @@ import { useUpdateEntity } from "../../api/hooks";
 import type { Entity, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
+import { TagChip } from "../TagChip";
 import { PriorityIcon, RecurrenceIcon } from "../tasks/icons";
 import { isRecurring, isTaskOverdue } from "../tasks/utils";
 import { StatusPickerButton } from "../tasks/StatusPickerButton";
@@ -180,20 +181,23 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
         )}
         <PriorityIcon priority={task.priority} size={11} />
       </div>
-      <div className="mt-1.5 flex items-center gap-2 text-xxs text-muted">
-        {idLabel && <span className="font-mono tabular-nums">{idLabel}</span>}
+      {/* Key and date never wrap or shrink; long tags ellipsize instead. */}
+      <div className="mt-1.5 flex items-center gap-2 overflow-hidden text-xxs text-muted">
+        {idLabel && (
+          <span className="font-mono tabular-nums shrink-0 whitespace-nowrap">{idLabel}</span>
+        )}
         {visibleDate && (
           <span
-            className={`tabular-nums ${overdue ? "text-danger font-medium" : ""}`}
+            className={`tabular-nums shrink-0 whitespace-nowrap ${
+              overdue ? "text-danger font-medium" : ""
+            }`}
             title={`${visibleDateLabel} ${new Date(visibleDate).toLocaleString()}`}
           >
             {format(new Date(visibleDate), "MMM d")}
           </span>
         )}
         {task.tags.slice(0, 2).map((t) => (
-          <span key={t} className="chip !h-4 !text-[10px]">
-            {t}
-          </span>
+          <TagChip key={t} tag={t} className="!h-4 !text-[10px]" />
         ))}
       </div>
     </div>

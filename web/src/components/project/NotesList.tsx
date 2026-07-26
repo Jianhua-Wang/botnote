@@ -5,6 +5,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useEntityList, useUpdateEntity } from "../../api/hooks";
 import type { Project } from "../../api/types";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
+import { TagChip } from "../TagChip";
 import { useModals } from "../../state/modals";
 
 export function NotesList({ project }: { project: Project }) {
@@ -93,9 +94,7 @@ export function NotesList({ project }: { project: Project }) {
                       <>
                         <span>·</span>
                         {n.tags.slice(0, 3).map((t) => (
-                          <span key={t} className="chip !h-4 !text-[10px]">
-                            {t}
-                          </span>
+                          <TagChip key={t} tag={t} className="!h-4 !text-[10px]" />
                         ))}
                       </>
                     )}
