@@ -363,6 +363,50 @@ describe("botnote service", () => {
     ).rejects.toThrow(/status 'done'/);
   });
 
+  it("never stamps completedAt on non-task kinds, and always allows clearing it", async () => {
+    const p = await createProject(db, { key: "NCMP", name: "Non-task completion" });
+
+    // A note created done carries no completion stamp.
+    const createdDone = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Note created done",
+      body: "",
+      tags: [],
+      status: "done",
+      actorKind: "human",
+      metadata: {}
+    });
+    expect(createdDone.completedAt).toBeNull();
+
+    // Neither does a note that transitions into done.
+    const note = await write(db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Note marked done later",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const noteDone = await update(db, note.id, { status: "done" });
+    expect(noteDone.completedAt).toBeNull();
+
+    // Setting a value on a non-task is still rejected...
+    await expect(
+      update(db, note.id, { completedAt: new Date() })
+    ).rejects.toThrow(/applies to tasks only/);
+
+    // ...but clearing must always work, so a stray stamp (e.g. written by an
+    // older build) can be removed instead of being stuck forever.
+    await db.execute(sql`
+      UPDATE entities SET completed_at = now() WHERE id = ${note.id}
+    `);
+    const cleared = await update(db, note.id, { completedAt: null });
+    expect(cleared.completedAt).toBeNull();
+  });
+
   it("tasksRange displays done tasks on completion day, not due day", async () => {
     const p = await createProject(db, { key: "CAL", name: "Calendar" });
     const dueAt = new Date("2026-06-01T12:00:00.000Z");

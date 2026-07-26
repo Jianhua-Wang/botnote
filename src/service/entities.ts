@@ -93,7 +93,9 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
       // Mirror the PATCH path: a task created already-done gets a
       // completedAt stamp so the calendar renders it on the right day.
       // An explicit completedAt (backdated completion) wins over the stamp.
-      completedAt: input.completedAt ?? (status === "done" ? new Date() : null),
+      // Non-task kinds never carry a stamp, even when created done.
+      completedAt:
+        input.completedAt ?? (input.kind === "task" && status === "done" ? new Date() : null),
       idempotencyKey: input.idempotencyKey ?? null
     })
     .returning();
@@ -220,22 +222,29 @@ export async function update(
     }
     // Only touch completedAt when the status itself is changing — an unrelated
     // field update on an already-done task must not clear its completion stamp.
+    // Only tasks earn a stamp; leaving-done always clears it, so a stray stamp
+    // on a non-task heals itself.
     if (normalizedFields.status !== undefined) {
       const wasDone = prior[0].status === "done";
       const isDone = normalizedFields.status === "done";
       enteredDone = isDone && !wasDone;
-      if (isDone && !wasDone) set.completedAt = new Date();
-      else if (!isDone && wasDone) set.completedAt = null;
+      if (isDone && !wasDone) {
+        if (prior[0].kind === "task") set.completedAt = new Date();
+      } else if (!isDone && wasDone) set.completedAt = null;
     }
     // An explicit completedAt always wins over the automatic stamp, but only
-    // makes sense on a task that is (or is becoming) done. null clears it.
+    // makes sense on a task that is (or is becoming) done. Clearing it (null)
+    // is allowed on any kind — removing a value must never be more restricted
+    // than setting it, or a stray stamp would be impossible to undo.
     if (fields.completedAt !== undefined) {
-      if (prior[0].kind !== "task") {
-        throw clientError("completedAt applies to tasks only", 400);
-      }
-      const statusAfter = normalizedFields.status ?? prior[0].status;
-      if (fields.completedAt !== null && statusAfter !== "done") {
-        throw clientError("completedAt can only be set on a done task", 400);
+      if (fields.completedAt !== null) {
+        if (prior[0].kind !== "task") {
+          throw clientError("completedAt applies to tasks only", 400);
+        }
+        const statusAfter = normalizedFields.status ?? prior[0].status;
+        if (statusAfter !== "done") {
+          throw clientError("completedAt can only be set on a done task", 400);
+        }
       }
       set.completedAt = fields.completedAt;
     }
