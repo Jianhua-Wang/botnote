@@ -85,11 +85,21 @@ export async function tasksRange(
         SELECT id FROM projects WHERE status <> 'archived'
       ))`;
 
+  const notStatus = (status: string): SQL =>
+    or(ne(entities.status, status), isNull(entities.status))!;
+
   // Base filter applied to every bucket: only tasks, optional project filter,
-  // and the includeDone toggle.
-  const baseConds: SQL[] = [eq(entities.kind, "task"), isNull(entities.deletedAt)];
+  // and the includeDone toggle. Rejected/archived work is excluded everywhere:
+  // includeDone means "show completion history", not "show abandoned work",
+  // and a cancelled task with a leftover dueAt is not scheduled for anything.
+  const baseConds: SQL[] = [
+    eq(entities.kind, "task"),
+    isNull(entities.deletedAt),
+    notStatus("rejected"),
+    notStatus("archived")
+  ];
   if (!input.includeDone) {
-    baseConds.push(or(ne(entities.status, "done"), isNull(entities.status))!);
+    baseConds.push(notStatus("done"));
   }
   if (projectFilter) baseConds.push(projectFilter);
   if (activeProjectFilter) baseConds.push(activeProjectFilter);
@@ -107,8 +117,8 @@ export async function tasksRange(
   const dueByDueConds = [
     ...baseConds,
     isNotNull(entities.dueAt),
-    or(ne(entities.status, "done"), isNull(entities.status))!,
-    or(ne(entities.status, "in_progress"), isNull(entities.status))!,
+    notStatus("done"),
+    notStatus("in_progress"),
     ...inRange(entities.dueAt)
   ];
   const dueByDue = await db
@@ -193,9 +203,10 @@ export async function tasksRange(
     isNull(entities.deletedAt),
     isNotNull(entities.dueAt),
     lt(entities.dueAt, overdueCutoff),
-    or(ne(entities.status, "done"), isNull(entities.status))!,
-    or(ne(entities.status, "in_progress"), isNull(entities.status))!,
-    or(ne(entities.status, "rejected"), isNull(entities.status))!
+    notStatus("done"),
+    notStatus("in_progress"),
+    notStatus("rejected"),
+    notStatus("archived")
   ];
   if (projectFilter) overdueConds.push(projectFilter);
   if (activeProjectFilter) overdueConds.push(activeProjectFilter);

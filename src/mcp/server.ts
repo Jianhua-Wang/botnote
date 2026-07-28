@@ -1197,7 +1197,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "List Tasks",
       description:
-        "Return tasks split into Overdue / Scheduled / Backlog buckets for a given date range. Scheduled includes tasks whose display date falls in [from, to). Overdue is unfinished work before the range start (or before now when from is omitted). Backlog is undated tasks (when includeBacklog is true).",
+        "Return tasks split into Overdue / Scheduled / Backlog buckets for a given date range. Scheduled includes tasks whose display date falls in [from, to). Overdue is unfinished work before the range start (or before now when from is omitted). Backlog is undated tasks (when includeBacklog is true). Rejected and archived tasks never appear in any bucket — use the project views to inspect cancelled work.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

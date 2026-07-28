@@ -564,7 +564,7 @@ describe("botnote service", () => {
     expect(yesterday.scheduled.map((t) => t.id)).not.toContain(task.id);
   });
 
-  it("tasksRange includes cancelled tasks in inbox backlog", async () => {
+  it("tasksRange keeps cancelled tasks out of every bucket", async () => {
     const p = await createProject(db, { key: "INBX", name: "Inbox" });
     const open = await write(db, {
       kind: "task",
@@ -586,15 +586,28 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
+    // A leftover dueAt on a cancelled task must not resurrect it as Scheduled.
+    const cancelledDated = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Cancelled task with stale due date",
+      body: "",
+      tags: [],
+      status: "rejected",
+      actorKind: "human",
+      metadata: {},
+      dueAt: new Date()
+    });
 
     const range = await tasksRange(db, {
       projectIds: [p.id],
       includeBacklog: true,
-      includeDone: false
+      includeDone: true
     });
-    const ids = range.backlog.map((t) => t.id);
-    expect(ids).toContain(open.id);
-    expect(ids).toContain(cancelled.id);
+    expect(range.backlog.map((t) => t.id)).toContain(open.id);
+    const everywhere = [...range.scheduled, ...range.overdue, ...range.backlog].map((t) => t.id);
+    expect(everywhere).not.toContain(cancelled.id);
+    expect(everywhere).not.toContain(cancelledDated.id);
   });
 
   it("creates a recurrence rule and generates the next scheduled occurrence on completion", async () => {

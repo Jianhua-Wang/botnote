@@ -3,8 +3,14 @@
 # Resolution order:
 #   1. BOTNOTE_BIN env var (manual override, e.g. for dev checkouts)
 #   2. `botnote` on PATH only when it matches this plugin version
-#   3. `npx -y botnote@<plugin-version>` (normal plugin install path)
-#   4. `botnote` on PATH as a last-resort offline fallback
+#   3. `npx -y botnote@<plugin-version>`, but only after verifying the version
+#      it actually resolves — npx silently runs a stale globally-installed
+#      botnote (exit 0, no error) when the pinned version can't be fetched,
+#      e.g. before the release lands on the registry.
+#
+# There is deliberately NO version-mismatched fallback: an old CLI serves an
+# old tool surface, and agents treat missing tools as "capability gone" and
+# silently skip work. A loud startup failure gets reported; a downgrade never is.
 #
 # The MCP server itself is an HTTP client of the botnote daemon — it reads
 # BOTNOTE_URL / BOTNOTE_TOKEN / BOTNOTE_CF_ACCESS_CLIENT_{ID,SECRET} from env.
@@ -44,6 +50,7 @@ if [[ -n "${BOTNOTE_BIN:-}" && -x "$BOTNOTE_BIN" ]]; then
   exec "$BOTNOTE_BIN" mcp
 fi
 
+cli_version=""
 if command -v botnote >/dev/null 2>&1; then
   cli_version="$(botnote --version 2>/dev/null || botnote version 2>/dev/null || true)"
   if [[ -n "$plugin_version" && "$cli_version" == "$plugin_version" ]]; then
@@ -51,24 +58,25 @@ if command -v botnote >/dev/null 2>&1; then
   fi
 fi
 
+npx_version=""
 if command -v npx >/dev/null 2>&1; then
   if [[ -n "$plugin_version" ]]; then
-    if npx -y "botnote@$plugin_version" mcp; then
-      exit 0
+    npx_version="$(npx -y "botnote@$plugin_version" --version 2>/dev/null || true)"
+    if [[ "$npx_version" == "$plugin_version" ]]; then
+      exec npx -y "botnote@$plugin_version" mcp
     fi
-    echo "botnote plugin $plugin_version could not start via npx botnote@$plugin_version; trying PATH fallback" >&2
   else
-    if npx -y botnote mcp; then
-      exit 0
-    fi
-    echo "botnote plugin could not start via npx botnote; trying PATH fallback" >&2
+    # Plugin version unreadable: nothing to verify against, best effort.
+    exec npx -y botnote@latest mcp
   fi
 fi
 
-if command -v botnote >/dev/null 2>&1; then
-  echo "botnote plugin $plugin_version falling back to PATH botnote $(botnote --version 2>/dev/null || true)" >&2
-  exec botnote mcp
-fi
-
-echo "botnote plugin could not find BOTNOTE_BIN, npx, or botnote on PATH" >&2
+{
+  echo "botnote plugin $plugin_version refusing to start: no CLI of that exact version is available."
+  echo "  PATH botnote: ${cli_version:-not found}"
+  echo "  npx botnote@$plugin_version resolved: ${npx_version:-nothing}"
+  echo "A mismatched CLI would expose the wrong MCP tool surface, so this is a hard failure."
+  echo "Fix: publish botnote@$plugin_version to npm, or 'npm i -g botnote@$plugin_version',"
+  echo "or point BOTNOTE_BIN at a dev build of that version."
+} >&2
 exit 127
