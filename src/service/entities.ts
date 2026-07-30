@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { edges, entities, projects, type Entity, type EdgeKind } from "../db/schema.js";
 import { normalizeDueAt } from "./dates.js";
@@ -494,24 +494,28 @@ export async function link(
 }
 
 export async function listChildren(db: Database["db"], parentId: string): Promise<Entity[]> {
+  // Children arrive via two linkage styles that both count: the entities.parentId
+  // column (create_task / update_entity parentId) and explicit parent_of edges
+  // (the link tool). Comments also live on entities.parentId but are worklog,
+  // not child work items, so they are excluded.
   const childIds = await db
     .select({ toId: edges.toId })
     .from(edges)
     .where(and(eq(edges.fromId, parentId), eq(edges.kind, "parent_of")));
-  if (childIds.length === 0) return [];
-  return db
-    .select()
-    .from(entities)
-    .where(
-      and(
+  const linkage = childIds.length
+    ? or(
+        eq(entities.parentId, parentId),
         inArray(
           entities.id,
           childIds.map((c) => c.toId)
-        ),
-        isNull(entities.deletedAt)
-      )
-    )
-    .orderBy(desc(entities.createdAt));
+        )
+      )!
+    : eq(entities.parentId, parentId);
+  return db
+    .select()
+    .from(entities)
+    .where(and(linkage, ne(entities.kind, "comment"), isNull(entities.deletedAt)))
+    .orderBy(asc(entities.createdAt));
 }
 
 export async function setBodyVec(

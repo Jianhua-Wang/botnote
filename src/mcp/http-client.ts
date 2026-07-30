@@ -106,6 +106,9 @@ export class BotnoteHttpClient {
   listRelated(id: string) {
     return this.request<EntityDTO[]>("GET", `/v1/entities/${id}/related`);
   }
+  listChildren(id: string) {
+    return this.request<EntityDTO[]>("GET", `/v1/entities/${id}/children`);
+  }
   listComments(id: string) {
     return this.request<EntityDTO[]>("GET", `/v1/entities/${id}/comments`);
   }

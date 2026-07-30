@@ -12,6 +12,7 @@ import {
   get,
   getLinks,
   link,
+  listChildren,
   listComments,
   listTags,
   markSuperseded,
@@ -608,6 +609,50 @@ describe("botnote service", () => {
     const everywhere = [...range.scheduled, ...range.overdue, ...range.backlog].map((t) => t.id);
     expect(everywhere).not.toContain(cancelled.id);
     expect(everywhere).not.toContain(cancelledDated.id);
+  });
+
+  it("listChildren unions parentId and parent_of children and excludes comments", async () => {
+    const p = await createProject(db, { key: "MILE", name: "Milestone" });
+    const parent = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Milestone parent",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const byColumn = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Child via parentId",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      parentId: parent.id
+    });
+    const byEdge = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Child via parent_of edge",
+      body: "",
+      tags: [],
+      status: "done",
+      actorKind: "human",
+      metadata: {}
+    });
+    await link(db, { fromId: parent.id, toId: byEdge.id, kind: "parent_of" });
+    // Worklog comments hang off parentId too but are not child work items.
+    const comment = await addComment(db, parent.id, { body: "worklog", actorKind: "agent" });
+
+    const children = await listChildren(db, parent.id);
+    const ids = children.map((ch) => ch.id);
+    expect(ids).toContain(byColumn.id);
+    expect(ids).toContain(byEdge.id);
+    expect(ids).not.toContain(comment.id);
   });
 
   it("creates a recurrence rule and generates the next scheduled occurrence on completion", async () => {

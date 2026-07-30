@@ -9,6 +9,7 @@ import {
   getByKey,
   getLinks,
   link,
+  listChildren,
   listComments,
   listRelated,
   listTags,
@@ -454,6 +455,22 @@ export async function registerRoutes(
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
       return serializeEntities(await listRelated(ctx.db, id));
+    }
+  );
+
+  app.get(
+    "/v1/entities/:id/children",
+    {
+      schema: {
+        tags: ["entities"],
+        summary:
+          "List child work items (subtasks/notes) of an entity, via parentId or parent_of edges; comments excluded",
+        params: EntityIdParams
+      }
+    },
+    async (req) => {
+      const { id } = EntityIdParams.parse(req.params);
+      return serializeEntities(await listChildren(ctx.db, id));
     }
   );
 

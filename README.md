@@ -333,6 +333,15 @@ codex mcp add botnote \
 
 On the daemon host use `BOTNOTE_URL=http://127.0.0.1:4280` and skip the token.
 
+### Known limitation: restart sessions after a plugin update
+
+Plugin clients (Claude Code, Codex, Cursor) cache the plugin under a
+version-numbered directory and delete the old one on update. A session that
+was already running keeps pointing at the old paths, so its skills fail to
+load and its MCP launcher may refuse to start until the session is restarted.
+This is client cache behavior, not something the plugin can compensate for —
+after updating the plugin, start a fresh session.
+
 ## MCP tools
 
 botnote exposes the following tools + resources over stdio.

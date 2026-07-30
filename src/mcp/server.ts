@@ -199,6 +199,24 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     return (await summarizeAll([e]))[0]!;
   }
 
+  /**
+   * Markdown section listing an entity's child work items (subtasks/notes via
+   * parentId or parent_of edges, comments excluded), or "" when it has none.
+   * Surfaced from get_entity so "can this milestone be closed?" never needs a
+   * whole-project dump.
+   */
+  async function childrenSection(entityId: string): Promise<string> {
+    const children = await c.listChildren(entityId).catch(() => [] as EntityDTO[]);
+    if (!children.length) return "";
+    const tasks = children.filter((ch) => ch.kind === "task");
+    const closed = tasks.filter((ch) => ch.status === "done" || ch.status === "rejected");
+    const header = tasks.length
+      ? `## Children (${closed.length}/${tasks.length} tasks closed)`
+      : "## Children";
+    const lines = await summarizeAll(children);
+    return `\n\n${header}\n${lines.map((s) => `- ${s}`).join("\n")}`;
+  }
+
   // ----- 1. opening_brief -----
 
   server.registerTool(
@@ -490,7 +508,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       try {
         const resolvedId = await resolveEntityRef(c, id);
         const entity = await c.getEntity(resolvedId);
-        return { content: [{ type: "text", text: JSON.stringify(serializeEntity(entity), null, 2) }] };
+        const text = JSON.stringify(serializeEntity(entity), null, 2) + (await childrenSection(entity.id));
+        return { content: [{ type: "text", text }] };
       } catch {
         return { isError: true, content: [{ type: "text", text: `entity ${id} not found` }] };
       }
@@ -519,7 +538,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     async ({ projectKey, sequenceId }) => {
       try {
         const entity = await c.getEntityByKey(projectKey, sequenceId);
-        return { content: [{ type: "text", text: JSON.stringify(serializeEntity(entity), null, 2) }] };
+        const text = JSON.stringify(serializeEntity(entity), null, 2) + (await childrenSection(entity.id));
+        return { content: [{ type: "text", text }] };
       } catch {
         return {
           isError: true,
@@ -757,7 +777,22 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         );
         if (resolvedParentId !== undefined) defined.parentId = resolvedParentId;
         const updated = await c.updateEntity(resolvedId, defined);
-        return { content: [{ type: "text", text: `updated ${await summarize(updated)}` }] };
+        let text = `updated ${await summarize(updated)}`;
+        // Closing a milestone parent with open children is usually a mistake —
+        // warn (don't block) so the agent can double-check with the user.
+        if (defined.status === "done" && updated.kind === "task") {
+          const children = await c.listChildren(updated.id).catch(() => [] as EntityDTO[]);
+          const openKids = children.filter(
+            (ch) => ch.kind === "task" && ch.status !== "done" && ch.status !== "rejected"
+          );
+          if (openKids.length) {
+            const lines = await summarizeAll(openKids);
+            text +=
+              `\n\nWarning: this task still has ${openKids.length} unfinished child task(s):\n` +
+              lines.map((s) => `- ${s}`).join("\n");
+          }
+        }
+        return { content: [{ type: "text", text }] };
       } catch (err: unknown) {
         return formatToolError(err);
       }
