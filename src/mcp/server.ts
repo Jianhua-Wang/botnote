@@ -40,21 +40,61 @@ const EntityRef = z
   .describe("UUID, unique UUID prefix, or human-readable KEY-SEQ such as BOT-55.");
 
 /**
+ * Split a human-readable KEY-SEQ identifier (BOT-55) into its parts, or null
+ * when the string is not one. Case-insensitive: agents copy identifiers out of
+ * prose, so `bot-55` has to resolve the same as `BOT-55`.
+ */
+function parseKeySeq(ref: string): { projectKey: string; sequenceId: number } | null {
+  const m = /^([A-Za-z][A-Za-z0-9_]*)-(\d+)$/.exec(ref.trim());
+  if (!m) return null;
+  return { projectKey: m[1]!.toUpperCase(), sequenceId: parseInt(m[2]!, 10) };
+}
+
+/**
  * Resolve an entity reference to a UUID (or pass through for the backend to handle).
  * If `ref` matches the KEY-SEQ pattern (e.g. BOT-55), it calls getEntityByKey and
  * returns the resolved UUID. Otherwise it passes `ref` through unchanged so the
  * backend can resolve UUID / prefix as before.
  */
+/**
+ * `id` plus its tolerated aliases, for the comment tools. Every field is
+ * optional at the schema level and `pickEntityRef` enforces that one arrived,
+ * so a wrong-but-reasonable param name produces a useful error instead of a
+ * schema rejection the agent cannot act on.
+ */
+const TargetEntityRef = EntityRef.optional().describe(
+  "Parent task/note: UUID, unique UUID prefix, or KEY-SEQ such as BOT-55. Required (aliases: entityId, parentId)."
+);
+const TargetEntityAlias = EntityRef.optional().describe("Alias for `id`.");
+
 async function resolveEntityRef(
   c: BotnoteHttpClient,
   ref: string
 ): Promise<string> {
-  const keySeqMatch = /^([A-Z][A-Z0-9_]*)-(\d+)$/.exec(ref);
-  if (keySeqMatch) {
-    const projectKey = keySeqMatch[1]!;
-    const sequenceId = parseInt(keySeqMatch[2]!, 10);
-    const entity = await c.getEntityByKey(projectKey, sequenceId);
+  const keySeq = parseKeySeq(ref);
+  if (keySeq) {
+    const entity = await c.getEntityByKey(keySeq.projectKey, keySeq.sequenceId);
     return entity.id;
+  }
+  return ref;
+}
+
+/**
+ * Tools that act on one entity historically took `id`, while sibling tools take
+ * entity-suffixed names (`projectId`, `parentId`), so agents guess wrong and hit
+ * a schema rejection instead of the operation they meant. Accept every spelling
+ * and resolve here.
+ */
+function pickEntityRef(input: {
+  id?: string;
+  entityId?: string;
+  parentId?: string;
+}): string {
+  const ref = input.id ?? input.entityId ?? input.parentId;
+  if (!ref) {
+    throw new Error(
+      "missing target entity: pass `id` (aliases: `entityId`, `parentId`) as a UUID, UUID prefix, or KEY-SEQ such as BOT-55."
+    );
   }
   return ref;
 }
@@ -523,7 +563,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Get Entity by Identifier",
       description:
-        "Fetch a task or note by its human-readable identifier (e.g. DEMO-12). Pass the project key and sequence number separately.",
+        "Fetch a task or note by its human-readable identifier. Pass the whole identifier as `key`: \"DEMO-12\" — the form every doc, brief, and UI shows. The split `projectKey` + `sequenceId` form still works.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -531,19 +571,62 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         openWorldHint: false
       },
       inputSchema: {
-        projectKey: ProjectKey,
-        sequenceId: z.number().int().positive()
+        key: z
+          .string()
+          .min(1)
+          .max(40)
+          .optional()
+          .describe("Full identifier such as DEMO-12. Preferred form."),
+        projectKey: z
+          .string()
+          .min(1)
+          .max(40)
+          .optional()
+          .describe("Split form: project key alone (DEMO), paired with sequenceId."),
+        sequenceId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Split form: sequence number, paired with projectKey.")
       }
     },
-    async ({ projectKey, sequenceId }) => {
+    async ({ key, projectKey, sequenceId }) => {
+      // Tolerate every spelling agents actually produce: key: "DEMO-12",
+      // projectKey + sequenceId, and projectKey: "DEMO-12" with the sequence
+      // already baked in.
+      const ref = key ?? projectKey;
+      if (!ref) {
+        return {
+          isError: true,
+          content: [
+            { type: "text", text: 'missing identifier: pass key: "DEMO-12" (or projectKey + sequenceId).' }
+          ]
+        };
+      }
+      const parsed =
+        parseKeySeq(ref) ??
+        (sequenceId !== undefined && /^[A-Za-z][A-Za-z0-9_]*$/.test(ref.trim())
+          ? { projectKey: ref.trim().toUpperCase(), sequenceId }
+          : null);
+      if (!parsed) {
+        return {
+          isError: true,
+          content: [
+            { type: "text", text: `not an entity identifier: ${ref} — expected KEY-SEQ such as DEMO-12.` }
+          ]
+        };
+      }
       try {
-        const entity = await c.getEntityByKey(projectKey, sequenceId);
+        const entity = await c.getEntityByKey(parsed.projectKey, parsed.sequenceId);
         const text = JSON.stringify(serializeEntity(entity), null, 2) + (await childrenSection(entity.id));
         return { content: [{ type: "text", text }] };
       } catch {
         return {
           isError: true,
-          content: [{ type: "text", text: `entity ${projectKey}-${sequenceId} not found` }]
+          content: [
+            { type: "text", text: `entity ${parsed.projectKey}-${parsed.sequenceId} not found` }
+          ]
         };
       }
     }
@@ -812,19 +895,22 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         openWorldHint: false
       },
       inputSchema: {
-        id: EntityRef.describe("Parent task/note: UUID, unique UUID prefix, or KEY-SEQ such as BOT-55."),
+        id: TargetEntityRef,
+        entityId: TargetEntityAlias,
+        parentId: TargetEntityAlias,
         body: z.string().min(1).describe("The comment text. Markdown allowed."),
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
         idempotencyKey: z.string().min(1).max(200).optional()
       }
     },
-    async ({ id, body, actorKind, idempotencyKey }) => {
+    async ({ body, actorKind, idempotencyKey, ...target }) => {
       try {
-        const resolvedId = await resolveEntityRef(c, id);
+        const ref = pickEntityRef(target);
+        const resolvedId = await resolveEntityRef(c, ref);
         const comment = await c.addComment(resolvedId, { body, actorKind, idempotencyKey });
         return {
           content: [
-            { type: "text", text: `added comment ${comment.id.slice(0, 8)} on ${id}` }
+            { type: "text", text: `added comment ${comment.id.slice(0, 8)} on ${ref}` }
           ]
         };
       } catch (err: unknown) {
@@ -846,12 +932,14 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         openWorldHint: false
       },
       inputSchema: {
-        id: EntityRef.describe("Parent task/note: UUID, unique UUID prefix, or KEY-SEQ such as BOT-55.")
+        id: TargetEntityRef,
+        entityId: TargetEntityAlias,
+        parentId: TargetEntityAlias
       }
     },
-    async ({ id }) => {
+    async (target) => {
       try {
-        const resolvedId = await resolveEntityRef(c, id);
+        const resolvedId = await resolveEntityRef(c, pickEntityRef(target));
         const rows = await c.listComments(resolvedId);
         if (rows.length === 0) {
           return { content: [{ type: "text", text: "no comments" }] };

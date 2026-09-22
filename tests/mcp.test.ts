@@ -1180,4 +1180,69 @@ describe("botnote MCP", () => {
     const json2 = JSON.parse((check2.content as Array<{ text: string }>)[0]?.text ?? "{}") as { title: string };
     expect(json2.title).toBe("Batch task 2 (updated)");
   });
+
+  it("get_entity_by_key accepts a whole KEY-SEQ identifier, and comment tools accept id aliases", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "ALIAS", name: "Identifier Tolerance Test" }
+    });
+    const projectId = (cpResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+
+    const taskResp = await client.callTool({
+      name: "create_task",
+      arguments: { projectId, title: "Tolerate every identifier spelling", actorKind: "agent" }
+    });
+    const taskId = (taskResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    const seqJson = JSON.parse(
+      ((await client.callTool({ name: "get_entity", arguments: { id: taskId! } }))
+        .content as Array<{ text: string }>)[0]?.text ?? "{}"
+    ) as { sequenceId: number };
+    const key = `ALIAS-${seqJson.sequenceId}`;
+
+    // All three spellings of the identifier reach the same entity.
+    for (const args of [
+      { key },
+      { key: key.toLowerCase() },
+      { projectKey: "ALIAS", sequenceId: seqJson.sequenceId },
+      { projectKey: key }
+    ]) {
+      const resp = await client.callTool({ name: "get_entity_by_key", arguments: args });
+      const json = JSON.parse((resp.content as Array<{ text: string }>)[0]?.text ?? "{}") as {
+        id: string;
+      };
+      expect(json.id, `get_entity_by_key ${JSON.stringify(args)}`).toBe(taskId);
+    }
+
+    // Comment tools take id, entityId, or parentId.
+    const viaParentId = await client.callTool({
+      name: "add_comment",
+      arguments: { parentId: key, body: "filed via parentId", actorKind: "agent" }
+    });
+    expect(viaParentId.isError).toBeFalsy();
+    const viaEntityId = await client.callTool({
+      name: "add_comment",
+      arguments: { entityId: taskId!, body: "filed via entityId", actorKind: "agent" }
+    });
+    expect(viaEntityId.isError).toBeFalsy();
+
+    const listResp = await client.callTool({
+      name: "list_comments",
+      arguments: { entityId: key }
+    });
+    const listText = (listResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(listText).toContain("filed via parentId");
+    expect(listText).toContain("filed via entityId");
+
+    // No reference at all is still an error, and it names the accepted spellings.
+    const missingResp = await client.callTool({
+      name: "add_comment",
+      arguments: { body: "nowhere to go", actorKind: "agent" }
+    });
+    expect(missingResp.isError).toBe(true);
+    expect((missingResp.content as Array<{ text: string }>)[0]?.text).toContain("entityId");
+  });
 });

@@ -50,6 +50,36 @@ The Claude Code, Codex, and Cursor plugins call `botnote mcp`, so installing
 the npm package is enough for plugin runtime on machines that do not have a
 botnote source checkout.
 
+### CLI commands
+
+Read:
+
+```bash
+botnote projects            # all projects
+botnote today               # today + overdue
+botnote tasks --status open
+botnote search "backup policy"
+```
+
+Write — every command takes a `KEY-SEQ` identifier (`OPS-12`, case-insensitive)
+or a UUID:
+
+```bash
+botnote task "Rotate the staging certs" --project OPS --due 2026-10-01
+botnote note "Staging certs expire yearly on Oct 1" --project OPS --pin
+
+botnote update OPS-12 --status in_progress --priority high
+botnote update OPS-12 --due 2026-10-08     # or --due none to clear it
+botnote update OPS-12 --title "..." --project INFRA --tags certs,staging
+
+botnote comment OPS-12 "Renewed staging, prod still pending"
+botnote done OPS-12 --comment "Both environments renewed"
+```
+
+`--status` accepts `open`, `in_progress`, `done`, `rejected`; `--priority`
+accepts `urgent`, `high`, `medium`, `low`, `none`. A date-only `--due` is
+stored at noon UTC so it reads as the same day in every timezone.
+
 ### Local daemon development
 
 ```bash

@@ -100,6 +100,11 @@ Usage:
                                            Create a task
   botnote note "<body>" [--project KEY] [--pin]
                                            Create a note (no title)
+  botnote done TASK [--comment "..."]      Mark a task done, optionally with a worklog entry
+  botnote update TASK [--status S] [--priority P] [--due YYYY-MM-DD|none]
+                      [--title "..."] [--project KEY] [--tags a,b]
+                                           Update a task or note
+  botnote comment TASK "<body>"            Append a worklog comment
   botnote recurrence TASK                  Show recurrence for a task
   botnote skip TASK [--reason "..."]       Skip current recurring occurrence
   botnote stop-recurrence TASK             Stop a task's recurrence series
@@ -393,6 +398,115 @@ async function cmdTask(args: Args): Promise<void> {
   console.log(`✓ wrote task ${entity.id}`);
 }
 
+const TASK_STATUSES = ["open", "in_progress", "done", "rejected"] as const;
+const PRIORITIES = ["urgent", "high", "medium", "low", "none"] as const;
+
+/** Date-only CLI input becomes noon UTC, so a due date reads the same in every
+ *  timezone the user might be in. `none` / `clear` wipes the field. */
+function parseDueFlag(value: string): string | null {
+  const v = value.trim().toLowerCase();
+  if (v === "none" || v === "clear" || v === "null") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    throw new Error(`--due expects YYYY-MM-DD or none; got ${value}`);
+  }
+  return new Date(`${value.trim()}T12:00:00Z`).toISOString();
+}
+
+function requireEnum<T extends string>(
+  flag: string,
+  value: string,
+  allowed: readonly T[]
+): T {
+  if (!(allowed as readonly string[]).includes(value)) {
+    throw new Error(`--${flag} must be one of: ${allowed.join(", ")}; got ${value}`);
+  }
+  return value as T;
+}
+
+/** Echo an entity back the way the user addressed it, so the confirmation line
+ *  is greppable against what they typed. */
+function describeEntity(identifier: string, e: Entity): string {
+  return `${identifier} [${e.status}] ${displayTitle(e)}`;
+}
+
+async function updatePatchFromFlags(args: Args): Promise<Record<string, unknown>> {
+  const patch: Record<string, unknown> = {};
+  if (typeof args.flags.status === "string") {
+    patch.status = requireEnum("status", args.flags.status, TASK_STATUSES);
+  }
+  if (typeof args.flags.priority === "string") {
+    patch.priority = requireEnum("priority", args.flags.priority, PRIORITIES);
+  }
+  if (typeof args.flags.due === "string") {
+    patch.dueAt = parseDueFlag(args.flags.due);
+  }
+  if (typeof args.flags.title === "string") {
+    patch.title = args.flags.title;
+  }
+  if (typeof args.flags.project === "string") {
+    patch.projectId = await resolveProjectId(args.flags.project);
+  }
+  const tags = splitList(args.flags.tags);
+  if (tags) patch.tags = tags;
+  return patch;
+}
+
+async function cmdUpdate(args: Args): Promise<void> {
+  const identifier = args.positional[0];
+  if (!identifier) {
+    console.error(
+      'usage: botnote update TASK [--status S] [--priority P] [--due YYYY-MM-DD|none] [--title "..."] [--project KEY] [--tags a,b]'
+    );
+    process.exit(1);
+  }
+  const patch = await updatePatchFromFlags(args);
+  if (Object.keys(patch).length === 0) {
+    console.error("nothing to update — pass at least one of --status --priority --due --title --project --tags");
+    process.exit(1);
+  }
+  const target = await resolveEntity(identifier);
+  const updated = await callApi<Entity>("PATCH", `/v1/entities/${target.id}`, patch);
+  console.log(`✓ updated ${describeEntity(identifier, updated)}`);
+  for (const [field, value] of Object.entries(patch)) {
+    console.log(`  ${field}: ${value === null ? "(cleared)" : String(value)}`);
+  }
+}
+
+async function cmdDone(args: Args): Promise<void> {
+  const identifier = args.positional[0];
+  if (!identifier) {
+    console.error('usage: botnote done TASK [--comment "..."]');
+    process.exit(1);
+  }
+  const target = await resolveEntity(identifier);
+  const updated = await callApi<Entity>("PATCH", `/v1/entities/${target.id}`, { status: "done" });
+  console.log(`✓ done ${describeEntity(identifier, updated)}`);
+  // A closing worklog entry is what the next session reads first, so make it
+  // one command instead of two.
+  if (typeof args.flags.comment === "string") {
+    await callApi<Entity>("POST", `/v1/entities/${target.id}/comments`, {
+      body: args.flags.comment,
+      actorKind: "human"
+    });
+    console.log("  worklog comment added");
+  }
+}
+
+async function cmdComment(args: Args): Promise<void> {
+  const [identifier, ...bodyParts] = args.positional;
+  const body = bodyParts.join(" ").trim();
+  if (!identifier || !body) {
+    console.error('usage: botnote comment TASK "<body>"');
+    process.exit(1);
+  }
+  const target = await resolveEntity(identifier);
+  const comment = await callApi<Entity>("POST", `/v1/entities/${target.id}/comments`, {
+    body,
+    actorKind: "human"
+  });
+  console.log(`✓ commented on ${identifier} (${comment.id.slice(0, 8)})`);
+}
+
 async function cmdRecurrence(args: Args): Promise<void> {
   const identifier = args.positional[0];
   if (!identifier) {
@@ -537,6 +651,12 @@ async function main(): Promise<void> {
       return cmdStopRecurrence(args);
     case "note":
       return cmdNote(args);
+    case "done":
+      return cmdDone(args);
+    case "update":
+      return cmdUpdate(args);
+    case "comment":
+      return cmdComment(args);
     case "search":
       return cmdSearch(args);
     default:
