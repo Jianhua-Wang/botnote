@@ -69,6 +69,38 @@ either transport.
   Postgres database, exercise both REST and MCP transports, assert behavior
   matches.
 
+## Releasing
+
+Releases publish from CI, never from a developer machine.
+
+```bash
+pnpm version patch -m "Release %s"   # bumps package.json + all plugin manifests, commits, tags
+git push --follow-tags               # the v* tag triggers the publish
+```
+
+Pushing a `v*` tag runs `.github/workflows/publish-npm.yml`, which typechecks,
+runs the full test suite against a throwaway Postgres, builds, and publishes to
+npm via **OIDC trusted publishing** — no npm token anywhere in the pipeline.
+
+- NEVER run `npm publish` locally. Dev machines hold no npm publish credential
+  and must not acquire one.
+- A local publish failure is expected and means nothing. npm masks "not
+  authorized to write this package" as `404 Not Found - PUT`, which reads like
+  a missing package and invites a long wrong-way debugging detour into tokens,
+  2FA, and package access policy. Do not take that bait.
+- To check whether a release shipped, look at CI, not at local npm auth:
+
+```bash
+gh run list --workflow=publish-npm.yml --limit 5
+npm view botnote version
+```
+
+- The registry manifest updates before the tarball finishes propagating to the
+  CDN, so `npx botnote@<version>` can 404 for a few minutes after a successful
+  publish. That is not a failed release.
+- Deploying the daemon on the host is a separate step from releasing:
+  `pnpm build && launchctl kickstart -k gui/$(id -u)/com.botnote.daemon`.
+
 ## Style
 
 - No comments unless WHY is non-obvious. Names carry meaning.

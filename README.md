@@ -118,6 +118,32 @@ DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote_test pnpm db:mig
 BOTNOTE_TEST_DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote_test pnpm test
 ```
 
+### Releasing
+
+Releases publish from CI. Bump the version and push the tag:
+
+```bash
+pnpm version patch -m "Release %s"   # bumps package.json + every plugin manifest, commits, tags
+git push --follow-tags
+```
+
+The `v*` tag triggers `.github/workflows/publish-npm.yml`, which typechecks,
+runs the full test suite, builds, and publishes to npm through OIDC trusted
+publishing. No npm token is involved, and `npm publish` should never be run
+from a developer machine — a local publish will fail, and npm reports that
+failure as a misleading `404 Not Found - PUT`.
+
+Check a release with `gh run list --workflow=publish-npm.yml` and
+`npm view botnote version`. The registry manifest updates a few minutes before
+the tarball finishes reaching the CDN, so a brief `npx botnote@<version>` 404
+right after a successful publish is expected.
+
+Updating the daemon on a host is separate from releasing:
+
+```bash
+pnpm build && launchctl kickstart -k gui/$(id -u)/com.botnote.daemon
+```
+
 ## REST endpoints
 
 Project status values are `planned`, `active`, `watching`, `paused`, and
