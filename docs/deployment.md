@@ -54,7 +54,10 @@ All four are in `~/Library/LaunchAgents/`. Check state with
 | `NODE_ENV` | `production` |
 | `WorkingDirectory` | `/Users/jianhua/botnote` |
 
-Node binary: `/Users/jianhua/.hermes/node/bin/node`.
+Node binary: `/opt/homebrew/bin/node` (Homebrew symlink, so `brew upgrade node`
+keeps it valid). If `launchctl list` shows exit code `78` for the daemon, the
+node path in `ProgramArguments` no longer exists — fix it, then reload the plist
+(see Operations).
 Daemon logs: `~/Library/Logs/botnote-daemon.log` (+ `.err.log`).
 Tunnel logs: `~/.cloudflared/stderr.log`.
 
