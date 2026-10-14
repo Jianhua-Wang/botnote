@@ -5,6 +5,7 @@ import { BotnoteHttpClient } from "./mcp/http-client.js";
 import { buildMcpServer } from "./mcp/server.js";
 import { EmbeddingService } from "./service/embedding.js";
 import { purgeExpired } from "./service/entities.js";
+import { LOCK_KEYS, withAdvisoryLock } from "./service/locks.js";
 import { materializeScheduledRecurrences } from "./service/recurrence.js";
 import { resolveDefaultScope } from "./service/scope.js";
 import { DEFAULT_PORT, envValue, resolveBaseUrl } from "./config.js";
@@ -34,7 +35,7 @@ async function runRest(): Promise<void> {
 
   await migrate();
 
-  const { db } = createDb();
+  const { db, pool } = createDb();
   const defaultScope = await resolveDefaultScope(db);
   const embedding = new EmbeddingService(db, { apiKey: process.env.OPENAI_API_KEY });
   await embedding.reloadConfig();
@@ -52,11 +53,19 @@ async function runRest(): Promise<void> {
     );
   }
 
+  // Background jobs take a database-wide advisory lock so several daemon
+  // instances on one database (hosted mode) never run the same pass twice.
   const materializeRecurrences = async () => {
     try {
-      const created = await materializeScheduledRecurrences(db, endOfToday(), 500);
-      if (created.length > 0) {
-        app.log.info(`materialized ${created.length} scheduled recurring task(s)`);
+      const run = await withAdvisoryLock(pool, LOCK_KEYS.recurrenceMaterializer, () =>
+        materializeScheduledRecurrences(db, endOfToday(), 500)
+      );
+      if (!run.acquired) {
+        app.log.debug("recurrence materializer skipped: another instance holds the lock");
+        return;
+      }
+      if (run.value.length > 0) {
+        app.log.info(`materialized ${run.value.length} scheduled recurring task(s)`);
       }
     } catch (err) {
       app.log.error({ err }, "scheduled recurrence materializer failed");
@@ -71,9 +80,15 @@ async function runRest(): Promise<void> {
   );
   const purgeTrash = async () => {
     try {
-      const purged = await purgeExpired(db, trashRetentionDays);
-      if (purged > 0) {
-        app.log.info(`purged ${purged} trashed entit(ies) older than ${trashRetentionDays}d`);
+      const run = await withAdvisoryLock(pool, LOCK_KEYS.trashPurge, () =>
+        purgeExpired(db, trashRetentionDays)
+      );
+      if (!run.acquired) {
+        app.log.debug("trash purge skipped: another instance holds the lock");
+        return;
+      }
+      if (run.value > 0) {
+        app.log.info(`purged ${run.value} trashed entit(ies) older than ${trashRetentionDays}d`);
       }
     } catch (err) {
       app.log.error({ err }, "trash purge failed");
