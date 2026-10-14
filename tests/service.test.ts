@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { EmbeddingService } from "../src/service/embedding.js";
@@ -1430,6 +1431,51 @@ describe("botnote service", () => {
         VALUES (${p.id}::uuid, 'task', 'collision', 40)
       `)
     ).rejects.toThrow(/entities_project_seq_unique/);
+  });
+
+  it("update rejects self-parenting and direct parent cycles", async () => {
+    const p = await createProject(db, { key: "PAR", name: "Parents" });
+    const base = { body: "", tags: [], status: "open", actorKind: "human", metadata: {} } as const;
+    const a = await write(db, { kind: "task", projectId: p.id, title: "A", ...base });
+    const b = await write(db, { kind: "task", projectId: p.id, title: "B", parentId: a.id, ...base });
+
+    await expect(update(db, a.id, { parentId: a.id })).rejects.toMatchObject({
+      statusCode: 400
+    });
+    await expect(update(db, a.id, { parentId: b.id })).rejects.toMatchObject({
+      statusCode: 400
+    });
+    await expect(
+      update(db, a.id, { parentId: "00000000-0000-4000-8000-000000000000" })
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    const c = await write(db, { kind: "note", projectId: p.id, title: "C", ...base });
+    const moved = await update(db, c.id, { parentId: b.id });
+    expect(moved.parentId).toBe(b.id);
+    expect((await get(db, a.id))?.parentId).toBeNull();
+  });
+
+  it("migration 0027 clears self-parent rows and self edges and is idempotent", async () => {
+    const p = await createProject(db, { key: "SLF", name: "Self" });
+    const base = { body: "", tags: [], status: "open", actorKind: "human", metadata: {} } as const;
+    const legacy = await write(db, { kind: "note", projectId: p.id, title: "legacy", ...base });
+    const child = await write(db, { kind: "note", projectId: p.id, title: "child", parentId: legacy.id, ...base });
+    await db.execute(sql`UPDATE entities SET parent_id = id WHERE id = ${legacy.id}::uuid`);
+    await db.execute(sql`INSERT INTO edges (from_id, to_id, kind) VALUES (${legacy.id}::uuid, ${legacy.id}::uuid, 'parent_of')`);
+    expect((await listChildren(db, legacy.id)).map((e) => e.id)).toContain(legacy.id);
+
+    const migration = readFileSync(
+      new URL("../src/db/migrations/0027_self_parent_repair.sql", import.meta.url),
+      "utf8"
+    );
+    for (let pass = 0; pass < 2; pass++) await db.execute(sql.raw(migration));
+
+    expect((await get(db, legacy.id))?.parentId).toBeNull();
+    expect((await listChildren(db, legacy.id)).map((e) => e.id)).toEqual([child.id]);
+    const selfEdges = await db.execute(sql`SELECT count(*)::int AS n FROM edges WHERE from_id = to_id`);
+    expect((selfEdges.rows[0] as { n: number }).n).toBe(0);
+    const outgoing = await getLinks(db, { id: legacy.id, kind: null, direction: "outgoing" });
+    expect(outgoing.map((l) => l.entity.id)).toEqual([child.id]);
   });
 
   it("addComment appends a worklog entry that inherits the project but no sequence id", async () => {
