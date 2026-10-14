@@ -8,6 +8,7 @@ import { purgeExpired } from "./service/entities.js";
 import { LOCK_KEYS, withAdvisoryLock } from "./service/locks.js";
 import { materializeScheduledRecurrences } from "./service/recurrence.js";
 import { resolveDefaultScope } from "./service/scope.js";
+import { pruneExpiredSessions } from "./service/sessions.js";
 import { DEFAULT_PORT, envValue, resolveBaseUrl } from "./config.js";
 import { authConfigFromEnv, isLoopback } from "./rest/auth.js";
 import { buildServer } from "./rest/server.js";
@@ -16,7 +17,9 @@ import { VERSION } from "./version.js";
 const DEFAULT_RECURRENCE_MATERIALIZE_INTERVAL_MS = 5 * 60 * 1000;
 // Trashed entities are hard-deleted after this many days. 0 disables auto-purge.
 const DEFAULT_TRASH_RETENTION_DAYS = 30;
-const TRASH_PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DAILY_MS = 24 * 60 * 60 * 1000;
+const TRASH_PURGE_INTERVAL_MS = DAILY_MS;
+const SESSION_PRUNE_INTERVAL_MS = DAILY_MS;
 
 function endOfToday(): Date {
   const end = new Date();
@@ -100,10 +103,30 @@ async function runRest(): Promise<void> {
     trashTimer = setInterval(purgeTrash, TRASH_PURGE_INTERVAL_MS);
   }
 
+  const pruneSessions = async () => {
+    try {
+      const run = await withAdvisoryLock(pool, LOCK_KEYS.sessionPrune, () =>
+        pruneExpiredSessions(db)
+      );
+      if (!run.acquired) {
+        app.log.debug("session prune skipped: another instance holds the lock");
+        return;
+      }
+      if (run.value > 0) {
+        app.log.info(`pruned ${run.value} expired session(s)`);
+      }
+    } catch (err) {
+      app.log.error({ err }, "session prune failed");
+    }
+  };
+  await pruneSessions();
+  const sessionTimer = setInterval(pruneSessions, SESSION_PRUNE_INTERVAL_MS);
+
   const shutdown = async (sig: string) => {
     app.log.info(`shutting down on ${sig}`);
     if (recurrenceTimer) clearInterval(recurrenceTimer);
     if (trashTimer) clearInterval(trashTimer);
+    clearInterval(sessionTimer);
     await app.close();
     process.exit(0);
   };

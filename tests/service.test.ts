@@ -11,6 +11,7 @@ import {
   addComment,
   bumpAccess,
   get,
+  getByKey,
   getLinks,
   link,
   listChildren,
@@ -18,10 +19,14 @@ import {
   listTags,
   markSuperseded,
   recent,
+  remove,
+  restore,
   setBodyVec,
   update,
   write
 } from "../src/service/entities.js";
+import { createSession, pruneExpiredSessions } from "../src/service/sessions.js";
+import { sessions } from "../src/db/schema.js";
 import { formatOpeningBrief, openingBrief } from "../src/service/opening_brief.js";
 import {
   createProject,
@@ -3147,5 +3152,84 @@ describe("botnote service", () => {
       const msg = result.error.issues[0]?.message ?? "";
       expect(msg).toContain("mutually exclusive");
     }
+  });
+});
+
+describe("trash consistency", () => {
+  async function trashedTask() {
+    const p = await createProject(S, db, { key: "TRSH", name: "Trash Project" });
+    const task = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Soon trashed",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    expect(await remove(S, db, task.id)).toBe(true);
+    return { p, task };
+  }
+
+  it("get and getByKey still return a trashed entity, with deletedAt set", async () => {
+    const { task } = await trashedTask();
+    const byId = await get(S, db, task.id);
+    expect(byId?.id).toBe(task.id);
+    expect(byId?.deletedAt).toBeInstanceOf(Date);
+    const byKey = await getByKey(S, db, "TRSH", task.sequenceId!);
+    expect(byKey?.id).toBe(task.id);
+    expect(byKey?.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it("refuses update and addComment on a trashed entity with 409 until it is restored", async () => {
+    const { task } = await trashedTask();
+    const expect409 = async (promise: Promise<unknown>) => {
+      await expect(promise).rejects.toMatchObject({
+        statusCode: 409,
+        message: "entity is in trash; restore first"
+      });
+    };
+    await expect409(update(S, db, task.id, { status: "done" }));
+    await expect409(addComment(S, db, task.id, { body: "late note", actorKind: "agent" }));
+    const comments = await listComments(S, db, task.id);
+    expect(comments).toHaveLength(0);
+
+    const back = await restore(S, db, task.id);
+    expect(back?.deletedAt).toBeNull();
+    const done = await update(S, db, task.id, { status: "done" });
+    expect(done.status).toBe("done");
+    const comment = await addComment(S, db, task.id, { body: "after restore", actorKind: "agent" });
+    expect(comment.parentId).toBe(task.id);
+  });
+
+  it("link validates both endpoints and rejects self-links", async () => {
+    const { task } = await trashedTask();
+    const missing = "00000000-0000-0000-0000-000000000000";
+    await expect(link(S, db, { fromId: task.id, toId: task.id, kind: "references" })).rejects.toMatchObject({
+      statusCode: 400
+    });
+    await expect(link(S, db, { fromId: task.id, toId: missing, kind: "references" })).rejects.toMatchObject({
+      statusCode: 404
+    });
+    await expect(link(S, db, { fromId: missing, toId: task.id, kind: "references" })).rejects.toMatchObject({
+      statusCode: 404
+    });
+  });
+});
+
+describe("pruneExpiredSessions", () => {
+  it("deletes expired sessions and keeps live ones", async () => {
+    const live = await createSession(S, db, { ttlDays: 7 });
+    const expired = await createSession(S, db, { ttlDays: 7 });
+    await db
+      .update(sessions)
+      .set({ expiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(sessions.id, expired.session.id));
+
+    expect(await pruneExpiredSessions(db)).toBe(1);
+    const left = await db.select({ id: sessions.id }).from(sessions);
+    expect(left.map((r) => r.id)).toEqual([live.session.id]);
+    expect(await pruneExpiredSessions(db)).toBe(0);
   });
 });

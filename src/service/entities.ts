@@ -27,6 +27,11 @@ function clientError(message: string, statusCode: number): Error {
   return err;
 }
 
+/** Writes against a trashed entity are refused until it is restored. */
+function inTrash(): Error {
+  return clientError("entity is in trash; restore first", 409);
+}
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UUID_PREFIX_RE = /^[0-9a-f-]{8,36}$/i;
@@ -175,6 +180,7 @@ export async function addComment(
 ): Promise<Entity> {
   const parent = await get(scope, db, parentIdOrPrefix);
   if (!parent) throw clientError(`entity ${parentIdOrPrefix} not found`, 404);
+  if (parent.deletedAt) throw inTrash();
   if (parent.kind === "comment") {
     throw clientError("comments cannot be nested; comment on the task itself", 400);
   }
@@ -267,12 +273,14 @@ export async function update(
         title: entities.title,
         body: entities.body,
         tags: entities.tags,
-        priority: entities.priority
+        priority: entities.priority,
+        deletedAt: entities.deletedAt
       })
       .from(entities)
       .where(and(eq(entities.id, entityId), inScope(scope)))
       .limit(1);
     if (!prior[0]) throw new Error(`entity ${id} not found`);
+    if (prior[0].deletedAt) throw inTrash();
     if (prior[0].kind === "comment") {
       throw clientError("comments are append-only; add a new comment instead of editing", 400);
     }
@@ -423,6 +431,11 @@ export async function markSuperseded(
   return old.id;
 }
 
+/**
+ * Direct lookups return trashed rows too, with `deletedAt` set, so a client
+ * holding an id or KEY-SEQ can tell "in trash" apart from "gone". List and
+ * search paths hide them; writes refuse them with 409 until restored.
+ */
 export async function get(scope: Scope, db: Database["db"], id: string): Promise<Entity | null> {
   const entityId = await resolveEntityId(scope, db, id);
   if (!entityId) return null;

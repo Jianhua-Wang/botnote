@@ -1245,4 +1245,37 @@ describe("botnote MCP", () => {
     expect(missingResp.isError).toBe(true);
     expect((missingResp.content as Array<{ text: string }>)[0]?.text).toContain("entityId");
   });
+
+  it("REST answers 409 when writing to a trashed entity and still serves it on GET", async () => {
+    const project = await fetch(`${baseUrl}/v1/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "RTRS", name: "REST trash" })
+    }).then((r) => r.json() as Promise<{ id: string }>);
+    const task = await fetch(`${baseUrl}/v1/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, title: "trash me" })
+    }).then((r) => r.json() as Promise<{ id: string }>);
+    expect((await fetch(`${baseUrl}/v1/entities/${task.id}`, { method: "DELETE" })).status).toBeLessThan(300);
+
+    const got = await fetch(`${baseUrl}/v1/entities/${task.id}`);
+    expect(got.status).toBe(200);
+    expect(((await got.json()) as { deletedAt: string | null }).deletedAt).not.toBeNull();
+
+    const patched = await fetch(`${baseUrl}/v1/entities/${task.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "done" })
+    });
+    expect(patched.status).toBe(409);
+    expect(((await patched.json()) as { message: string }).message).toContain("restore first");
+
+    const commented = await fetch(`${baseUrl}/v1/entities/${task.id}/comments`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body: "nope", actorKind: "agent" })
+    });
+    expect(commented.status).toBe(409);
+  });
 });
