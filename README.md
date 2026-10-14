@@ -203,6 +203,8 @@ Project status values are `planned`, `active`, `watching`, `paused`, and
 | `GET` | `/v1/tokens` | List API tokens |
 | `POST` | `/v1/tokens` | Create API token |
 | `DELETE` | `/v1/tokens/:id` | Revoke API token |
+| `GET` | `/v1/export` | Stream the workspace as JSON Lines (`?vectors=1` includes embeddings) |
+| `POST` | `/v1/import` | Load a JSON Lines dump (`content-type: application/x-ndjson`); returns an import report |
 | `POST` | `/v1/auth/login` | Master-password login; sets httpOnly session cookie |
 | `POST` | `/v1/auth/logout` | Clear session cookie and revoke the session |
 | `GET` | `/v1/auth/whoami` | Confirm auth state and how the caller authenticated |
@@ -263,6 +265,30 @@ botnote stop-recurrence OPS-12
 Use `scheduled` for calendar-like events, meetings, and fixed routines. Use
 `completion` for maintenance work where the next due date should be calculated
 from when the previous occurrence was actually completed.
+
+## Your data
+
+Everything in a workspace can leave as one JSON Lines file and come back
+without loss: UUIDs, `KEY-SEQ` numbers, timestamps, who wrote what, links
+between items, recurrence rules, edit history and the trash.
+
+```bash
+botnote export --out backup.jsonl        # projects, entities, edges, rules, history, settings
+botnote export --vectors --out full.jsonl  # also the embeddings (large; skipped by default)
+botnote import backup.jsonl              # into the daemon that `botnote whoami` points at
+```
+
+The first line is a header (`formatVersion`, `botnoteVersion`, `exportedAt`,
+source workspace); every other line is one record whose `type` names its
+table. Records are written in dependency order, so both commands stream and
+never hold the whole dump in memory.
+
+Importing is idempotent: a record whose id already exists is skipped, so a
+partial import can be re-run. Rows owned by another workspace, projects whose
+key is already taken, or children whose parent is missing are reported as
+conflicts and left out instead of aborting the import (the CLI exits 3 when
+there were any). Entities that arrive without a vector are re-embedded in the
+background. API tokens and the embedding API key are never exported.
 
 ## Plugin
 

@@ -1,8 +1,18 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { DEFAULT_BASE_URL, envValue, unreachableHint } from "./config.js";
 import { VERSION } from "./version.js";
 
@@ -45,27 +55,29 @@ function writeConfig(cfg: BotnoteConfig): void {
   writeFileSync(configPath(), JSON.stringify(cfg, null, 2), { mode: 0o600 });
 }
 
-async function callApi<T>(
+async function apiFetch(
   method: string,
   path: string,
-  body?: unknown,
-  opts: { allowNoAuth?: boolean } = {}
-): Promise<T> {
+  init: { headers?: Record<string, string>; body?: RequestInit["body"]; allowNoAuth?: boolean } = {}
+): Promise<Response> {
   const cfg = readConfig();
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = { ...init.headers };
   if (cfg.token) headers.authorization = `Bearer ${cfg.token}`;
   let res: Response;
   try {
+    // `duplex` is required by Node's fetch for streamed request bodies and is
+    // not in the DOM RequestInit type.
     res = await fetch(`${cfg.baseUrl}${path}`, {
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined
-    });
+      body: init.body,
+      duplex: "half"
+    } as RequestInit);
   } catch (err) {
     console.error(unreachableHint(cfg.baseUrl, err));
     process.exit(1);
   }
-  if (res.status === 401 && !opts.allowNoAuth) {
+  if (res.status === 401 && !init.allowNoAuth) {
     console.error(
       "401 unauthorized — run `botnote login` and paste a token from Settings → API tokens."
     );
@@ -75,6 +87,20 @@ async function callApi<T>(
     const text = await res.text();
     throw new Error(`${method} ${path} -> ${res.status}: ${text}`);
   }
+  return res;
+}
+
+async function callApi<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  opts: { allowNoAuth?: boolean } = {}
+): Promise<T> {
+  const res = await apiFetch(method, path, {
+    headers: { "content-type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+    allowNoAuth: opts.allowNoAuth
+  });
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
@@ -111,6 +137,9 @@ Usage:
   botnote skip TASK [--reason "..."]       Skip current recurring occurrence
   botnote stop-recurrence TASK             Stop a task's recurrence series
   botnote search "<query>" [--limit 10]    Hybrid search
+
+  botnote export [--out FILE] [--vectors]  Dump the workspace as JSON Lines (stdout by default)
+  botnote import FILE                      Load a dump; existing ids are skipped, conflicts reported
 
 Env:
   BOTNOTE_URL   override the server base URL (default ${DEFAULT_BASE_URL}, the daemon on this machine)
@@ -605,6 +634,69 @@ async function cmdSearch(args: Args): Promise<void> {
   }
 }
 
+async function cmdExport(args: Args): Promise<void> {
+  const out = typeof args.flags.out === "string" ? args.flags.out : null;
+  const vectors = args.flags.vectors === true;
+  const res = await apiFetch("GET", `/v1/export${vectors ? "?vectors=1" : ""}`);
+  if (!res.body) throw new Error("export returned no body");
+  let lines = 0;
+  const counter = async function* (source: AsyncIterable<Uint8Array>) {
+    for await (const chunk of source) {
+      for (const byte of chunk) if (byte === 10) lines++;
+      yield chunk;
+    }
+  };
+  const sink = out ? createWriteStream(out) : process.stdout;
+  await pipeline(Readable.fromWeb(res.body as import("node:stream/web").ReadableStream), counter, sink, {
+    end: Boolean(out)
+  });
+  if (out) console.error(`exported ${Math.max(lines - 1, 0)} records to ${out}`);
+}
+
+interface ImportReport {
+  formatVersion: number;
+  botnoteVersion: string;
+  exportedAt: string;
+  sourceWorkspace: { id: string; slug: string; name: string };
+  counts: Record<string, { imported: number; skipped: number; conflicts: number }>;
+  conflicts: Array<{ type: string; id: string; reason: string }>;
+  conflictsTotal: number;
+  entitiesWithoutVector: number;
+}
+
+async function cmdImport(args: Args): Promise<void> {
+  const file = args.positional[0];
+  if (!file) throw new Error('usage: botnote import FILE');
+  if (!existsSync(file)) throw new Error(`no such file: ${file}`);
+  const res = await apiFetch("POST", "/v1/import", {
+    headers: { "content-type": "application/x-ndjson" },
+    body: Readable.toWeb(createReadStream(file)) as unknown as RequestInit["body"]
+  });
+  const report = (await res.json()) as ImportReport;
+  console.log(
+    `imported dump from ${report.sourceWorkspace.name || report.sourceWorkspace.id} (botnote ${report.botnoteVersion}, format ${report.formatVersion}, exported ${report.exportedAt})`
+  );
+  for (const [type, c] of Object.entries(report.counts)) {
+    if (c.imported + c.skipped + c.conflicts === 0) continue;
+    console.log(
+      `  ${type.padEnd(21)} imported ${String(c.imported).padStart(6)}  skipped ${String(c.skipped).padStart(6)}  conflicts ${String(c.conflicts).padStart(6)}`
+    );
+  }
+  if (report.entitiesWithoutVector > 0) {
+    console.log(
+      `  ${report.entitiesWithoutVector} entities arrived without a vector; the daemon re-embeds them in the background`
+    );
+  }
+  if (report.conflictsTotal > 0) {
+    console.log(`conflicts (${report.conflictsTotal}):`);
+    for (const c of report.conflicts) console.log(`  ${c.type} ${c.id}: ${c.reason}`);
+    if (report.conflictsTotal > report.conflicts.length) {
+      console.log(`  ... ${report.conflictsTotal - report.conflicts.length} more`);
+    }
+    process.exitCode = 3;
+  }
+}
+
 function cmdServe(): void {
   // Re-exec into the existing daemon entry. dist/cli.js is sibling of dist/bin.js.
   const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), "cli.js");
@@ -676,6 +768,10 @@ async function main(): Promise<void> {
       return cmdComment(args);
     case "search":
       return cmdSearch(args);
+    case "export":
+      return cmdExport(args);
+    case "import":
+      return cmdImport(args);
     default:
       console.error(`unknown subcommand: ${subcommand}\n`);
       process.stdout.write(usage());

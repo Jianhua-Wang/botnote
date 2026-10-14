@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
+import { createInterface } from "node:readline";
+import { Readable } from "node:stream";
 import { z } from "zod";
 import type { Entity, Token } from "../db/schema.js";
 import {
@@ -57,6 +59,7 @@ import {
 } from "../service/recurrence.js";
 import { listRevisions } from "../service/revisions.js";
 import { tasksRange } from "../service/tasks.js";
+import { exportWorkspace, importWorkspace } from "../service/transfer.js";
 import { createToken, listTokens, revokeToken, tokenLabels } from "../service/tokens.js";
 import {
   CreateCommentInput,
@@ -103,6 +106,9 @@ const BooleanQuery = z.preprocess((value) => {
 }, z.boolean());
 const ListProjectsQuery = z.object({
   includeArchived: BooleanQuery.default(false)
+});
+const ExportQuery = z.object({
+  vectors: BooleanQuery.default(false)
 });
 const KeySeqParams = z.object({
   key: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
@@ -1102,6 +1108,52 @@ export async function registerRoutes(
       const ok = await revokeToken(req.scope, ctx.db, id);
       if (!ok) return reply.code(404).send({ error: "not_found" });
       return reply.code(204).send();
+    }
+  );
+
+  // Raw stream for JSON Lines bodies: the importer reads them line by line,
+  // so a dump larger than memory never gets buffered.
+  app.addContentTypeParser("application/x-ndjson", (_req, payload, done) => done(null, payload));
+
+  app.get(
+    "/v1/export",
+    {
+      schema: {
+        tags: ["transfer"],
+        summary: "Stream the whole workspace as JSON Lines (header line, then one record per line)",
+        querystring: ExportQuery
+      }
+    },
+    async (req, reply) => {
+      const { vectors } = ExportQuery.parse(req.query);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      return reply
+        .type("application/x-ndjson")
+        .header("content-disposition", `attachment; filename="botnote-export-${stamp}.jsonl"`)
+        .send(Readable.from(exportWorkspace(req.scope, ctx.db, { includeVectors: vectors })));
+    }
+  );
+
+  app.post(
+    "/v1/import",
+    {
+      schema: {
+        tags: ["transfer"],
+        summary:
+          "Import a JSON Lines dump (content-type application/x-ndjson). Idempotent: existing ids are skipped, conflicts are reported."
+      }
+    },
+    async (req, reply) => {
+      const body = req.body;
+      if (!body || typeof (body as Readable).pipe !== "function") {
+        return reply.code(415).send({ error: "send the dump with content-type: application/x-ndjson" });
+      }
+      const lines = createInterface({ input: body as Readable, crlfDelay: Infinity });
+      const report = await importWorkspace(req.scope, ctx.db, lines);
+      if (report.entitiesWithoutVector > 0 && ctx.embedding.isEnabled()) {
+        await ctx.embedding.enqueueMissing();
+      }
+      return report;
     }
   );
 }
