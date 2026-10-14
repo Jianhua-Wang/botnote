@@ -219,7 +219,9 @@ export const api = {
   logout: () =>
     request<{ ok: boolean }>("/v1/auth/logout", { method: "POST" }),
   whoami: () =>
-    request<{ authenticated: boolean; via: "cookie" | "bearer" | "trusted_origin" | "unknown" }>(
-      "/v1/auth/whoami"
-    )
+    request<{
+      authenticated: boolean;
+      via: "cookie" | "bearer" | "trusted_origin" | "auth_disabled";
+      origin: "local" | "proxied" | "direct";
+    }>("/v1/auth/whoami")
 };

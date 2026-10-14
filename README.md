@@ -46,6 +46,27 @@ Security note: newly-created API tokens are stored recoverably in the database
 so Settings can copy them later. Treat the database and backups as
 secret-bearing material, and revoke tokens if either is exposed.
 
+### Authentication
+
+Auth is enforced when `BOTNOTE_REQUIRE_AUTH=1`, or when `BOTNOTE_PASSWORD` is
+set and the flag is left unset. Every `/v1/*` request then needs a bearer token
+(`Authorization: Bearer bn_...`) or the session cookie from the web login. The
+one exception is a direct connection from the daemon host itself: loopback
+callers need no token, so the local CLI and plugins keep working with zero
+config. The decision is made on the TCP peer address, never on headers, so
+binding `BOTNOTE_HOST=0.0.0.0` on a LAN or VPS does not open the API.
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `BOTNOTE_REQUIRE_AUTH` | `1` if `BOTNOTE_PASSWORD` is set, else `0` | Enforce cookie/bearer on `/v1/*` |
+| `BOTNOTE_TRUST_LOCALHOST` | `1` | `0` makes loopback callers present a credential too |
+| `BOTNOTE_TRUST_PROXY` | `loopback` | Peers whose `x-forwarded-for` / `cf-connecting-ip` are believed: `loopback`, an IP, or an IPv4 CIDR, comma-separated |
+
+Behind Cloudflare Tunnel, nginx or Caddy on the same host the defaults are
+right. If the proxy runs on another machine, list its address in
+`BOTNOTE_TRUST_PROXY`; otherwise its forwarded headers are ignored and rate
+limiting keys on the proxy itself.
+
 The Claude Code, Codex, and Cursor plugins call `botnote mcp`, so installing
 the npm package is enough for plugin runtime on machines that do not have a
 botnote source checkout.

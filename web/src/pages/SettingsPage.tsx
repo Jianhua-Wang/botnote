@@ -1081,10 +1081,11 @@ function AboutSection() {
           </a>
         </div>
         <div className="pt-1 border-t border-lineSoft">
-          Auth is enforced when <code className="text-ink">BOTNOTE_REQUIRE_AUTH=1</code> on the
-          daemon. Direct connections from loopback or private networks are trusted; requests via
-          Cloudflare Tunnel (or any proxy that sets <code>cf-connecting-ip</code> /{" "}
-          <code>x-forwarded-for</code>) require a bearer token or a browser session cookie.
+          Auth is enforced when <code className="text-ink">BOTNOTE_REQUIRE_AUTH=1</code> (or a{" "}
+          <code>BOTNOTE_PASSWORD</code> is set) on the daemon. Every request then needs a bearer
+          token or a browser session cookie, except direct connections from the daemon host itself
+          (<code>BOTNOTE_TRUST_LOCALHOST=0</code> closes that too). Forwarded headers are honoured
+          only from proxies listed in <code>BOTNOTE_TRUST_PROXY</code> (default: loopback).
         </div>
       </div>
     </>

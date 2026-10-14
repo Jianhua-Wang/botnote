@@ -21,16 +21,26 @@ import type { EmbeddingService } from "../service/embedding.js";
 import { consumeSession } from "../service/sessions.js";
 import { consumeToken } from "../service/tokens.js";
 import { VERSION } from "../version.js";
+import {
+  authConfigFromEnv,
+  clientIp,
+  describeAuthConfig,
+  isTrustedProxy,
+  isTrustedWithoutCredential,
+  type AuthConfig
+} from "./auth.js";
 import { registerRoutes } from "./routes.js";
 
 export interface ServerContext {
   db: Database["db"];
   embedding: EmbeddingService;
+  auth: AuthConfig;
 }
 
-export interface BuildServerOpts extends ServerContext {
+export interface BuildServerOpts extends Omit<ServerContext, "auth"> {
   logLevel?: string;
   webDist?: string;
+  auth?: AuthConfig;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -66,25 +76,17 @@ function defaultCorsOrigins(): string[] {
   return built;
 }
 
-/** Read the caller's real IP. cf-connecting-ip is set by Cloudflare for every
- *  request that goes through CF Tunnel — without it, rate-limit would key on
- *  the tunnel's loopback address and the whole world would share one bucket. */
-function clientIp(req: FastifyRequest): string {
-  const cf = req.headers["cf-connecting-ip"];
-  if (typeof cf === "string" && cf) return cf;
-  const xff = req.headers["x-forwarded-for"];
-  if (typeof xff === "string" && xff) return xff.split(",")[0]!.trim();
-  return req.ip;
-}
-
 export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstance> {
   const isProduction = process.env.NODE_ENV === "production";
+  const auth = opts.auth ?? authConfigFromEnv();
 
   const app = Fastify({
     logger: { level: opts.logLevel ?? "info" },
-    // We're often behind a reverse proxy. Trust the immediate proxy so
-    // req.ip is sensible, but rely on clientIp() above for rate-limit keying.
-    trustProxy: true
+    // Only peers listed in BOTNOTE_TRUST_PROXY may rewrite req.ip through
+    // x-forwarded-for. cf-connecting-ip is handled by clientIp() with the
+    // same peer check, because Cloudflare's tunnel connects from loopback and
+    // without it the whole internet would share one rate-limit bucket.
+    trustProxy: (address: string) => isTrustedProxy(address, auth.trustedProxies)
   }).withTypeProvider<ZodTypeProvider>();
 
   app.setValidatorCompiler(validatorCompiler);
@@ -113,7 +115,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
     // leaked token can't quietly exfil thousands of entities per second.
     max: 1000,
     timeWindow: "1 minute",
-    keyGenerator: (req: FastifyRequest) => clientIp(req),
+    keyGenerator: (req: FastifyRequest) => clientIp(req, auth),
     // /health is a probe; /assets/* are dozens of static files per page load.
     // Counting them would cap real API headroom for no benefit.
     allowList: (req: FastifyRequest) => {
@@ -211,13 +213,12 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   });
 
   // ----- auth -----
-  // Trust direct connections (loopback or private-network deployments)
-  // and only enforce bearer tokens on requests that came through Cloudflare
-  // Tunnel (or any reverse proxy that sets cf-connecting-ip / x-forwarded-for).
-  // This lets a local daemon stay easy to use while keeping public proxy
-  // surfaces token-gated.
-  const requireAuth = process.env.BOTNOTE_REQUIRE_AUTH === "1";
-  if (requireAuth) {
+  // Every /v1 request needs a session cookie or bearer token, except a direct
+  // loopback connection when BOTNOTE_TRUST_LOCALHOST is on. Whether a request
+  // is "loopback" is decided by the TCP peer address, never by headers: a LAN
+  // client hitting a 0.0.0.0 bind gets the same gate as the public internet,
+  // and forged x-forwarded-for from an untrusted peer changes nothing.
+  if (auth.required) {
     // IMPORTANT: register at onRequest, not preHandler. fastify-type-provider-zod
     // runs schema validation at preValidation, which is BEFORE preHandler — so
     // a preHandler auth gate lets an unauthenticated POST get a 400 zod error
@@ -234,9 +235,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
       ) {
         return;
       }
-      const viaProxy =
-        !!req.headers["cf-connecting-ip"] || !!req.headers["x-forwarded-for"];
-      if (!viaProxy) return; // direct private-network/localhost access is trusted
+      if (isTrustedWithoutCredential(req, auth)) return;
 
       // Browser path: session cookie set by /v1/auth/login.
       const cookieToken = req.cookies?.botnote_session;
@@ -246,21 +245,19 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
       }
 
       // CLI / MCP path: bearer token.
-      const auth = req.headers.authorization;
-      if (auth && auth.startsWith("Bearer ")) {
-        const plaintext = auth.slice("Bearer ".length).trim();
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const plaintext = authHeader.slice("Bearer ".length).trim();
         const tok = await consumeToken(opts.db, plaintext);
         if (tok) return;
       }
 
       return reply.code(401).send({ error: "unauthenticated" });
     });
-    app.log.info("auth: required for /v1/* via reverse proxy (cookie or bearer; direct access trusted)");
-  } else {
-    app.log.info("auth: disabled (set BOTNOTE_REQUIRE_AUTH=1 to enforce)");
   }
+  app.log.info(describeAuthConfig(auth));
 
-  await registerRoutes(app, { db: opts.db, embedding: opts.embedding });
+  await registerRoutes(app, { db: opts.db, embedding: opts.embedding, auth });
 
   const webDist = resolveWebDist(opts.webDist);
   if (webDist) {
