@@ -47,6 +47,9 @@ export interface Entity {
   status: string;
   actorId: string | null;
   actorKind: ActorKind;
+  actorTokenId?: string | null;
+  /** Resolved author: the API token's name when written through one, else actorKind. */
+  actor?: { kind: string; label: string };
   idempotencyKey: string | null;
   parentId: string | null;
   metadata: Record<string, unknown>;

@@ -422,7 +422,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
               setCompletedAtStr(v);
             }}
             createdAt={entity.createdAt}
-            actorKind={entity.actorKind}
+            actorKind={entity.actor?.label ?? entity.actorKind}
             task={loadedEntity.kind === "task" ? { ...loadedEntity, status } : undefined}
             onStatusChange={setStatus}
             recurrence={recurrence}
@@ -1024,7 +1024,7 @@ function MetaRow({
 
       <span className="text-faint">Created</span>
       <span className="text-muted">
-        {new Date(createdAt).toLocaleString()} · <span className="text-ink">{actorKind}</span>
+        {new Date(createdAt).toLocaleString()} · by <span className="text-ink">{actorKind}</span>
       </span>
     </div>
   );

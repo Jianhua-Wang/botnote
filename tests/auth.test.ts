@@ -25,6 +25,7 @@ const enforcing: AuthConfig = { required: true, trustLocalhost: true, trustedPro
 
 let server: FastifyInstance;
 let bearer: string;
+let bearerTokenId: string;
 
 function fakeReq(remoteAddress: string, headers: Record<string, string> = {}) {
   return { headers, socket: { remoteAddress }, ip: remoteAddress };
@@ -35,7 +36,9 @@ beforeAll(async () => {
   process.env.BOTNOTE_PASSWORD = PASSWORD;
   server = await buildServer({ db, embedding, logLevel: "silent", auth: enforcing });
   await server.ready();
-  bearer = (await createToken(S, db, { name: "auth-test" })).plaintext;
+  const created = await createToken(S, db, { name: "auth-test" });
+  bearer = created.plaintext;
+  bearerTokenId = created.token.id;
 });
 
 afterAll(async () => {
@@ -219,8 +222,142 @@ describe("auth gate variants", () => {
       const res = await open.inject({ method: "GET", url: "/v1/auth/whoami", remoteAddress: LAN_PEER });
       expect(res.statusCode).toBe(200);
       expect(res.json()).toMatchObject({ authenticated: true, via: "auth_disabled", origin: "direct" });
+
+      // Attribution does not depend on enforcement: a presented token still names the author.
+      const task = await open.inject({
+        method: "POST",
+        url: "/v1/tasks",
+        remoteAddress: LAN_PEER,
+        headers: { authorization: `Bearer ${bearer}` },
+        payload: { title: "written with auth off", actorKind: "agent" }
+      });
+      expect(task.statusCode).toBe(200);
+      expect(task.json()).toMatchObject({
+        actorTokenId: bearerTokenId,
+        actor: { kind: "agent", label: "auth-test" }
+      });
     } finally {
       await open.close();
     }
+  });
+});
+
+describe("write attribution", () => {
+  it("records the bearer token on tasks, comments and feedback and labels them by token name", async () => {
+    const headers = { authorization: `Bearer ${bearer}` };
+    const task = await server.inject({
+      method: "POST",
+      url: "/v1/tasks",
+      remoteAddress: "127.0.0.1",
+      headers,
+      payload: { title: "attributed via loopback + token", actorKind: "agent" }
+    });
+    expect(task.statusCode).toBe(200);
+    expect(task.json()).toMatchObject({
+      actorKind: "agent",
+      actorTokenId: bearerTokenId,
+      actor: { kind: "agent", label: "auth-test" }
+    });
+    const taskId = task.json().id as string;
+
+    const comment = await server.inject({
+      method: "POST",
+      url: `/v1/entities/${taskId}/comments`,
+      remoteAddress: LAN_PEER,
+      headers,
+      payload: { body: "progress", actorKind: "agent" }
+    });
+    expect(comment.statusCode).toBe(200);
+    expect(comment.json()).toMatchObject({
+      actorTokenId: bearerTokenId,
+      actor: { kind: "agent", label: "auth-test" }
+    });
+
+    const feedback = await server.inject({
+      method: "POST",
+      url: "/v1/feedback",
+      remoteAddress: LAN_PEER,
+      headers,
+      payload: { category: "friction", title: "attributed feedback" }
+    });
+    expect(feedback.statusCode).toBe(200);
+    expect(feedback.json()).toMatchObject({
+      actorTokenId: bearerTokenId,
+      actor: { label: "auth-test" }
+    });
+
+    // Reads resolve the same label, including nested entities.
+    const listed = await server.inject({
+      method: "GET",
+      url: `/v1/entities/${taskId}/comments`,
+      remoteAddress: "127.0.0.1"
+    });
+    expect(listed.json()[0]).toMatchObject({ actor: { label: "auth-test" } });
+    const fetched = await server.inject({
+      method: "GET",
+      url: `/v1/entities/${taskId}`,
+      remoteAddress: "127.0.0.1"
+    });
+    expect(fetched.json()).toMatchObject({ actor: { kind: "agent", label: "auth-test" } });
+  });
+
+  it("falls back to the actor kind for session and trusted-loopback writes and ignores a spoofed actorTokenId", async () => {
+    const loopback = await server.inject({
+      method: "POST",
+      url: "/v1/tasks",
+      remoteAddress: "127.0.0.1",
+      payload: { title: "no credential", actorKind: "human", actorTokenId: bearerTokenId }
+    });
+    expect(loopback.statusCode).toBe(200);
+    expect(loopback.json()).toMatchObject({
+      actorTokenId: null,
+      actor: { kind: "human", label: "human" }
+    });
+
+    const login = await server.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      remoteAddress: LAN_PEER,
+      payload: { password: PASSWORD }
+    });
+    const cookie = login.cookies.find((c) => c.name === "botnote_session");
+    const viaSession = await server.inject({
+      method: "POST",
+      url: "/v1/tasks",
+      remoteAddress: LAN_PEER,
+      cookies: { botnote_session: cookie!.value },
+      payload: { title: "from the browser", actorKind: "human" }
+    });
+    expect(viaSession.statusCode).toBe(200);
+    expect(viaSession.json()).toMatchObject({ actorTokenId: null, actor: { label: "human" } });
+  });
+
+  it("shows the token name on the opening brief worklog line", async () => {
+    const headers = { authorization: `Bearer ${bearer}` };
+    const task = await server.inject({
+      method: "POST",
+      url: "/v1/tasks",
+      remoteAddress: LAN_PEER,
+      headers,
+      payload: { title: "brief attribution", status: "in_progress", actorKind: "agent" }
+    });
+    const taskId = task.json().id as string;
+    await server.inject({
+      method: "POST",
+      url: `/v1/entities/${taskId}/comments`,
+      remoteAddress: LAN_PEER,
+      headers,
+      payload: { body: "stopped at the migration", actorKind: "agent" }
+    });
+    const brief = await server.inject({
+      method: "POST",
+      url: "/v1/opening-brief",
+      remoteAddress: LAN_PEER,
+      headers,
+      payload: {}
+    });
+    expect(brief.statusCode).toBe(200);
+    expect(brief.json().markdown).toContain("by auth-test: stopped at the migration");
+    expect(brief.json().latestComments[0]).toMatchObject({ actor: { label: "auth-test" } });
   });
 });
