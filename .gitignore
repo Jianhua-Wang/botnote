@@ -5,5 +5,5 @@ dist
 .DS_Store
 *.log
 .vitest-cache
-.tsbuildinfo
+*.tsbuildinfo
 coverage
