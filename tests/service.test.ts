@@ -45,7 +45,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { entities, recurrenceExceptions, recurrenceRules } from "../src/db/schema.js";
 import { listFeedback, submitFeedback } from "../src/service/feedback.js";
-import { findSimilar, search } from "../src/service/search.js";
+import { findSimilar, search, timeDecayFor } from "../src/service/search.js";
 import { tasksRange } from "../src/service/tasks.js";
 import { consumeToken, createToken, listTokens, revokeToken } from "../src/service/tokens.js";
 import {
@@ -3594,5 +3594,100 @@ describe("occurrence notes stay on the occurrence", () => {
     await update(S, db, task.id, { status: "done" });
     const details = await getRecurrenceForTask(S, db, task.id);
     expect(details?.currentOccurrence?.title).toBe("Weekly sync (renamed)");
+  });
+});
+
+describe("search recall and ranking", () => {
+  const DIM = 384;
+  function unitVec(seed: number): number[] {
+    const v = new Array<number>(DIM);
+    let x = seed;
+    for (let i = 0; i < DIM; i++) {
+      x = (x * 1664525 + 1013904223) >>> 0;
+      v[i] = x / 0xffffffff - 0.5;
+    }
+    const norm = Math.sqrt(v.reduce((acc, c) => acc + c * c, 0));
+    return v.map((c) => c / norm);
+  }
+
+  async function note(projectId: string, title: string, body: string, vec?: number[]) {
+    const e = await write(S, db, {
+      kind: "note",
+      projectId,
+      title,
+      body,
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    if (vec) await setBodyVec(db, e.id, vec);
+    return e;
+  }
+
+  it("project-scoped vector search returns every row of a tiny project", async () => {
+    const tiny = await createProject(S, db, { key: "TINY", name: "Tiny" });
+    const big = await createProject(S, db, { key: "BIGP", name: "Big" });
+
+    const queryVec = unitVec(7);
+    const tinyIds: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const e = await note(tiny.id, `Tiny ${i}`, "quiet unrelated prose", unitVec(1000 + i));
+      tinyIds.push(e.id);
+    }
+    // Noise lives in another project and sits much closer to the query, so a
+    // post-filtered nearest-neighbour walk would exhaust its candidates on it.
+    for (let i = 0; i < 60; i++) {
+      await note(big.id, `Noise ${i}`, "quiet unrelated prose", queryVec.map((c, j) => c + (j % 7 === i % 7 ? 0.01 : 0)));
+    }
+
+    const hits = await search(S, db, { query: "zzqx-nomatch", projectId: tiny.id, limit: 10 }, { queryEmbedding: queryVec });
+    expect(hits.map((h) => h.entity.id).sort()).toEqual([...tinyIds].sort());
+    for (const h of hits) expect(h.components.cosine).toBeDefined();
+  });
+
+  it("timeDecayFor decays with age and stays below one top-of-list RRF step", () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+    const fresh = timeDecayFor(now, now);
+    const quarter = timeDecayFor(new Date(now.getTime() - 90 * 86_400_000), now);
+    const year = timeDecayFor(new Date(now.getTime() - 365 * 86_400_000), now);
+    const future = timeDecayFor(new Date(now.getTime() + 86_400_000), now);
+
+    expect(fresh).toBeLessThan(1 / 61 - 1 / 62);
+    expect(quarter).toBeCloseTo(fresh / Math.E, 8);
+    expect(year).toBeLessThan(quarter);
+    expect(year).toBeGreaterThan(0);
+    expect(future).toBe(fresh);
+  });
+
+  it("scores freshness per hit instead of boosting the newest rows globally", async () => {
+    const p = await createProject(S, db, { key: "DECY", name: "Decay" });
+    const old = await note(p.id, "Old zephyr", "zephyr");
+    const recent = await note(p.id, "Recent zephyr", "zephyr");
+    for (let i = 0; i < 45; i++) await note(p.id, `Filler ${i}`, "nothing relevant");
+    await db.execute(
+      sql`UPDATE entities SET created_at = now() - interval '400 days' WHERE id = ${old.id}`
+    );
+
+    const hits = await search(S, db, { query: "zephyr", projectId: p.id, limit: 10 });
+    const byId = new Map(hits.map((h) => [h.entity.id, h]));
+    const oldHit = byId.get(old.id)!;
+    const recentHit = byId.get(recent.id)!;
+    expect(oldHit.components.timeDecay).toBeDefined();
+    expect(recentHit.components.timeDecay).toBeDefined();
+    expect(recentHit.components.timeDecay!).toBeGreaterThan(oldHit.components.timeDecay!);
+    expect(recentHit.components.timeDecay!).toBeLessThan(1 / 61 - 1 / 62);
+  });
+
+  it("freshness never outranks a better lexical match", async () => {
+    const p = await createProject(S, db, { key: "FRSH", name: "Fresh" });
+    const strong = await note(p.id, "Quasar quasar", "quasar quasar quasar quasar");
+    const weak = await note(p.id, "Weak", "one mention of quasar only");
+    await db.execute(
+      sql`UPDATE entities SET created_at = now() - interval '3 years' WHERE id = ${strong.id}`
+    );
+
+    const hits = await search(S, db, { query: "quasar", projectId: p.id, limit: 5 });
+    expect(hits.map((h) => h.entity.id)).toEqual([strong.id, weak.id]);
   });
 });
