@@ -1312,7 +1312,7 @@ function TokensSection() {
       <form onSubmit={onCreate} className="flex gap-2">
         <input
           className="input flex-1"
-          placeholder="Token name (e.g. claude-code-laptop)"
+          placeholder="Who will use it? e.g. Claude Code @ MacBook"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
@@ -1324,6 +1324,10 @@ function TokensSection() {
           <Plus size={11} /> {create.isPending ? "Generating…" : "Generate"}
         </button>
       </form>
+      <p className="text-[11px] text-faint -mt-1">
+        The name is shown as the author of everything written with this token, so name it after
+        the agent and machine.
+      </p>
 
       <div className="border border-line rounded-md bg-surface divide-y divide-lineSoft overflow-hidden">
         {isLoading && <div className="p-3 text-xs text-muted">Loading…</div>}

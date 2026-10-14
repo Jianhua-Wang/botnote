@@ -250,6 +250,9 @@ export interface EntityDTO {
   status: string;
   parentId: string | null;
   actorKind: string;
+  actorTokenId?: string | null;
+  /** Resolved author: label is the token name when written via a token, else actorKind. */
+  actor?: { kind: string; label: string };
   metadata: Record<string, unknown>;
   dueAt: string | null;
   priority: string;

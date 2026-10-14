@@ -29,7 +29,31 @@ export async function createToken(
     .values({ workspaceId: scope.workspaceId, name: input.name, tokenHash, prefix, plaintext })
     .returning();
   if (!row) throw new Error("token insert returned no row");
+  labelCache.delete(scope.workspaceId);
   return { token: row, plaintext };
+}
+
+// Token id -> name, per workspace. Every entity response resolves its author
+// through this map, so it is cached briefly instead of queried per request.
+// Writes through createToken/revokeToken invalidate it; a rename path would
+// have to do the same.
+const LABEL_CACHE_TTL_MS = 30_000;
+const labelCache = new Map<string, { at: number; labels: Map<string, string> }>();
+
+export async function tokenLabels(scope: Scope, db: Database["db"]): Promise<Map<string, string>> {
+  const cached = labelCache.get(scope.workspaceId);
+  if (cached && Date.now() - cached.at < LABEL_CACHE_TTL_MS) return cached.labels;
+  const rows = await db
+    .select({ id: tokens.id, name: tokens.name })
+    .from(tokens)
+    .where(eq(tokens.workspaceId, scope.workspaceId));
+  const labels = new Map(rows.map((r) => [r.id, r.name]));
+  labelCache.set(scope.workspaceId, { at: Date.now(), labels });
+  return labels;
+}
+
+export function resetTokenLabelCache(): void {
+  labelCache.clear();
 }
 
 export async function listTokens(scope: Scope, db: Database["db"]): Promise<Token[]> {
@@ -45,6 +69,7 @@ export async function revokeToken(scope: Scope, db: Database["db"], id: string):
     .delete(tokens)
     .where(and(eq(tokens.id, id), eq(tokens.workspaceId, scope.workspaceId)))
     .returning({ id: tokens.id });
+  labelCache.delete(scope.workspaceId);
   return res.length > 0;
 }
 
