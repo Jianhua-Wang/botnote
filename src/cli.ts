@@ -6,6 +6,7 @@ import { buildMcpServer } from "./mcp/server.js";
 import { EmbeddingService } from "./service/embedding.js";
 import { purgeExpired } from "./service/entities.js";
 import { materializeScheduledRecurrences } from "./service/recurrence.js";
+import { authConfigFromEnv, isLoopback } from "./rest/auth.js";
 import { buildServer } from "./rest/server.js";
 import { VERSION } from "./version.js";
 
@@ -39,12 +40,18 @@ async function runRest(): Promise<void> {
   const embedding = new EmbeddingService(db, { apiKey: process.env.OPENAI_API_KEY });
   await embedding.reloadConfig();
 
-  const app = await buildServer({ db, embedding, logLevel });
+  const auth = authConfigFromEnv();
+  const app = await buildServer({ db, embedding, logLevel, auth });
   await app.listen({ port, host });
 
   app.log.info(
     `botnote v${VERSION} listening on http://${host}:${port} (docs: /docs, embeddings ${embedding.isEnabled() ? "ON" : "OFF"})`
   );
+  if (!auth.required && !isLoopback(host) && host !== "localhost") {
+    app.log.warn(
+      `listening on ${host} with auth disabled: anyone who can reach port ${port} can read and write everything. Set BOTNOTE_PASSWORD (and create an API token) or BOTNOTE_REQUIRE_AUTH=1.`
+    );
+  }
 
   const materializeRecurrences = async () => {
     try {

@@ -85,6 +85,7 @@ import {
   Uuid
 } from "../service/types.js";
 import { VERSION } from "../version.js";
+import { requestOrigin } from "./auth.js";
 import type { ServerContext } from "./server.js";
 
 const IdParams = z.object({ id: Uuid });
@@ -1007,21 +1008,17 @@ export async function registerRoutes(
     },
     async (req) => {
       // If the request reached this handler, the auth gate already passed —
-      // either via cookie, bearer, or trusted direct origin.
+      // via cookie, bearer, trusted loopback, or because auth is disabled.
       const hasCookie = !!req.cookies?.botnote_session;
       const hasBearer = !!req.headers.authorization;
-      const viaProxy =
-        !!req.headers["cf-connecting-ip"] || !!req.headers["x-forwarded-for"];
-      return {
-        authenticated: true,
-        via: hasCookie
-          ? "cookie"
-          : hasBearer
-            ? "bearer"
-            : viaProxy
-              ? "unknown"
-              : "trusted_origin"
-      };
+      const via = hasCookie
+        ? "cookie"
+        : hasBearer
+          ? "bearer"
+          : ctx.auth.required
+            ? "trusted_origin"
+            : "auth_disabled";
+      return { authenticated: true, via, origin: requestOrigin(req, ctx.auth) };
     }
   );
 

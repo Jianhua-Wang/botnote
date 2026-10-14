@@ -50,6 +50,8 @@ All four are in `~/Library/LaunchAgents/`. Check state with
 | `BOTNOTE_PORT` | `4280` |
 | `BOTNOTE_REQUIRE_AUTH` | `1` |
 | `BOTNOTE_PASSWORD` | *(secret — in plist)* |
+| `BOTNOTE_TRUST_PROXY` | unset = `loopback` (cloudflared connects from 127.0.0.1) |
+| `BOTNOTE_TRUST_LOCALHOST` | unset = `1` (local CLI needs no token) |
 | `DATABASE_URL` | `postgres://botnote:***@127.0.0.1:55434/botnote` *(password in plist)* |
 | `NODE_ENV` | `production` |
 | `WorkingDirectory` | `/Users/jianhua/botnote` |
