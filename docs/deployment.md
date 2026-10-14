@@ -61,31 +61,79 @@ node path in `ProgramArguments` no longer exists — fix it, then reload the pli
 Daemon logs: `~/Library/Logs/botnote-daemon.log` (+ `.err.log`).
 Tunnel logs: `~/.cloudflared/stderr.log`.
 
-## Deploy a new version
+## Two checkouts: production and dev
 
-Run from `/Users/jianhua/botnote` on the `main` branch.
+`/Users/jianhua/botnote` is what launchd runs. It must always sit on a released
+tag with a clean tree, because `pnpm build` there is the deploy. Development
+happens in a separate git worktree so half-written code never ends up in the
+directory the daemon serves from:
 
 ```bash
-cd /Users/jianhua/botnote
-git checkout main && git pull          # or merge the feature branch
-
-pnpm install                           # only if dependencies changed
-pnpm build                             # clean + web build (web/dist) + server build (dist/cli.js)
-
-# Restart the daemon — migrations in src/db/migrations run automatically on boot.
-launchctl kickstart -k gui/$(id -u)/com.botnote.daemon
-
-# Verify
-curl -fsS http://localhost:4280/health && echo OK
-# then load https://botnote.net in a browser
+git -C /Users/jianhua/botnote worktree add ../botnote-dev -b <branch> main
+cd /Users/jianhua/botnote-dev && pnpm install && pnpm --dir web install
 ```
 
+Cycle for every change: branch in `botnote-dev` → PR → CI green → merge →
+`pnpm version patch` + `git push --follow-tags` (see docs/releasing.md) →
+deploy the tag with the script below. This instance is the only test
+environment, so keep changes small and ship them the day they merge.
+
+## Deploy a new version
+
+```bash
+scripts/deploy.sh --status      # live version, checked-out ref, pending migrations
+scripts/deploy.sh v0.1.52       # deploy a tag
+scripts/deploy.sh --rollback    # redeploy the tag that was live before
+```
+
+`scripts/deploy.sh <tag>` works on `/Users/jianhua/botnote` and:
+
+1. refuses if the tree has local modifications or the tag's `package.json`
+   version does not match the tag;
+2. lists migration files in the tag that are not yet in `_migrations`, and if
+   there are any takes a `pg_dump` into `~/botnote-backups/recovery/` first;
+3. checks out the tag (detached), runs `pnpm install --frozen-lockfile` only
+   when a lockfile changed, runs `pnpm build`;
+4. `launchctl kickstart -k` the daemon and waits until `/health` reports the
+   new version (40 s budget), then appends a line to `~/.botnote/deploy-history`.
+
+`--rollback` redeploys the previous tag from that history. Schema is not
+rolled back: migrations are expand-only (new columns with defaults, new
+indexes, `IF NOT EXISTS`), so the previous release keeps working on the newer
+schema. That is the rule that makes rollback safe; do not write a migration
+that breaks it.
+
 `pnpm build` = `pnpm clean && pnpm --dir web build && pnpm build:server`. The
-web build runs `tsc -b`, so it **fails if any web source has type errors** —
-make sure the working tree is type-clean (no half-finished WIP) before building.
+web build runs `tsc -b`, so it fails on type errors anywhere in `web/`.
 
 The Cloudflare tunnel does **not** need restarting for a code deploy; it only
 proxies to port 4280.
+
+## Rehearse a migration before deploying it
+
+Any release that adds a file under `src/db/migrations/` gets rehearsed on a
+copy of production first. From the dev worktree:
+
+```bash
+scripts/verify-migration.sh            # dump prod → restore into botnote_staging → migrate → diff
+scripts/verify-migration.sh --serve    # also boot dist/cli.js on :4281 against staging and hit /health
+scripts/verify-migration.sh ~/botnote-backups/daily/botnote-2026-10-13.sql.gz   # from an existing dump
+```
+
+The script snapshots `scripts/invariants.sql` (row counts per table, counts
+per kind/status, max KEY-SEQ per project, duplicate sequence ids, edges per
+kind, recurrence totals, body bytes) before and after running the migrations
+of the current checkout, and fails on any difference. A data-repair migration
+that is supposed to change a metric declares it:
+
+```bash
+ALLOW_CHANGED="entities_self_parent edges_self" scripts/verify-migration.sh
+```
+
+It only ever passes the staging URL to the migration runner; the production
+database is read with `pg_dump` and nothing else. The staging daemon inherits
+the embedding settings stored in the database copy, so keep that smoke test
+read-only.
 
 ## Operations
 
