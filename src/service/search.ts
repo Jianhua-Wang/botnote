@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { edges, entities as entitiesTable, type Entity } from "../db/schema.js";
+import type { Scope } from "./scope.js";
 import type { SearchInput } from "./types.js";
 
 export interface SearchHit {
@@ -42,10 +43,12 @@ function rrfScore(rank: number | undefined): number {
 type RankRow = { id: string; rank_pos: number } & Record<string, unknown>;
 
 export async function search(
+  scope: Scope,
   db: Database["db"],
   input: SearchInput,
   opts: { queryEmbedding?: number[] } = {}
 ): Promise<SearchHit[]> {
+  const wsFilter = sql`AND workspace_id = ${scope.workspaceId}::uuid`;
   const projectFilter = input.projectId
     ? sql`AND project_id = ${input.projectId}::uuid`
     : sql``;
@@ -53,16 +56,18 @@ export async function search(
   const activeProjectFilter = input.projectId
     ? sql``
     : sql`AND (project_id IS NULL OR project_id IN (
-        SELECT id FROM projects WHERE status <> 'archived'
+        SELECT id FROM projects
+        WHERE status <> 'archived' AND workspace_id = ${scope.workspaceId}::uuid
       ))`;
   const notTrashed = sql`AND deleted_at IS NULL`;
+  const commonFilter = sql`${wsFilter} ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}`;
   const fetchN = Math.max(input.limit * 4, 40);
 
   const bm25Rows = (
     await db.execute<RankRow>(sql`
       SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(body_tsv, q) DESC) AS rank_pos
       FROM entities, websearch_to_tsquery('simple', ${input.query}) q
-      WHERE body_tsv @@ q ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}
+      WHERE body_tsv @@ q ${commonFilter}
       ORDER BY ts_rank_cd(body_tsv, q) DESC
       LIMIT ${fetchN}
     `)
@@ -75,7 +80,7 @@ export async function search(
                  ROW_NUMBER() OVER (ORDER BY created_at DESC) AS rank_pos
           FROM entities
           WHERE (title ILIKE ${`%${input.query}%`} OR body ILIKE ${`%${input.query}%`})
-            ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}
+            ${commonFilter}
           LIMIT ${fetchN}
         `)
       ).rows
@@ -88,7 +93,7 @@ export async function search(
       await db.execute<RankRow>(sql`
         SELECT id, ROW_NUMBER() OVER (ORDER BY body_vec <=> ${vecLiteral}::vector) AS rank_pos
         FROM entities
-        WHERE body_vec IS NOT NULL ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}
+        WHERE body_vec IS NOT NULL ${commonFilter}
         ORDER BY body_vec <=> ${vecLiteral}::vector
         LIMIT ${fetchN}
       `)
@@ -99,7 +104,7 @@ export async function search(
     await db.execute<RankRow>(sql`
       SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) AS rank_pos
       FROM entities
-      WHERE 1=1 ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}
+      WHERE 1=1 ${commonFilter}
       ORDER BY created_at DESC
       LIMIT ${fetchN}
     `)
@@ -121,7 +126,7 @@ export async function search(
   const entitiesRows = await db
     .select()
     .from(entitiesTable)
-    .where(inArray(entitiesTable.id, idArr));
+    .where(and(eq(entitiesTable.workspaceId, scope.workspaceId), inArray(entitiesTable.id, idArr)));
   const entityMap = new Map<string, Entity>();
   for (const r of entitiesRows) entityMap.set(r.id, r);
 
@@ -170,6 +175,7 @@ const SIMILAR_MIN_SCORE = 0.015;
  * the note's label line (title or first body line) so tsquery stays short.
  */
 export async function findSimilar(
+  scope: Scope,
   db: Database["db"],
   opts: {
     title?: string | null;
@@ -184,6 +190,7 @@ export async function findSimilar(
   if (!label) return [];
   const limit = opts.limit ?? 3;
   const hits = await search(
+    scope,
     db,
     { query: label, projectId: opts.projectId ?? null, kind: "note", limit: limit + 1 },
     opts.queryEmbedding ? { queryEmbedding: opts.queryEmbedding } : {}

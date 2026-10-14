@@ -1,7 +1,8 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq, gt, lt, sql } from "drizzle-orm";
+import { and, eq, gt, lt } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { sessions, type Session } from "../db/schema.js";
+import type { Scope } from "./scope.js";
 
 const DEFAULT_TTL_DAYS = 30;
 
@@ -40,6 +41,7 @@ export interface CreatedSession {
 }
 
 export async function createSession(
+  scope: Scope,
   db: Database["db"],
   opts: { userAgent?: string | null; ttlDays?: number } = {}
 ): Promise<CreatedSession> {
@@ -50,6 +52,7 @@ export async function createSession(
   const [row] = await db
     .insert(sessions)
     .values({
+      workspaceId: scope.workspaceId,
       tokenHash,
       expiresAt,
       userAgent: opts.userAgent ?? null
@@ -59,7 +62,8 @@ export async function createSession(
 }
 
 /** Look up a session by cookie plaintext. Returns the row if it exists and
- *  has not expired; otherwise null. Bumps last_used_at on hit. */
+ *  has not expired; otherwise null. Bumps last_used_at on hit. Unscoped by
+ *  design: the row's workspaceId becomes the request Scope. */
 export async function consumeSession(
   db: Database["db"],
   plaintext: string
@@ -81,7 +85,7 @@ export async function consumeSession(
 }
 
 /** Revoke a single session by cookie plaintext. No-op when the cookie does
- *  not match any row. */
+ *  not match any row. The plaintext is the credential, so no scope is needed. */
 export async function revokeSession(
   db: Database["db"],
   plaintext: string
@@ -95,13 +99,10 @@ export async function revokeSession(
   return r.rowCount === undefined ? true : r.rowCount > 0;
 }
 
-/** Periodic cleanup — called on daemon start. Deletes expired rows so the
- *  table doesn't bloat over months. */
+/** Daemon-level maintenance across all workspaces: deletes expired rows so
+ *  the table doesn't bloat over months. */
 export async function pruneExpiredSessions(db: Database["db"]): Promise<number> {
   const result = await db.delete(sessions).where(lt(sessions.expiresAt, new Date()));
   const r = result as unknown as { rowCount?: number };
   return r.rowCount ?? 0;
 }
-
-/** Drizzle helper to noop a linter complaint when sql is unused. */
-export const _sql = sql;

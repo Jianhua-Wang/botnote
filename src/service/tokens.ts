@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { tokens, type Token } from "../db/schema.js";
+import type { Scope } from "./scope.js";
 
 const TOKEN_PREFIX = "bn_";
 
@@ -16,6 +17,7 @@ export interface CreatedToken {
 }
 
 export async function createToken(
+  scope: Scope,
   db: Database["db"],
   input: { name: string }
 ): Promise<CreatedToken> {
@@ -24,25 +26,32 @@ export async function createToken(
   const prefix = plaintext.slice(0, 11); // bn_ + first 8 hex
   const [row] = await db
     .insert(tokens)
-    .values({ name: input.name, tokenHash, prefix, plaintext })
+    .values({ workspaceId: scope.workspaceId, name: input.name, tokenHash, prefix, plaintext })
     .returning();
   if (!row) throw new Error("token insert returned no row");
   return { token: row, plaintext };
 }
 
-export async function listTokens(db: Database["db"]): Promise<Token[]> {
-  return db.select().from(tokens).orderBy(desc(tokens.createdAt));
+export async function listTokens(scope: Scope, db: Database["db"]): Promise<Token[]> {
+  return db
+    .select()
+    .from(tokens)
+    .where(eq(tokens.workspaceId, scope.workspaceId))
+    .orderBy(desc(tokens.createdAt));
 }
 
-export async function revokeToken(db: Database["db"], id: string): Promise<boolean> {
-  const res = await db.delete(tokens).where(eq(tokens.id, id)).returning({ id: tokens.id });
+export async function revokeToken(scope: Scope, db: Database["db"], id: string): Promise<boolean> {
+  const res = await db
+    .delete(tokens)
+    .where(and(eq(tokens.id, id), eq(tokens.workspaceId, scope.workspaceId)))
+    .returning({ id: tokens.id });
   return res.length > 0;
 }
 
 /**
- * Look up a token by its plaintext. Returns null if not found.
- * Bumps last_used_at on success. Not currently called by middleware; reserved
- * for when auth enforcement is enabled.
+ * Look up a token by its plaintext. Returns null if not found. Bumps
+ * last_used_at on success. Unscoped by design: the returned row's workspaceId
+ * is what the transport turns into the request Scope.
  */
 export async function consumeToken(
   db: Database["db"],
