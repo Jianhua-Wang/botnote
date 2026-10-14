@@ -201,6 +201,12 @@ async function fetchEntity(db: Executor, id: string): Promise<Entity> {
 }
 
 /** Entry-point fetch: the caller's scope decides whether the id is visible at all. */
+function clientError(message: string, statusCode: number): Error {
+  const err = new Error(message) as Error & { statusCode: number };
+  err.statusCode = statusCode;
+  return err;
+}
+
 async function fetchEntityInScope(scope: Scope, db: Database["db"], id: string): Promise<Entity> {
   const rows = await db
     .select()
@@ -208,7 +214,7 @@ async function fetchEntityInScope(scope: Scope, db: Database["db"], id: string):
     .where(and(eq(entities.id, id), eq(entities.workspaceId, scope.workspaceId)))
     .limit(1);
   const row = rows[0];
-  if (!row) throw new Error(`entity ${id} not found`);
+  if (!row) throw clientError(`entity ${id} not found`, 404);
   return row;
 }
 
@@ -259,10 +265,18 @@ export async function createRecurrenceRule(
   input: RecurrenceInput
 ): Promise<RecurrenceRule> {
   const task = await fetchEntityInScope(scope, db, taskId);
-  if (task.kind !== "task") throw new Error("recurrence can only be attached to tasks");
-  if (!task.dueAt) throw new Error("recurring tasks require a first due date");
+  if (task.kind !== "task") throw clientError("recurrence can only be attached to tasks", 400);
   if (task.status === "done" || task.status === "rejected") {
-    throw new Error("recurrence cannot be attached to a terminal task");
+    throw clientError("recurrence cannot be attached to a terminal task", 400);
+  }
+  // The series needs a first occurrence date: the task's dueAt, or an explicit
+  // dtstart which then also becomes the seed task's dueAt.
+  const dtstart = input.dtstart ? normalizeDueAt(input.dtstart)! : task.dueAt;
+  if (!dtstart) {
+    throw clientError(
+      "task has no due date: set dueAt on the task or pass dtstart for the first occurrence",
+      400
+    );
   }
 
   // Resolve timezone: explicit input wins; otherwise fall back to workspace tz.
@@ -270,7 +284,6 @@ export async function createRecurrenceRule(
 
   const existingRule = await findRuleForTask(db, task);
   const seriesId = existingRule?.seriesId ?? recurrenceMarker(task)?.seriesId ?? task.id;
-  const dtstart = input.dtstart ? normalizeDueAt(input.dtstart)! : task.dueAt;
   const rrule = buildRRuleFromInput(input, dtstart);
   const nextOccurrenceRaw = buildRRule({ rrule, dtstart }).after(dtstart, false);
 
@@ -327,6 +340,7 @@ export async function createRecurrenceRule(
   await db
     .update(entities)
     .set({
+      ...(task.dueAt ? {} : { dueAt: dtstart }),
       metadata: withRecurrenceMetadata(task, {
         ruleId: rule.id,
         seriesId: rule.seriesId,

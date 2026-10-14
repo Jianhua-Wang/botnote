@@ -1207,6 +1207,7 @@ describe("botnote MCP", () => {
     for (const args of [
       { key },
       { key: key.toLowerCase() },
+      { id: key },
       { projectKey: "ALIAS", sequenceId: seqJson.sequenceId },
       { projectKey: key }
     ]) {

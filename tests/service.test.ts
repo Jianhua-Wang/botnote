@@ -531,12 +531,22 @@ describe("botnote service", () => {
     expect(range.overdue.map((t) => t.id)).not.toContain(task.id);
   });
 
-  it("tasksRange keeps in-progress tasks on today and out of overdue", async () => {
+  it("tasksRange keeps in-progress tasks on today, and past-due ones in overdue only", async () => {
     const p = await createProject(S, db, { key: "NOW", name: "Now" });
     const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Keep active work visible",
+      body: "",
+      tags: [],
+      status: "in_progress",
+      actorKind: "human",
+      metadata: {}
+    });
+    const started = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Started but past due",
       body: "",
       tags: [],
       status: "in_progress",
@@ -561,6 +571,8 @@ describe("botnote service", () => {
     });
     expect(today.scheduled.map((t) => t.id)).toContain(task.id);
     expect(today.overdue.map((t) => t.id)).not.toContain(task.id);
+    expect(today.overdue.map((t) => t.id)).toContain(started.id);
+    expect(today.scheduled.map((t) => t.id)).not.toContain(started.id);
 
     const yesterday = await tasksRange(S, db, {
       from: yesterdayStart,
@@ -934,7 +946,7 @@ describe("botnote service", () => {
         allDay: true,
         anchor: "scheduled"
       })
-    ).rejects.toThrow("first due date");
+    ).rejects.toThrow("no due date");
   });
 
   it("link creates edge + listChildren via parentId", async () => {
@@ -3231,5 +3243,162 @@ describe("pruneExpiredSessions", () => {
     const left = await db.select({ id: sessions.id }).from(sessions);
     expect(left.map((r) => r.id)).toEqual([live.session.id]);
     expect(await pruneExpiredSessions(db)).toBe(0);
+  });
+});
+
+describe("task buckets are disjoint", () => {
+  it("places every unfinished task in exactly one of overdue, scheduled or backlog", async () => {
+    const p = await createProject(S, db, { key: "DISJ", name: "Disjoint" });
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const mk = (title: string, status: string, dueAt?: Date) =>
+      write(S, db, {
+        kind: "task",
+        projectId: p.id,
+        title,
+        body: "",
+        tags: [],
+        status,
+        actorKind: "human",
+        metadata: {},
+        dueAt
+      });
+    const overdueOpen = await mk("overdue open", "open", past);
+    const overdueStarted = await mk("overdue in progress", "in_progress", past);
+    const upcoming = await mk("upcoming", "open", future);
+    const startedUpcoming = await mk("started upcoming", "in_progress", future);
+    const undated = await mk("undated", "open");
+    const undatedStarted = await mk("undated in progress", "in_progress");
+
+    const range = await tasksRange(S, db, {
+      projectIds: [p.id],
+      to: new Date("2100-01-01T00:00:00Z"),
+      includeBacklog: true,
+      includeDone: false
+    });
+    const ids = (rows: { id: string }[]) => rows.map((r) => r.id).sort();
+    expect(ids(range.overdue)).toEqual([overdueOpen.id, overdueStarted.id].sort());
+    expect(ids(range.scheduled)).toEqual([upcoming.id, startedUpcoming.id].sort());
+    expect(ids(range.backlog)).toEqual([undated.id, undatedStarted.id].sort());
+
+    const all = [...range.overdue, ...range.scheduled, ...range.backlog].map((r) => r.id);
+    expect(new Set(all).size).toBe(all.length);
+
+    // Without backlog, undated active work still surfaces on today.
+    const noBacklog = await tasksRange(S, db, {
+      projectIds: [p.id],
+      to: new Date("2100-01-01T00:00:00Z"),
+      includeBacklog: false,
+      includeDone: false
+    });
+    expect(ids(noBacklog.scheduled)).toEqual([upcoming.id, startedUpcoming.id, undatedStarted.id].sort());
+    expect(noBacklog.backlog).toEqual([]);
+  });
+});
+
+describe("recurrence on a task without a due date", () => {
+  const rule = { preset: "daily", interval: 1, timezone: "UTC", allDay: true, anchor: "scheduled" } as const;
+
+  it("fails with 400 instead of 500 when neither dueAt nor dtstart is given", async () => {
+    const p = await createProject(S, db, { key: "NODUE", name: "No Due" });
+    const task = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Undated recurring",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    await expect(createRecurrenceRule(S, db, task.id, rule)).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining("dtstart")
+    });
+    await expect(
+      createRecurrenceRule(S, db, "00000000-0000-0000-0000-000000000000", rule)
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("uses an explicit dtstart as the seed task's due date", async () => {
+    const p = await createProject(S, db, { key: "DTST", name: "Dtstart" });
+    const task = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Undated recurring",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const dtstart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dtstart.setUTCHours(12, 0, 0, 0);
+    const created = await createRecurrenceRule(S, db, task.id, { ...rule, dtstart });
+    expect(created.dtstart.getTime()).toBe(dtstart.getTime());
+    const seeded = await get(S, db, task.id);
+    expect(seeded?.dueAt?.getTime()).toBe(dtstart.getTime());
+  });
+});
+
+describe("occurrence notes stay on the occurrence", () => {
+  async function dailySeries(key: string) {
+    const p = await createProject(S, db, { key, name: key });
+    const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    dueAt.setUTCHours(12, 0, 0, 0);
+    const task = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Weekly sync",
+      body: "Agenda template",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt
+    });
+    await createRecurrenceRule(S, db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+    return task;
+  }
+
+  it("a body edit without recurrenceScope does not copy into the next occurrence", async () => {
+    const task = await dailySeries("OCB1");
+    await update(S, db, task.id, { body: "Agenda template\n\nNotes: decided X" });
+    await update(S, db, task.id, { status: "done" });
+    const details = await getRecurrenceForTask(S, db, task.id);
+    expect(details?.currentOccurrence?.body).toBe("Agenda template");
+    expect(details?.currentOccurrence?.title).toBe("Weekly sync");
+  });
+
+  it("bodyAppend without recurrenceScope is occurrence-only too", async () => {
+    const task = await dailySeries("OCB2");
+    await update(S, db, task.id, { bodyAppend: "Notes: decided Y" });
+    const edited = await get(S, db, task.id);
+    expect(edited?.body).toBe("Agenda template\n\nNotes: decided Y");
+    await update(S, db, task.id, { status: "done" });
+    const details = await getRecurrenceForTask(S, db, task.id);
+    expect(details?.currentOccurrence?.body).toBe("Agenda template");
+  });
+
+  it("an explicit future-scoped body edit still carries forward", async () => {
+    const task = await dailySeries("OCB3");
+    await update(S, db, task.id, { body: "New agenda template", recurrenceScope: "future" });
+    await update(S, db, task.id, { status: "done" });
+    const details = await getRecurrenceForTask(S, db, task.id);
+    expect(details?.currentOccurrence?.body).toBe("New agenda template");
+  });
+
+  it("a title edit without recurrenceScope still carries forward", async () => {
+    const task = await dailySeries("OCB4");
+    await update(S, db, task.id, { title: "Weekly sync (renamed)" });
+    await update(S, db, task.id, { status: "done" });
+    const details = await getRecurrenceForTask(S, db, task.id);
+    expect(details?.currentOccurrence?.title).toBe("Weekly sync (renamed)");
   });
 });

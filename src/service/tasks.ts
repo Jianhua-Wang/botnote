@@ -55,9 +55,12 @@ export interface TasksRangeResult {
  *
  * `scheduled` returns any task whose display date falls inside [from, to).
  * Done tasks without a completedAt (legacy / weird state) fall back to updatedAt.
- * `overdue` is unfinished work before the requested range start (or before now
- * when no range start is supplied), so a task scheduled inside the active day
- * cannot also appear in the overdue alert.
+ * `overdue` is every unfinished task (open or in_progress) due before the
+ * requested range start, or before now when no range start is supplied.
+ *
+ * The buckets are disjoint: a task lands in exactly one of overdue, scheduled
+ * or backlog. Overdue wins over scheduled, and undated in_progress work sits
+ * in backlog when backlog is requested, otherwise on today.
  */
 export async function tasksRange(
   scope: Scope,
@@ -106,12 +109,17 @@ export async function tasksRange(
     return conds;
   };
 
+  // Overdue claims anything due before this instant; the scheduled and
+  // in-progress passes below exclude it so the buckets stay disjoint.
+  const overdueCutoff = input.from ?? now;
+
   // (a) Non-done, non-in_progress tasks scheduled by dueAt.
   const dueByDueConds = [
     ...baseConds,
     isNotNull(entities.dueAt),
     notStatus("done"),
     notStatus("in_progress"),
+    gte(entities.dueAt, overdueCutoff),
     ...inRange(entities.dueAt)
   ];
   const dueByDue = await db
@@ -162,6 +170,8 @@ export async function tasksRange(
 
   // (c) in_progress tasks → today. Only relevant when "now" falls inside the
   // requested window; otherwise the day cell would never render them anyway.
+  // Past-due in_progress work belongs to overdue, and undated in_progress
+  // work to backlog when the caller asked for it.
   let inProgressToday: Entity[] = [];
   const todayInRange =
     (!input.from || now >= new Date(input.from)) &&
@@ -171,7 +181,10 @@ export async function tasksRange(
       inWorkspace,
       eq(entities.kind, "task"),
       isNull(entities.deletedAt),
-      eq(entities.status, "in_progress")
+      eq(entities.status, "in_progress"),
+      input.includeBacklog
+        ? gte(entities.dueAt, overdueCutoff)
+        : or(isNull(entities.dueAt), gte(entities.dueAt, overdueCutoff))!
     ];
     if (projectFilter) ipConds.push(projectFilter);
     if (activeProjectFilter) ipConds.push(activeProjectFilter);
@@ -190,10 +203,8 @@ export async function tasksRange(
   for (const e of inProgressToday) scheduledMap.set(e.id, e);
   const scheduled = Array.from(scheduledMap.values());
 
-  // Overdue = past-due work that still needs attention. Use the range start
-  // when present so today's scheduled tasks do not double-surface as overdue
-  // later in the same day.
-  const overdueCutoff = input.from ?? now;
+  // Overdue = past-due work that still needs attention, whether it has been
+  // started or not.
   const overdueConds: SQL[] = [
     inWorkspace,
     eq(entities.kind, "task"),
@@ -201,7 +212,6 @@ export async function tasksRange(
     isNotNull(entities.dueAt),
     lt(entities.dueAt, overdueCutoff),
     notStatus("done"),
-    notStatus("in_progress"),
     notStatus("rejected"),
     notStatus("archived")
   ];

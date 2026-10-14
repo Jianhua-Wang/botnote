@@ -255,8 +255,21 @@ export async function update(
   const changedContentFields = CONTENT_FIELDS.filter(
     (f) => f in fields && fields[f] !== undefined
   );
-  const needsSnapshot =
-    fields.recurrenceScope !== undefined && changedContentFields.length > 0;
+  if (fields.bodyAppend !== undefined && !changedContentFields.includes("body")) {
+    changedContentFields.push("body");
+  }
+  // Which changed fields stay on this occurrence only. An explicit
+  // recurrenceScope wins. Without one, body edits (meeting notes, appended
+  // worklog) are occurrence-only so the next occurrence starts from the
+  // series baseline, while title/tags/priority keep carrying forward.
+  const thisOnlyFields =
+    fields.recurrenceScope === "this"
+      ? changedContentFields
+      : fields.recurrenceScope === undefined
+        ? changedContentFields.filter((f) => f === "body")
+        : [];
+  const futureFields = fields.recurrenceScope === "future" ? changedContentFields : [];
+  const needsSnapshot = thisOnlyFields.length > 0;
 
   // Maintain completedAt as a side effect of status transitions. We need the
   // prior status to know whether this is an entry into or exit from 'done',
@@ -341,32 +354,22 @@ export async function update(
       .onConflictDoNothing();
   }
 
-  // Handle recurrenceScope for recurring task occurrences
-  if (
-    fields.recurrenceScope !== undefined &&
-    row.kind === "task" &&
-    changedContentFields.length > 0
-  ) {
+  // Record occurrence-only edits (baseline snapshot) or clear them for
+  // going-forward edits on recurring task occurrences.
+  if (row.kind === "task" && (thisOnlyFields.length > 0 || futureFields.length > 0)) {
     const marker = recurrenceMarker(row);
     if (marker?.role === "occurrence" && marker.ruleId) {
       const rule = await findRuleForTask(db, row);
-      if (rule && preEditSnapshot) {
-        const preEdit = preEditSnapshot as Record<string, unknown>;
-        const preEditValues = Object.fromEntries(
-          changedContentFields.map((f) => [f, preEdit[f]])
-        ) as Record<ContentFieldKey, unknown>;
-
-        if (fields.recurrenceScope === "this") {
-          await upsertModifiedExceptionBaseline(
-            db,
-            rule,
-            row,
-            preEditValues as { title?: string | null; body?: string; tags?: string[]; priority?: string },
-            changedContentFields
-          );
-        } else {
-          // scope === 'future': clear any prior this-only baseline for those fields
-          await clearModifiedExceptionFields(db, rule, row, changedContentFields);
+      if (rule) {
+        if (thisOnlyFields.length > 0 && preEditSnapshot) {
+          const preEdit = preEditSnapshot as Record<string, unknown>;
+          const preEditValues = Object.fromEntries(
+            thisOnlyFields.map((f) => [f, preEdit[f]])
+          ) as { title?: string | null; body?: string; tags?: string[]; priority?: string };
+          await upsertModifiedExceptionBaseline(db, rule, row, preEditValues, thisOnlyFields);
+        }
+        if (futureFields.length > 0) {
+          await clearModifiedExceptionFields(db, rule, row, futureFields);
         }
       }
     }
