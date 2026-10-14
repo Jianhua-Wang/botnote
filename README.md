@@ -247,8 +247,8 @@ The plugin bundles the MCP server, workflow skills/commands, and a curator
 subagent. All workflows route through MCP, so no separate task or memory MCP
 setup is required.
 
-Prefer the plugin installs below: they bundle MCP wiring (URL/token prompts),
-hooks, and skills in one step. The skills CLI at the end of this section is a
+Prefer the plugin installs below: they bundle MCP wiring (URL/token prompts)
+and skills in one step. The skills CLI at the end of this section is a
 skills-only fallback for agents without a plugin system.
 
 ### Claude Code
@@ -369,8 +369,7 @@ npx skills list                       # see what is installed where
 ```
 
 The skills CLI installs `SKILL.md` files only — it does not set up the botnote
-MCP server the skills depend on, and it does not install plugin hooks (the
-session-close feedback nudge ships only with the Claude Code plugin above).
+MCP server the skills depend on.
 Wire up the MCP server once per machine:
 
 ```bash
