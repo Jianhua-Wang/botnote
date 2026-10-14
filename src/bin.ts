@@ -587,11 +587,17 @@ async function cmdSearch(args: Args): Promise<void> {
     process.exit(1);
   }
   const limit = Number(args.flags.limit ?? 10);
-  const data = await callApi<SearchResponse>("POST", "/v1/search", { query, limit });
+  const [data, projects] = await Promise.all([
+    callApi<SearchResponse>("POST", "/v1/search", { query, limit }),
+    callApi<Project[]>("GET", "/v1/projects?includeArchived=true")
+  ]);
+  const pm = new Map(projects.map((p) => [p.id, p]));
   console.log(`${data.hits.length} hit(s) · embedding=${data.embeddingUsed ? "on" : "off"}\n`);
   for (const h of data.hits) {
+    const p = h.entity.projectId ? pm.get(h.entity.projectId) : undefined;
+    const id = p && h.entity.sequenceId ? `${p.key}-${h.entity.sequenceId}` : h.entity.id.slice(0, 8);
     console.log(
-      `[${h.score.toFixed(3)}] ${h.entity.kind.padEnd(7)} ${displayTitle(h.entity)}`
+      `[${h.score.toFixed(3)}] ${h.entity.kind.padEnd(7)} ${id.padEnd(10)} ${displayTitle(h.entity)}`
     );
     if (h.entity.body) {
       console.log(`        ${h.entity.body.slice(0, 100).replace(/\n/g, " ")}`);
@@ -613,6 +619,8 @@ function cmdMcp(): void {
 async function main(): Promise<void> {
   const [, , subcommand, ...rest] = process.argv;
   const args = parseArgs(rest);
+  // `botnote search foo --help` asks for help, not for a search of "foo".
+  const wantsHelp = "help" in args.flags || rest.includes("-h");
 
   switch (subcommand) {
     case undefined:
@@ -621,6 +629,12 @@ async function main(): Promise<void> {
     case "--help":
       process.stdout.write(usage());
       return;
+  }
+  if (wantsHelp) {
+    process.stdout.write(usage());
+    return;
+  }
+  switch (subcommand) {
     case "version":
     case "-v":
     case "--version":

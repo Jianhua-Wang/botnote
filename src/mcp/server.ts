@@ -580,6 +580,12 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           .max(40)
           .optional()
           .describe("Full identifier such as DEMO-12. Preferred form."),
+        id: z
+          .string()
+          .min(1)
+          .max(40)
+          .optional()
+          .describe("Alias of key, for callers that name every identifier id."),
         projectKey: z
           .string()
           .min(1)
@@ -594,11 +600,11 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           .describe("Split form: sequence number, paired with projectKey.")
       }
     },
-    async ({ key, projectKey, sequenceId }) => {
+    async ({ key, id, projectKey, sequenceId }) => {
       // Tolerate every spelling agents actually produce: key: "DEMO-12",
-      // projectKey + sequenceId, and projectKey: "DEMO-12" with the sequence
-      // already baked in.
-      const ref = key ?? projectKey;
+      // id: "DEMO-12", projectKey + sequenceId, and projectKey: "DEMO-12"
+      // with the sequence already baked in.
+      const ref = key ?? id ?? projectKey;
       if (!ref) {
         return {
           isError: true,
