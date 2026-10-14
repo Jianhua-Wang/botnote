@@ -698,7 +698,85 @@ describe("botnote service", () => {
     expect(afterRetry?.rule.currentOccurrenceId).toBe(details?.rule.currentOccurrenceId);
   });
 
-  it("tasksRange materializes scheduled recurrences through today", async () => {
+  it("tasksRange is a pure read: it does not materialize scheduled recurrences", async () => {
+    const p = await createProject(S, db, { key: "RPR", name: "Recurrence Pure Read" });
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
+    twoDaysAgo.setUTCHours(12, 0, 0, 0);
+    const task = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Not advanced by reads",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: twoDaysAgo
+    });
+    await createRecurrenceRule(S, db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    await tasksRange(S, db, { projectIds: [p.id], includeBacklog: true, includeDone: false });
+    await tasksRange(S, db, { projectIds: [p.id], includeBacklog: true, includeDone: false });
+
+    const rows = await db.select().from(entities).where(eq(entities.projectId, p.id));
+    expect(rows).toHaveLength(1);
+    const details = await getRecurrenceForTask(S, db, task.id);
+    expect(details?.rule.generatedCount).toBe(1);
+  });
+
+  it("concurrent materializer passes advance a due rule exactly once", async () => {
+    const p = await createProject(S, db, { key: "RCC", name: "Recurrence Concurrency" });
+    const todayStartUTC = new Date();
+    todayStartUTC.setUTCHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStartUTC);
+    tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+    const twoDaysAgo = new Date(todayStartUTC);
+    twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
+    twoDaysAgo.setUTCHours(12, 0, 0, 0);
+
+    const task = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Raced daily task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {},
+      dueAt: twoDaysAgo
+    });
+    await createRecurrenceRule(S, db, task.id, {
+      preset: "daily",
+      interval: 1,
+      timezone: "UTC",
+      allDay: true,
+      anchor: "scheduled"
+    });
+
+    const passes = await Promise.all(
+      Array.from({ length: 4 }, () => materializeScheduledRecurrences(db, tomorrowStart))
+    );
+    const createdTotal = passes.reduce((n, created) => n + created.length, 0);
+    // The seed sits two days ago; yesterday and today are owed. Generated once in total.
+    expect(createdTotal).toBe(2);
+
+    const rows = await db.select().from(entities).where(eq(entities.projectId, p.id));
+    expect(rows).toHaveLength(3);
+    const dueAts = new Set(rows.map((row) => row.dueAt?.toISOString()));
+    expect(dueAts.size).toBe(3);
+
+    const details = await getRecurrenceForTask(S, db, task.id);
+    expect(details?.rule.generatedCount).toBe(3);
+  });
+
+  it("the scheduler pass materializes scheduled recurrences through today", async () => {
     const p = await createProject(S, db, { key: "RMT", name: "Recurrence Materialize Today" });
     // Use UTC-based dates so allDayDueAtInZone(date, "UTC") produces predictable noon-UTC results
     // regardless of the test machine's local timezone.
@@ -732,6 +810,7 @@ describe("botnote service", () => {
       anchor: "scheduled"
     });
 
+    await materializeScheduledRecurrences(db, tomorrowStart);
     const range = await tasksRange(S, db, {
       from: todayStart,
       to: tomorrowStart,

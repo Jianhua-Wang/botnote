@@ -16,7 +16,7 @@ import {
 } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, recurrenceExceptions, recurrenceRules, type Entity } from "../db/schema.js";
-import { buildRRule, materializeScheduledRecurrences, normalizeOccurrenceDueAt } from "./recurrence.js";
+import { buildRRule, normalizeOccurrenceDueAt } from "./recurrence.js";
 import type { Scope } from "./scope.js";
 import type { TasksRangeInput } from "./types.js";
 
@@ -42,22 +42,11 @@ export interface TasksRangeResult {
   virtualOccurrences: VirtualOccurrence[];
 }
 
-function endOfToday(now: Date): Date {
-  const end = new Date(now);
-  end.setHours(23, 59, 59, 999);
-  return end;
-}
-
-function materializationHorizon(input: TasksRangeInput, now: Date): Date {
-  const todayEnd = endOfToday(now);
-  if (!input.to) return todayEnd;
-  const requestedEnd = new Date(input.to);
-  if (Number.isNaN(requestedEnd.getTime())) return todayEnd;
-  return requestedEnd.getTime() < todayEnd.getTime() ? requestedEnd : todayEnd;
-}
-
 /**
  * Tasks in a date range, split into scheduled / overdue / backlog buckets.
+ * Pure read: recurring occurrences are materialized by the daemon scheduler
+ * (startup pass + interval), never from this path, so concurrent polls from
+ * several UI tabs and agents cannot race on rule advancement.
  *
  * Each task has a "display date" that decides where it lands on the calendar:
  *   - status='done'         → completedAt (when actually finished)
@@ -76,7 +65,6 @@ export async function tasksRange(
   input: TasksRangeInput
 ): Promise<TasksRangeResult> {
   const now = new Date();
-  await materializeScheduledRecurrences(db, materializationHorizon(input, now));
 
   const inWorkspace = eq(entities.workspaceId, scope.workspaceId);
   const projectFilter = input.projectIds?.length
