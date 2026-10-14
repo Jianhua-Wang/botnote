@@ -35,18 +35,95 @@ const KIND_WEIGHTS: Record<string, number> = {
   log: -0.2
 };
 
+// Freshness is a tie-breaker, not a relevance signal: the boost decays with
+// the hit's own age and its maximum stays below the RRF gap between rank 1
+// and rank 2 (1/61 - 1/62 ≈ 2.6e-4), so it can never lift a hit over one
+// ranked above it in any modality.
+const TIME_DECAY_MAX = 0.00025;
+const TIME_DECAY_SCALE_DAYS = 90;
+const DAY_MS = 86_400_000;
+
+export function timeDecayFor(createdAt: Date, now: Date = new Date()): number {
+  const ageDays = Math.max(0, (now.getTime() - createdAt.getTime()) / DAY_MS);
+  return TIME_DECAY_MAX * Math.exp(-ageDays / TIME_DECAY_SCALE_DAYS);
+}
+
 function rrfScore(rank: number | undefined): number {
   if (rank == null) return 0;
   return 1 / (RRF_K + rank);
 }
 
-type RankRow = { id: string; rank_pos: number } & Record<string, unknown>;
+type IdRow = { id: string };
+
+/** Rows arrive in the sub-query's ORDER BY; position is the modality rank. */
+function rankMap(rows: IdRow[]): Map<string, number> {
+  const m = new Map<string, number>();
+  rows.forEach((r, i) => m.set(r.id, i + 1));
+  return m;
+}
+
+// HNSW evaluates the WHERE clause after the nearest-neighbour walk, so the
+// default ef_search=40 can leave a project-scoped query with almost nothing.
+// Widen the candidate set per query (ef_search caps at 1000) and, where
+// pgvector supports it, keep scanning until LIMIT rows pass the filter.
+const HNSW_EF_SEARCH_MIN = 200;
+const HNSW_EF_SEARCH_MAX = 1000;
+
+const iterativeScanSupport = new WeakMap<object, Promise<boolean>>();
+
+function versionAtLeast(version: string | undefined, min: [number, number, number]): boolean {
+  if (!version) return false;
+  const parts = version.split(".").map((p) => Number.parseInt(p, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    const v = parts[i] ?? 0;
+    if (v > min[i]!) return true;
+    if (v < min[i]!) return false;
+  }
+  return true;
+}
+
+function supportsIterativeScan(db: Database["db"]): Promise<boolean> {
+  let cached = iterativeScanSupport.get(db);
+  if (!cached) {
+    cached = db
+      .execute<{ extversion: string }>(
+        sql`SELECT extversion FROM pg_extension WHERE extname = 'vector'`
+      )
+      .then((r) => versionAtLeast(r.rows[0]?.extversion, [0, 8, 0]))
+      .catch(() => false);
+    iterativeScanSupport.set(db, cached);
+  }
+  return cached;
+}
+
+async function nearestRows(
+  db: Database["db"],
+  queryEmbedding: number[],
+  commonFilter: ReturnType<typeof sql>,
+  fetchN: number
+): Promise<IdRow[]> {
+  const vecLiteral = `[${queryEmbedding.join(",")}]`;
+  const efSearch = Math.min(HNSW_EF_SEARCH_MAX, Math.max(HNSW_EF_SEARCH_MIN, fetchN * 4));
+  const iterative = await supportsIterativeScan(db);
+  return db.transaction(async (tx) => {
+    await tx.execute(sql.raw(`SET LOCAL hnsw.ef_search = ${efSearch}`));
+    if (iterative) await tx.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`);
+    const result = await tx.execute<IdRow>(sql`
+      SELECT id
+      FROM entities
+      WHERE body_vec IS NOT NULL ${commonFilter}
+      ORDER BY body_vec <=> ${vecLiteral}::vector
+      LIMIT ${fetchN}
+    `);
+    return result.rows;
+  });
+}
 
 export async function search(
   scope: Scope,
   db: Database["db"],
   input: SearchInput,
-  opts: { queryEmbedding?: number[] } = {}
+  opts: { queryEmbedding?: number[]; now?: Date } = {}
 ): Promise<SearchHit[]> {
   const wsFilter = sql`AND workspace_id = ${scope.workspaceId}::uuid`;
   const projectFilter = input.projectId
@@ -63,86 +140,64 @@ export async function search(
   const commonFilter = sql`${wsFilter} ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}`;
   const fetchN = Math.max(input.limit * 4, 40);
 
-  const bm25Rows = (
-    await db.execute<RankRow>(sql`
-      SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank_cd(body_tsv, q) DESC) AS rank_pos
-      FROM entities, websearch_to_tsquery('simple', ${input.query}) q
-      WHERE body_tsv @@ q ${commonFilter}
-      ORDER BY ts_rank_cd(body_tsv, q) DESC
-      LIMIT ${fetchN}
-    `)
-  ).rows;
-
-  const ilikeFallback = bm25Rows.length === 0
-    ? (
-        await db.execute<RankRow>(sql`
-          SELECT id,
-                 ROW_NUMBER() OVER (ORDER BY created_at DESC) AS rank_pos
-          FROM entities
-          WHERE (title ILIKE ${`%${input.query}%`} OR body ILIKE ${`%${input.query}%`})
-            ${commonFilter}
-          LIMIT ${fetchN}
-        `)
-      ).rows
-    : [];
-
-  let vecRows: RankRow[] = [];
-  if (opts.queryEmbedding && opts.queryEmbedding.length > 0) {
-    const vecLiteral = `[${opts.queryEmbedding.join(",")}]`;
-    vecRows = (
-      await db.execute<RankRow>(sql`
-        SELECT id, ROW_NUMBER() OVER (ORDER BY body_vec <=> ${vecLiteral}::vector) AS rank_pos
-        FROM entities
-        WHERE body_vec IS NOT NULL ${commonFilter}
-        ORDER BY body_vec <=> ${vecLiteral}::vector
+  const lexicalRows = async (): Promise<IdRow[]> => {
+    const bm25 = (
+      await db.execute<IdRow>(sql`
+        SELECT id
+        FROM entities, websearch_to_tsquery('simple', ${input.query}) q
+        WHERE body_tsv @@ q ${commonFilter}
+        ORDER BY ts_rank_cd(body_tsv, q) DESC
         LIMIT ${fetchN}
       `)
     ).rows;
-  }
+    if (bm25.length > 0) return bm25;
+    return (
+      await db.execute<IdRow>(sql`
+        SELECT id
+        FROM entities
+        WHERE (title ILIKE ${`%${input.query}%`} OR body ILIKE ${`%${input.query}%`})
+          ${commonFilter}
+        ORDER BY created_at DESC
+        LIMIT ${fetchN}
+      `)
+    ).rows;
+  };
 
-  const timeRows = (
-    await db.execute<RankRow>(sql`
-      SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) AS rank_pos
-      FROM entities
-      WHERE 1=1 ${commonFilter}
-      ORDER BY created_at DESC
-      LIMIT ${fetchN}
-    `)
-  ).rows;
+  const hasEmbedding = !!opts.queryEmbedding && opts.queryEmbedding.length > 0;
+  const [bm25Rows, vecRows] = await Promise.all([
+    lexicalRows(),
+    hasEmbedding ? nearestRows(db, opts.queryEmbedding!, commonFilter, fetchN) : Promise.resolve([])
+  ]);
 
-  const bm25Map = new Map<string, number>();
-  for (const r of bm25Rows.length > 0 ? bm25Rows : ilikeFallback) {
-    bm25Map.set(r.id, Number(r.rank_pos));
-  }
-  const vecMap = new Map<string, number>();
-  for (const r of vecRows) vecMap.set(r.id, Number(r.rank_pos));
-  const timeMap = new Map<string, number>();
-  for (const r of timeRows) timeMap.set(r.id, Number(r.rank_pos));
+  const bm25Map = rankMap(bm25Rows);
+  const vecMap = rankMap(vecRows);
 
   const ids = new Set<string>([...bm25Map.keys(), ...vecMap.keys()]);
   if (ids.size === 0) return [];
 
   const idArr = [...ids];
-  const entitiesRows = await db
-    .select()
-    .from(entitiesTable)
-    .where(and(eq(entitiesTable.workspaceId, scope.workspaceId), inArray(entitiesTable.id, idArr)));
+  const [entitiesRows, supersededRows] = await Promise.all([
+    db
+      .select()
+      .from(entitiesTable)
+      .where(and(eq(entitiesTable.workspaceId, scope.workspaceId), inArray(entitiesTable.id, idArr))),
+    db
+      .select({ toId: edges.toId })
+      .from(edges)
+      .where(and(eq(edges.kind, "supersedes"), inArray(edges.toId, idArr)))
+  ]);
   const entityMap = new Map<string, Entity>();
   for (const r of entitiesRows) entityMap.set(r.id, r);
-
-  const supersededRows = await db
-    .select({ toId: edges.toId })
-    .from(edges)
-    .where(and(eq(edges.kind, "supersedes"), inArray(edges.toId, idArr)));
   const supersededIds = new Set(supersededRows.map((r) => r.toId));
 
+  const now = opts.now ?? new Date();
   const hits: SearchHit[] = [];
   for (const id of idArr) {
     const entity = entityMap.get(id);
     if (!entity) continue;
     const bm25 = rrfScore(bm25Map.get(id));
     const cosine = rrfScore(vecMap.get(id));
-    const timeDecay = rrfScore(timeMap.get(id)) * 0.3;
+    const timeDecay = timeDecayFor(entity.createdAt, now);
     const kindWeight = KIND_WEIGHTS[entity.kind] ?? 0;
     const accessBoost = accessBoostFor(entity.accessCount);
     const superseded = supersededIds.has(id);

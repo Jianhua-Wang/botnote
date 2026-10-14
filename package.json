@@ -52,7 +52,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --no-file-parallelism",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "bench:search": "tsx scripts/bench-search.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
