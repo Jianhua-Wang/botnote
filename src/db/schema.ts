@@ -47,6 +47,30 @@ export type ActorKind = (typeof ACTOR_KINDS)[number];
 export const EDGE_KINDS = ["blocks", "references", "parent_of", "supersedes"] as const;
 export type EdgeKind = (typeof EDGE_KINDS)[number];
 
+// The single workspace every row belongs to until multi-tenant mode lands.
+// Fixed so migrations, defaults and code agree without a lookup.
+export const DEFAULT_WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
+
+export const workspaces = pgTable(
+  "workspaces",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => ({
+    slugIdx: uniqueIndex("workspaces_slug_idx").on(t.slug)
+  })
+);
+
+const workspaceRef = () =>
+  uuid("workspace_id")
+    .notNull()
+    .default(DEFAULT_WORKSPACE_ID)
+    .references(() => workspaces.id);
+
 export const PROJECT_STATUSES = ["planned", "active", "watching", "paused", "archived"] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
@@ -54,6 +78,7 @@ export const projects = pgTable(
   "projects",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: workspaceRef(),
     key: text("key").notNull(),
     name: text("name").notNull(),
     status: text("status").notNull().default("active"),
@@ -68,7 +93,8 @@ export const projects = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (t) => ({
-    keyIdx: uniqueIndex("projects_key_idx").on(t.key)
+    keyIdx: uniqueIndex("projects_key_idx").on(t.key),
+    wsKeyIdx: uniqueIndex("projects_ws_key_unique").on(t.workspaceId, t.key)
   })
 );
 
@@ -76,6 +102,7 @@ export const entities = pgTable(
   "entities",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: workspaceRef(),
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     kind: text("kind").notNull(),
     title: text("title"),
@@ -119,7 +146,15 @@ export const entities = pgTable(
     ),
     parentIdx: index("entities_parent_idx").on(t.parentId),
     completedAtIdx: index("entities_completed_at_idx").on(t.completedAt),
-    idempotencyIdx: uniqueIndex("entities_idempotency_idx").on(t.idempotencyKey)
+    idempotencyIdx: uniqueIndex("entities_idempotency_idx").on(t.idempotencyKey),
+    wsIdempotencyIdx: uniqueIndex("entities_ws_idem_unique")
+      .on(t.workspaceId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} IS NOT NULL`),
+    wsKindCreatedIdx: index("entities_ws_kind_created_idx").on(
+      t.workspaceId,
+      t.kind,
+      t.createdAt
+    )
   })
 );
 
@@ -152,6 +187,7 @@ export const recurrenceRules = pgTable(
   "recurrence_rules",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: workspaceRef(),
     seriesId: uuid("series_id")
       .notNull()
       .references(() => entities.id, { onDelete: "cascade" }),
@@ -212,6 +248,7 @@ export const tokens = pgTable(
   "tokens",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: workspaceRef(),
     name: text("name").notNull(),
     tokenHash: text("token_hash").notNull(),
     prefix: text("prefix").notNull(),
@@ -227,6 +264,7 @@ export const tokens = pgTable(
 
 export const embeddingSettings = pgTable("embedding_settings", {
   id: text("id").primaryKey().default("default"),
+  workspaceId: workspaceRef(),
   enabled: boolean("enabled").notNull().default(true),
   provider: text("provider").notNull().default("openai"),
   model: text("model").notNull().default("text-embedding-3-small"),
@@ -239,6 +277,7 @@ export const embeddingSettings = pgTable("embedding_settings", {
 
 export const workspaceSettings = pgTable("workspace_settings", {
   id: text("id").primaryKey().default("default"),
+  workspaceId: workspaceRef(),
   timezone: text("timezone").notNull().default("UTC"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
@@ -251,6 +290,7 @@ export const sessions = pgTable(
   "sessions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: workspaceRef(),
     tokenHash: text("token_hash").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     userAgent: text("user_agent"),
@@ -263,6 +303,7 @@ export const sessions = pgTable(
   })
 );
 
+export type Workspace = typeof workspaces.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Entity = typeof entities.$inferSelect;
 export type Edge = typeof edges.$inferSelect;
