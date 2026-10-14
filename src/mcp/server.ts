@@ -8,6 +8,7 @@ import {
   type VirtualOccurrenceDTO,
   serializeEntity
 } from "./http-client.js";
+import { BotnoteUnreachableError } from "../config.js";
 import { VERSION } from "../version.js";
 
 export interface McpServerContext {
@@ -157,6 +158,8 @@ function formatToolError(err: unknown): { isError: true; content: Array<{ type: 
       text = `HTTP ${err.status} ${err.statusText}: ${body}`;
       unexpected = err.status >= 500;
     }
+  } else if (err instanceof BotnoteUnreachableError) {
+    text = err.message;
   } else {
     const e = err as Error | undefined;
     text = String(e?.message ?? err);

@@ -6,14 +6,11 @@ import { buildMcpServer } from "./mcp/server.js";
 import { EmbeddingService } from "./service/embedding.js";
 import { purgeExpired } from "./service/entities.js";
 import { materializeScheduledRecurrences } from "./service/recurrence.js";
+import { DEFAULT_PORT, envValue, resolveBaseUrl } from "./config.js";
 import { authConfigFromEnv, isLoopback } from "./rest/auth.js";
 import { buildServer } from "./rest/server.js";
 import { VERSION } from "./version.js";
 
-// Public botnote.net is the default so fresh remote installs (the common
-// plugin-install case) work without extra config. The daemon host overrides
-// via BOTNOTE_URL in its Codex / Claude Code config to skip the tunnel.
-const DEFAULT_MCP_BASE_URL = "https://botnote.net";
 const DEFAULT_RECURRENCE_MATERIALIZE_INTERVAL_MS = 5 * 60 * 1000;
 // Trashed entities are hard-deleted after this many days. 0 disables auto-purge.
 const DEFAULT_TRASH_RETENTION_DAYS = 30;
@@ -26,7 +23,7 @@ function endOfToday(): Date {
 }
 
 async function runRest(): Promise<void> {
-  const port = Number(process.env.BOTNOTE_PORT ?? 4280);
+  const port = Number(envValue(process.env.BOTNOTE_PORT) ?? DEFAULT_PORT);
   const host = process.env.BOTNOTE_HOST ?? "127.0.0.1";
   const logLevel = process.env.BOTNOTE_LOG_LEVEL ?? "info";
   const recurrenceIntervalMs = Number(
@@ -101,13 +98,13 @@ async function runMcp(): Promise<void> {
   // MCP stdio mode. The server is now an HTTP client of the botnote daemon
   // (no DB connection here), so this entry point is package-portable: it can
   // be installed via a Claude Code plugin on any machine and pointed at any
-  // daemon (private network URL, https://botnote.net, ...).
+  // daemon (loopback by default, a private network URL, a public instance...).
   // Every log line must go to stderr so we don't corrupt the MCP framed JSON
   // on stdout.
-  const baseUrl = process.env.BOTNOTE_URL ?? DEFAULT_MCP_BASE_URL;
+  const { baseUrl, explicit } = resolveBaseUrl();
   const client = new BotnoteHttpClient({
     baseUrl,
-    token: process.env.BOTNOTE_TOKEN || undefined,
+    token: envValue(process.env.BOTNOTE_TOKEN),
     version: VERSION
   });
   const server = buildMcpServer({ client, version: VERSION });
@@ -136,7 +133,9 @@ async function runMcp(): Promise<void> {
   });
 
   await server.connect(transport);
-  process.stderr.write(`botnote MCP v${VERSION} ready (stdio) → ${baseUrl}\n`);
+  process.stderr.write(
+    `botnote MCP v${VERSION} ready (stdio) → ${baseUrl}${explicit ? "" : " (default; set BOTNOTE_URL for another daemon)"}\n`
+  );
 }
 
 async function main(): Promise<void> {

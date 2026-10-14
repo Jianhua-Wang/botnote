@@ -16,6 +16,7 @@ import {
   validatorCompiler,
   type ZodTypeProvider
 } from "fastify-type-provider-zod";
+import { corsOrigins, DEFAULT_PORT, envValue } from "../config.js";
 import type { Database } from "../db/client.js";
 import type { EmbeddingService } from "../service/embedding.js";
 import { consumeSession } from "../service/sessions.js";
@@ -59,23 +60,6 @@ function resolveWebDist(explicit?: string): string | null {
   return null;
 }
 
-/** Default CORS allowlist. Add public origins via BOTNOTE_CORS_ORIGINS
- *  (comma-separated). Localhost stays enabled for daemon access. */
-function defaultCorsOrigins(): string[] {
-  const built: string[] = [
-    "http://127.0.0.1:4280",
-    "http://localhost:4280",
-    "https://botnote.net"
-  ];
-  const extra = process.env.BOTNOTE_CORS_ORIGINS;
-  if (extra) {
-    for (const o of extra.split(",").map((s) => s.trim()).filter(Boolean)) {
-      if (!built.includes(o)) built.push(o);
-    }
-  }
-  return built;
-}
-
 export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstance> {
   const isProduction = process.env.NODE_ENV === "production";
   const auth = opts.auth ?? authConfigFromEnv();
@@ -100,7 +84,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   });
 
   await app.register(cors, {
-    origin: defaultCorsOrigins(),
+    origin: corsOrigins(),
     // credentials: true so cookies can be sent across origins (browser will
     // refuse to attach cookies on a fetch to a different origin otherwise).
     credentials: true,
@@ -140,7 +124,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
         },
         servers: [
           {
-            url: `http://localhost:${process.env.BOTNOTE_PORT ?? 4280}`,
+            url: `http://localhost:${envValue(process.env.BOTNOTE_PORT) ?? DEFAULT_PORT}`,
             description: "local"
           }
         ],

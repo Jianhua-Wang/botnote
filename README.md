@@ -36,9 +36,11 @@ botnote login
 ```
 
 `botnote login` stores the daemon URL and bearer token in
-`~/.config/botnote/config.json`. Use `https://botnote.net` plus a token from
-Settings -> API tokens on remote machines; use `http://127.0.0.1:4280` without
-a token on the daemon host. New API tokens remain copyable from Settings; tokens
+`~/.config/botnote/config.json`. The default URL is `http://127.0.0.1:4280`, the
+daemon on the same machine, which needs no token. From another machine enter
+your instance's URL (for example `https://botnote.example.com`) plus a token
+from Settings -> API tokens. Every client surface (CLI, MCP server, plugins)
+shares that one default; nothing ever falls back to a third-party host. New API tokens remain copyable from Settings; tokens
 created before recoverable storage was added only show their prefix and should
 be regenerated if the full value was lost.
 
@@ -280,8 +282,8 @@ skills-only fallback for agents without a plugin system.
 /plugin install botnote@botnote
 
 # Claude Code will prompt for:
-#   botnote_url    -> default https://botnote.net
-#                     use http://127.0.0.1:4280 on the daemon host
+#   botnote_url    -> leave empty on the daemon host (http://127.0.0.1:4280);
+#                     elsewhere your instance URL, e.g. https://botnote.example.com
 #   botnote_token  -> bearer from Settings -> API tokens; skip on loopback
 ```
 
@@ -356,11 +358,12 @@ source_type = "local"
 source = "/absolute/path/to/botnote"
 ```
 
-The Codex plugin starts `./scripts/run-mcp.sh`. It defaults to
-`BOTNOTE_URL=https://botnote.net`, reads `~/.config/botnote/config.json` when
-available, uses a matching `botnote` CLI from PATH when present, and otherwise
-runs the exact plugin version with `npx -y botnote@<plugin-version> mcp`. Set
-`BOTNOTE_URL` and `BOTNOTE_TOKEN` only when using a custom daemon.
+The Codex plugin starts `./scripts/run-mcp.sh`. It reads
+`~/.config/botnote/config.json` when available, otherwise leaves the URL to the
+CLI default (`http://127.0.0.1:4280`), uses a matching `botnote` CLI from PATH
+when present, and otherwise runs the exact plugin version with
+`npx -y botnote@<plugin-version> mcp`. Set `BOTNOTE_URL` and `BOTNOTE_TOKEN`
+when the daemon runs on another machine.
 
 ### Cursor
 
@@ -396,18 +399,19 @@ Wire up the MCP server once per machine:
 ```bash
 # Claude Code
 claude mcp add botnote \
-  -e BOTNOTE_URL=https://botnote.net \
+  -e BOTNOTE_URL=https://botnote.example.com \
   -e BOTNOTE_TOKEN=<token from Settings -> API tokens> \
   -- npx -y botnote mcp
 
 # Codex
 codex mcp add botnote \
-  --env BOTNOTE_URL=https://botnote.net \
+  --env BOTNOTE_URL=https://botnote.example.com \
   --env BOTNOTE_TOKEN=<token> \
   -- npx -y botnote mcp
 ```
 
-On the daemon host use `BOTNOTE_URL=http://127.0.0.1:4280` and skip the token.
+On the daemon host drop both env vars: the default is `http://127.0.0.1:4280`
+and loopback needs no token.
 
 ### Known limitation: restart sessions after a plugin update
 

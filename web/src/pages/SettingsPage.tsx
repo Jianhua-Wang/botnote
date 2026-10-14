@@ -257,10 +257,10 @@ function CliSection() {
     {
       note: (
         <>
-          One-time login. Default URL is <code className="text-ink">https://botnote.net</code> —
-          paste a bearer token from Settings → API tokens. On the daemon host itself, override the
-          URL to <code className="text-ink">http://127.0.0.1:4280</code> (no token needed, loopback
-          is trusted).
+          One-time login. The default URL is the daemon on the same machine,{" "}
+          <code className="text-ink">http://127.0.0.1:4280</code> (no token needed, loopback is
+          trusted). From another machine enter <code className="text-ink">{BOTNOTE_HOST}</code> and
+          paste a bearer token from Settings → API tokens.
         </>
       ),
       code: "botnote login"
@@ -358,9 +358,10 @@ function PluginSection() {
             {
               note: (
                 <>
-                  Claude Code prompts for <code className="text-ink">botnote_url</code> — default{" "}
-                  <code className="text-ink">https://botnote.net</code>, use{" "}
-                  <code className="text-ink">http://127.0.0.1:4280</code> on the daemon host — and{" "}
+                  Claude Code prompts for <code className="text-ink">botnote_url</code> — leave it
+                  empty on the daemon host (defaults to{" "}
+                  <code className="text-ink">http://127.0.0.1:4280</code>), enter{" "}
+                  <code className="text-ink">{BOTNOTE_HOST}</code> elsewhere — and{" "}
                   <code className="text-ink">botnote_token</code>, a bearer from Settings → API
                   tokens (skip on loopback).
                 </>
@@ -494,8 +495,7 @@ function PluginSection() {
                   does not set up. Use the command for your client:
                 </>
               ),
-              code:
-                "# Claude Code\nclaude mcp add botnote \\\n  -e BOTNOTE_URL=https://botnote.net \\\n  -e BOTNOTE_TOKEN=<token> \\\n  -- npx -y botnote mcp\n\n# Codex\ncodex mcp add botnote \\\n  --env BOTNOTE_URL=https://botnote.net \\\n  --env BOTNOTE_TOKEN=<token> \\\n  -- npx -y botnote mcp"
+              code: `# Claude Code\nclaude mcp add botnote \\\n  -e BOTNOTE_URL=${BOTNOTE_HOST} \\\n  -e BOTNOTE_TOKEN=<token> \\\n  -- npx -y botnote mcp\n\n# Codex\ncodex mcp add botnote \\\n  --env BOTNOTE_URL=${BOTNOTE_HOST} \\\n  --env BOTNOTE_TOKEN=<token> \\\n  -- npx -y botnote mcp`
             },
             {
               note: (
@@ -541,8 +541,8 @@ function PluginSection() {
               note: (
                 <>
                   One-time login. Remote clients: save{" "}
-                  <code className="text-ink">https://botnote.net</code> plus a bearer token from
-                  Settings → API tokens. On the daemon host, use{" "}
+                  <code className="text-ink">{BOTNOTE_HOST}</code> plus a bearer token from
+                  Settings → API tokens. On the daemon host, keep the default{" "}
                   <code className="text-ink">http://127.0.0.1:4280</code> and skip the token.
                 </>
               ),
@@ -601,9 +601,9 @@ function PluginSection() {
       </ol>
 
       <div className="border border-accent/20 bg-accentSoft/50 rounded-md px-4 py-3 text-xs text-accentText leading-relaxed">
-        Use <code className="text-ink">https://botnote.net</code> with an API token from this
-        settings page on remote devices. On the daemon host, use{" "}
-        <code className="text-ink">http://127.0.0.1:4280</code> and skip the token.
+        Use <code className="text-ink">{BOTNOTE_HOST}</code> with an API token from this
+        settings page on remote devices. On the daemon host, leave the URL empty (defaults to{" "}
+        <code className="text-ink">http://127.0.0.1:4280</code>) and skip the token.
       </div>
 
       <section className="space-y-3">
@@ -980,7 +980,7 @@ function McpSection() {
       "command": "botnote",
       "args": ["mcp"],
       "env": {
-        "BOTNOTE_URL": "https://botnote.net",
+        "BOTNOTE_URL": "${BOTNOTE_HOST}",
         "BOTNOTE_TOKEN": "bn_..."
       }
     }
@@ -992,7 +992,7 @@ command = "botnote"
 args = ["mcp"]
 
 [mcp_servers.botnote.env]
-BOTNOTE_URL = "https://botnote.net"
+BOTNOTE_URL = "${BOTNOTE_HOST}"
 BOTNOTE_TOKEN = "bn_..."`;
 
   const codexSteps: Step[] = [
