@@ -1755,6 +1755,66 @@ describe("botnote service", () => {
     ).rejects.toThrow(/nested/);
   });
 
+  it("openingBrief and tasksRange flag tasks whose blocker is still open", async () => {
+    const p = await createProject(S, db, { key: "BLK", name: "Blockers" });
+    const mk = (title: string, status: string) =>
+      write(S, db, {
+        kind: "task",
+        projectId: p.id,
+        title,
+        body: "",
+        tags: [],
+        status,
+        actorKind: "human",
+        metadata: {}
+      });
+    const blocker = await mk("Ship the parser", "open");
+    const blocked = await mk("Wire the REST layer", "open");
+    const finishedBlocker = await mk("Old prerequisite", "done");
+    const free = await mk("Independent work", "in_progress");
+    const blockedInProgress = await mk("Started too early", "in_progress");
+    await link(S, db, { fromId: blocker.id, toId: blocked.id, kind: "blocks" });
+    await link(S, db, { fromId: finishedBlocker.id, toId: free.id, kind: "blocks" });
+    await link(S, db, { fromId: blocker.id, toId: blockedInProgress.id, kind: "blocks" });
+    await link(S, db, { fromId: free.id, toId: blockedInProgress.id, kind: "blocks" });
+
+    const brief = await openingBrief(S, db, { projectId: p.id, recentLimit: 5 });
+    expect(Object.keys(brief.blockedBy).sort()).toEqual([blocked.id, blockedInProgress.id].sort());
+    expect(brief.blockedBy[blocked.id]).toEqual([
+      { id: blocker.id, ref: "BLK-1", title: "Ship the parser", status: "open" }
+    ]);
+    expect(brief.blockedBy[blockedInProgress.id]?.map((b) => b.ref)).toEqual(["BLK-1", "BLK-4"]);
+
+    const formatted = formatOpeningBrief(brief);
+    expect(formatted).toContain("[BLK-2] Wire the REST layer (BLOCKED by BLK-1)");
+    expect(formatted).toContain("[BLK-5] Started too early (BLOCKED by BLK-1, BLK-4)");
+    expect(formatted).not.toContain("Independent work (BLOCKED");
+    expect(formatted).not.toContain("Ship the parser (BLOCKED");
+    // Blocked work sinks below unblocked work inside each group.
+    expect(formatted.indexOf("[BLK-4] Independent work")).toBeLessThan(
+      formatted.indexOf("[BLK-5] Started too early")
+    );
+    expect(formatted.indexOf("[BLK-1] Ship the parser")).toBeLessThan(
+      formatted.indexOf("[BLK-2] Wire the REST layer")
+    );
+
+    const range = await tasksRange(S, db, {
+      projectIds: [p.id],
+      includeBacklog: true,
+      includeDone: false
+    });
+    const byId = new Map(range.backlog.map((t) => [t.id, t]));
+    expect(byId.get(blocked.id)?.blockedBy.map((b) => b.ref)).toEqual(["BLK-1"]);
+    expect(byId.get(blocker.id)?.blockedBy).toEqual([]);
+    expect(byId.get(free.id)?.blockedBy).toEqual([]);
+
+    // Finishing the blocker lifts the flag without touching the edge.
+    await update(S, db, blocker.id, { status: "done" });
+    const after = await openingBrief(S, db, { projectId: p.id, recentLimit: 5 });
+    expect(after.blockedBy[blocked.id]).toBeUndefined();
+    expect(after.blockedBy[blockedInProgress.id]?.map((b) => b.ref)).toEqual(["BLK-4"]);
+  });
+
   it("openingBrief surfaces the latest worklog comment for in_progress tasks", async () => {
     const p = await createProject(S, db, { key: "CMT2", name: "CMT2 Project" });
     const task = await write(S, db, {

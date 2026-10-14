@@ -744,6 +744,43 @@ describe("botnote MCP", () => {
     assertNoInternalFields(listText, "list_tasks");
   });
 
+  it("list_tasks marks tasks whose blocker is still open", async () => {
+    const cpResp = await client.callTool({
+      name: "create_project",
+      arguments: { key: "LTB", name: "List Tasks Blocked" }
+    });
+    const projectId = (cpResp.content as Array<{ text: string }>)[0]?.text.match(
+      /id: ([0-9a-f-]{36})/
+    )?.[1];
+    const idOf = (resp: Awaited<ReturnType<typeof client.callTool>>) =>
+      (resp.content as Array<{ text: string }>)[0]?.text.match(/id: ([0-9a-f-]{36})/)?.[1];
+    const blockerId = idOf(
+      await client.callTool({
+        name: "create_task",
+        arguments: { projectId, title: "Blocker task", actorKind: "agent" }
+      })
+    );
+    const blockedId = idOf(
+      await client.callTool({
+        name: "create_task",
+        arguments: { projectId, title: "Blocked task", actorKind: "agent" }
+      })
+    );
+    await client.callTool({
+      name: "link",
+      arguments: { fromId: blockerId, toId: blockedId, kind: "blocks" }
+    });
+
+    const listResp = await client.callTool({
+      name: "list_tasks",
+      arguments: { projectId, includeBacklog: true, includeDone: false }
+    });
+    const text = (listResp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(text).toMatch(/LTB-2 · Blocked task \(open, BLOCKED by LTB-1\)/);
+    expect(text).toMatch(/LTB-1 · Blocker task \(open\)/);
+    assertNoInternalFields(text, "list_tasks blocked");
+  });
+
   it("list_tasks returns 'no tasks' when empty", async () => {
     const cpResp = await client.callTool({
       name: "create_project",

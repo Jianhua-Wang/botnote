@@ -68,6 +68,15 @@ export function TaskRow({
         <span className="font-mono text-xxs text-faint shrink-0">{project.key}</span>
       )}
 
+      {task.blockedBy && task.blockedBy.length > 0 && task.status !== "done" && (
+        <span
+          className="shrink-0 px-1 rounded text-xxs font-medium uppercase tracking-wide bg-warn/15 text-warn"
+          title={`Blocked by ${task.blockedBy.map((b) => `${b.ref} ${b.title}`).join(", ")}`}
+        >
+          blocked
+        </span>
+      )}
+
       {recurring && (
         <span className="shrink-0 text-faint" title="Recurring task">
           <RecurrenceIcon size={12} />

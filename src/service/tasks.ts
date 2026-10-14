@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, recurrenceExceptions, recurrenceRules, type Entity } from "../db/schema.js";
+import { blockersFor, type WithBlockers } from "./blockers.js";
 import { buildRRule, normalizeOccurrenceDueAt } from "./recurrence.js";
 import type { Scope } from "./scope.js";
 import type { TasksRangeInput } from "./types.js";
@@ -36,9 +37,9 @@ export interface VirtualOccurrence {
 }
 
 export interface TasksRangeResult {
-  scheduled: Entity[];
-  overdue: Entity[];
-  backlog: Entity[];
+  scheduled: WithBlockers<Entity>[];
+  overdue: WithBlockers<Entity>[];
+  backlog: WithBlockers<Entity>[];
   virtualOccurrences: VirtualOccurrence[];
 }
 
@@ -234,7 +235,19 @@ export async function tasksRange(
   }
 
   const virtualOccurrences = await expandVirtualOccurrences(scope, db, input, scheduled);
-  return { scheduled, overdue, backlog, virtualOccurrences };
+  const blockers = await blockersFor(
+    scope,
+    db,
+    [...scheduled, ...overdue, ...backlog].map((t) => t.id)
+  );
+  const withBlockers = (rows: Entity[]): WithBlockers<Entity>[] =>
+    rows.map((t) => ({ ...t, blockedBy: blockers.get(t.id) ?? [] }));
+  return {
+    scheduled: withBlockers(scheduled),
+    overdue: withBlockers(overdue),
+    backlog: withBlockers(backlog),
+    virtualOccurrences
+  };
 }
 
 /**

@@ -263,6 +263,15 @@ export interface EntityDTO {
   accessCount: number;
   createdAt: string;
   updatedAt: string;
+  /** Present on tasks from /v1/tasks/range: unfinished tasks that block this one. */
+  blockedBy?: BlockerDTO[];
+}
+
+export interface BlockerDTO {
+  id: string;
+  ref: string;
+  title: string;
+  status: string | null;
 }
 
 export interface RecurrenceRuleDTO {

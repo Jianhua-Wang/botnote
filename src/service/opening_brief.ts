@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type Project } from "../db/schema.js";
+import { blockersFor, type Blocker } from "./blockers.js";
 import { getProject } from "./projects.js";
 import type { Scope } from "./scope.js";
 import { tokenLabels } from "./tokens.js";
@@ -15,6 +16,8 @@ export interface OpeningBrief {
   /** Latest comment (worklog entry) per in_progress task, so a resuming
    *  session sees where the previous one stopped. */
   latestComments: Entity[];
+  /** Open task id → unfinished tasks that `blocks` it. Absent when unblocked. */
+  blockedBy: Record<string, Blocker[]>;
   recent: Entity[];
   /** Token id -> token name for the authors of latestComments, so the
    *  worklog line can say who wrote it. */
@@ -77,6 +80,13 @@ export async function openingBrief(
   const inProgressIds = openTasks
     .filter((t) => t.status === "in_progress")
     .map((t) => t.id);
+  const blockedBy = Object.fromEntries(
+    await blockersFor(
+      scope,
+      db,
+      openTasks.map((t) => t.id)
+    )
+  );
   let latestComments: Entity[] = [];
   if (inProgressIds.length > 0) {
     const rows = await db
@@ -116,6 +126,7 @@ export async function openingBrief(
     pinnedNotes,
     openTasks,
     latestComments,
+    blockedBy,
     recent: recentRows,
     actorLabels,
     generatedAt: new Date(),
@@ -194,8 +205,15 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     }
   }
 
-  const inProgress = brief.openTasks.filter((t) => t.status === "in_progress");
-  const openOnly = brief.openTasks.filter((t) => t.status !== "in_progress");
+  // Blocked tasks sink below unblocked ones within their group: a resuming
+  // agent should not pick up work whose blocker is still open.
+  const blockersOf = (t: Entity): Blocker[] => brief.blockedBy?.[t.id] ?? [];
+  const unblockedFirst = (rows: Entity[]): Entity[] => [
+    ...rows.filter((t) => blockersOf(t).length === 0),
+    ...rows.filter((t) => blockersOf(t).length > 0)
+  ];
+  const inProgress = unblockedFirst(brief.openTasks.filter((t) => t.status === "in_progress"));
+  const openOnly = unblockedFirst(brief.openTasks.filter((t) => t.status !== "in_progress"));
 
   const now = brief.generatedAt.getTime();
   const taskLine = (t: Entity): string => {
@@ -206,6 +224,8 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     }
     if (t.priority && t.priority !== "none") parts.push(`!${t.priority}`);
     if (t.tags.length) parts.push(`[${t.tags.join(", ")}]`);
+    const blockers = blockersOf(t);
+    if (blockers.length) parts.push(`(BLOCKED by ${blockers.map((b) => b.ref).join(", ")})`);
     return parts.join(" ");
   };
 
