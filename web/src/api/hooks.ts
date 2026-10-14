@@ -68,6 +68,14 @@ export function useEntity(id: string | undefined) {
   });
 }
 
+export function useEntityRevisions(id: string | undefined, opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["revisions", id],
+    queryFn: () => api.entityRevisions(id!),
+    enabled: Boolean(id) && (opts.enabled ?? true)
+  });
+}
+
 export function useRelatedEntities(id: string | undefined) {
   return useQuery({
     queryKey: ["related", id],
@@ -327,6 +335,7 @@ export function useUpdateEntity() {
       qc.invalidateQueries({ queryKey: ["opening-brief", entity.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["tasks-range"] });
       qc.invalidateQueries({ queryKey: ["related"] });
+      qc.invalidateQueries({ queryKey: ["revisions", entity.id] });
       if (entity.kind === "feedback") qc.invalidateQueries({ queryKey: ["feedback"] });
     }
   });

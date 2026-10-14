@@ -263,6 +263,37 @@ export const tokens = pgTable(
   })
 );
 
+// Content history. Row N holds the title/body/tags/priority/status as they
+// were BEFORE the Nth content-changing update; actor_* is who made that
+// update. The current values live on the entity itself.
+export const entityRevisions = pgTable(
+  "entity_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    entityId: uuid("entity_id")
+      .notNull()
+      .references(() => entities.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    title: text("title"),
+    body: text("body").notNull().default(""),
+    tags: text("tags")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    priority: text("priority").notNull().default("none"),
+    status: text("status").notNull().default("open"),
+    actorKind: text("actor_kind").notNull().default("human"),
+    actorTokenId: uuid("actor_token_id").references(() => tokens.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => ({
+    entityRevisionIdx: uniqueIndex("entity_revisions_entity_revision_idx").on(
+      t.entityId,
+      t.revision
+    )
+  })
+);
+
 export const embeddingSettings = pgTable("embedding_settings", {
   // Constant discriminator kept from the singleton era; the row key is the
   // workspace (migration 0029).
@@ -313,6 +344,7 @@ export type Edge = typeof edges.$inferSelect;
 export type RecurrenceRule = typeof recurrenceRules.$inferSelect;
 export type RecurrenceException = typeof recurrenceExceptions.$inferSelect;
 export type Token = typeof tokens.$inferSelect;
+export type EntityRevision = typeof entityRevisions.$inferSelect;
 export type EmbeddingSettings = typeof embeddingSettings.$inferSelect;
 export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;
 export type Session = typeof sessions.$inferSelect;

@@ -22,9 +22,11 @@ import {
   remove,
   restore,
   setBodyVec,
+  purge,
   update,
   write
 } from "../src/service/entities.js";
+import { listRevisions, REVISION_RETENTION } from "../src/service/revisions.js";
 import { createSession, pruneExpiredSessions } from "../src/service/sessions.js";
 import { sessions } from "../src/db/schema.js";
 import { formatOpeningBrief, openingBrief } from "../src/service/opening_brief.js";
@@ -1905,6 +1907,83 @@ describe("botnote service", () => {
     expect(brief.actorLabels).toEqual({ [token.id]: "Codex @ Mini" });
     const formatted = formatOpeningBrief(brief);
     expect(formatted).toContain("by Codex @ Mini: Parser done, REST layer next.");
+  });
+
+  describe("entity revisions", () => {
+    async function freshTask(title = "Original title") {
+      return write(S, db, {
+        kind: "task",
+        title,
+        body: "line one\nline two",
+        tags: ["a"],
+        status: "open",
+        priority: "low",
+        actorKind: "human",
+        metadata: {}
+      });
+    }
+
+    it("snapshots the prior content on a content change and records who changed it", async () => {
+      const task = await freshTask();
+      const { token } = await createToken(S, db, { name: "Codex @ Mini" });
+
+      expect(await listRevisions(S, db, task.id)).toEqual([]);
+
+      await update(S, db, task.id, { title: "Renamed" }, { actorTokenId: token.id });
+      const afterRename = await listRevisions(S, db, task.id);
+      expect(afterRename).toHaveLength(1);
+      expect(afterRename![0]).toMatchObject({
+        entityId: task.id,
+        revision: 1,
+        title: "Original title",
+        body: "line one\nline two",
+        tags: ["a"],
+        priority: "low",
+        status: "open",
+        actorKind: "agent",
+        actorTokenId: token.id
+      });
+
+      await update(S, db, task.id, { bodyAppend: "line three" });
+      await update(S, db, task.id, { status: "in_progress" });
+      const all = await listRevisions(S, db, task.id);
+      expect(all!.map((r) => r.revision)).toEqual([3, 2, 1]);
+      const current = await get(S, db, task.id);
+      expect(current?.body).toContain("line three");
+      expect(current?.status).toBe("in_progress");
+      expect(all![0]).toMatchObject({ status: "open", body: current!.body, actorKind: "human", actorTokenId: null });
+      expect(all![1]).toMatchObject({ title: "Renamed", body: "line one\nline two" });
+    });
+
+    it("writes no revision when nothing content-bearing changes", async () => {
+      const task = await freshTask();
+      await update(S, db, task.id, { title: "Original title", tags: ["a"], priority: "low" });
+      await update(S, db, task.id, { bodyAppend: "" });
+      await update(S, db, task.id, { dueAt: new Date("2030-01-01T00:00:00Z"), pinned: true });
+      expect(await listRevisions(S, db, task.id)).toEqual([]);
+      await update(S, db, task.id, { tags: ["a", "b"] });
+      expect(await listRevisions(S, db, task.id)).toHaveLength(1);
+    });
+
+    it("keeps only the newest revisions and drops history with the entity", async () => {
+      const task = await freshTask();
+      for (let i = 1; i <= REVISION_RETENTION + 5; i++) {
+        await update(S, db, task.id, { title: `Title ${i}` });
+      }
+      const kept = await listRevisions(S, db, task.id, 1000);
+      expect(kept).toHaveLength(REVISION_RETENTION);
+      expect(kept![0]!.revision).toBe(REVISION_RETENTION + 5);
+      expect(kept![kept!.length - 1]!.revision).toBe(6);
+      expect(kept![0]!.title).toBe(`Title ${REVISION_RETENTION + 4}`);
+
+      await remove(S, db, task.id);
+      expect(await purge(S, db, task.id)).toBe(true);
+      const orphans = await db.execute(
+        sql`SELECT count(*)::int AS n FROM entity_revisions WHERE entity_id = ${task.id}::uuid`
+      );
+      expect((orphans.rows[0] as { n: number }).n).toBe(0);
+      expect(await listRevisions(S, db, task.id)).toBeNull();
+    });
   });
 
   it("formatOpeningBrief truncates oversized pinned notes with a fetch hint", async () => {

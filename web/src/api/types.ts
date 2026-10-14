@@ -67,6 +67,23 @@ export interface Entity {
   blockedBy?: Blocker[];
 }
 
+/** Content of an entity as it was BEFORE update number `revision`. */
+export interface EntityRevision {
+  id: string;
+  entityId: string;
+  revision: number;
+  title: string | null;
+  body: string;
+  tags: string[];
+  priority: Priority;
+  status: string;
+  actorKind: ActorKind;
+  actorTokenId: string | null;
+  /** Who made the update that replaced this snapshot. */
+  actor?: { kind: string; label: string };
+  createdAt: string;
+}
+
 export interface Blocker {
   id: string;
   ref: string;

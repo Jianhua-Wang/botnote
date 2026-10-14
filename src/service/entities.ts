@@ -10,6 +10,7 @@ import {
   upsertModifiedExceptionBaseline,
   type ContentFieldKey
 } from "./recurrence.js";
+import { recordRevision, type RevisionSnapshot } from "./revisions.js";
 import type { Scope } from "./scope.js";
 import type {
   CreateCommentInput,
@@ -231,11 +232,16 @@ export async function listComments(
 
 const CONTENT_FIELDS: ContentFieldKey[] = ["title", "body", "tags", "priority"];
 
+function sameTags(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((t, i) => t === b[i]);
+}
+
 export async function update(
   scope: Scope,
   db: Database["db"],
   id: string,
-  fields: UpdateInput
+  fields: UpdateInput,
+  attribution: WriteAttribution = {}
 ): Promise<Entity> {
   const entityId = await resolveEntityId(scope, db, id);
   if (!entityId) throw new Error(`entity ${id} not found`);
@@ -281,6 +287,7 @@ export async function update(
   // keeps the SQL the same shape as other writes.
   let enteredDone = false;
   let preEditSnapshot: Partial<Record<ContentFieldKey, unknown>> | null = null;
+  let revision: RevisionSnapshot | null = null;
 
   {
     const prior = await db
@@ -337,6 +344,28 @@ export async function update(
         priority: prior[0].priority
       };
     }
+    // History: snapshot the content a human might want to audit, but only when
+    // something in it actually changes. Due-date, pin and parent edits are not
+    // content and leave no revision.
+    const contentChanges =
+      (fields.title !== undefined && fields.title !== prior[0].title) ||
+      (fields.body !== undefined && fields.body !== prior[0].body) ||
+      (fields.bodyAppend !== undefined && fields.bodyAppend !== "") ||
+      (fields.tags !== undefined && !sameTags(fields.tags, prior[0].tags)) ||
+      (fields.priority !== undefined && fields.priority !== prior[0].priority) ||
+      (normalizedFields.status !== undefined && normalizedFields.status !== prior[0].status);
+    if (contentChanges) {
+      revision = {
+        entityId,
+        title: prior[0].title,
+        body: prior[0].body,
+        tags: prior[0].tags,
+        priority: prior[0].priority,
+        status: prior[0].status,
+        actorKind: attribution.actorTokenId ? "agent" : "human",
+        actorTokenId: attribution.actorTokenId ?? null
+      };
+    }
   }
 
   // Apply bodyAppend atomically: separate from existing content with a blank
@@ -345,11 +374,15 @@ export async function update(
     set.body = sql`CASE WHEN ${entities.body} = '' THEN ${fields.bodyAppend} ELSE ${entities.body} || ${"\n\n"} || ${fields.bodyAppend} END`;
   }
 
-  const [row] = await db
-    .update(entities)
-    .set(set)
-    .where(and(eq(entities.id, entityId), inScope(scope)))
-    .returning();
+  const snapshot = revision;
+  const [row] = await db.transaction(async (tx) => {
+    if (snapshot) await recordRevision(tx, snapshot);
+    return tx
+      .update(entities)
+      .set(set)
+      .where(and(eq(entities.id, entityId), inScope(scope)))
+      .returning();
+  });
   if (!row) throw new Error(`entity ${id} not found`);
   if (fields.parentId !== undefined && fields.parentId !== null) {
     await db
