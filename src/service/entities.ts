@@ -61,6 +61,30 @@ export async function resolveEntityId(
   return null;
 }
 
+/**
+ * A parent link must never point back at the entity itself, directly or via
+ * the parent's own parent. listChildren would otherwise list an entity as its
+ * own child (the Letheia import did exactly this; see migration 0027).
+ */
+async function assertParentAllowed(
+  db: Database["db"],
+  entityId: string,
+  parentId: string
+): Promise<void> {
+  if (parentId === entityId) {
+    throw clientError("an entity cannot be its own parent", 400);
+  }
+  const [parent] = await db
+    .select({ parentId: entities.parentId })
+    .from(entities)
+    .where(eq(entities.id, parentId))
+    .limit(1);
+  if (!parent) throw clientError(`parent entity ${parentId} not found`, 404);
+  if (parent.parentId === entityId) {
+    throw clientError("parentId would create a parent cycle (the parent is already a child of this entity)", 400);
+  }
+}
+
 export async function write(db: Database["db"], input: WriteInput): Promise<Entity> {
   if (input.idempotencyKey) {
     const existing = await db
@@ -174,6 +198,7 @@ export async function update(
 ): Promise<Entity> {
   const entityId = await resolveEntityId(db, id);
   if (!entityId) throw new Error(`entity ${id} not found`);
+  if (fields.parentId) await assertParentAllowed(db, entityId, fields.parentId);
 
   const normalizedFields: UpdateInput = { ...fields };
   if (fields.status !== undefined) {
