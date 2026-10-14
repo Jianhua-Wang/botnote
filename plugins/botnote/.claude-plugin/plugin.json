@@ -13,8 +13,7 @@
     "botnote_url": {
       "type": "string",
       "title": "botnote daemon URL",
-      "description": "Default: https://botnote.net. Use http://127.0.0.1:4280 when running on the daemon host.",
-      "default": "https://botnote.net"
+      "description": "Leave empty for a daemon on this machine (http://127.0.0.1:4280). For a remote daemon enter its URL, e.g. https://botnote.example.com, and set botnote_token."
     },
     "botnote_token": {
       "type": "string",

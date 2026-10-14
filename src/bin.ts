@@ -3,12 +3,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
+import { DEFAULT_BASE_URL, envValue, unreachableHint } from "./config.js";
 import { VERSION } from "./version.js";
-
-// Public botnote.net is the right default for fresh remote installs (the most
-// common npm-install case). On the daemon host itself, `botnote login` writes
-// a config that pins http://127.0.0.1:4280 so loopback stays loopback.
-const DEFAULT_BASE_URL = "https://botnote.net";
 
 interface BotnoteConfig {
   baseUrl: string;
@@ -27,8 +23,8 @@ function configPath(): string {
 
 function readConfig(): BotnoteConfig {
   const p = configPath();
-  const envBaseUrl = process.env.BOTNOTE_URL;
-  const envToken = process.env.BOTNOTE_TOKEN;
+  const envBaseUrl = envValue(process.env.BOTNOTE_URL);
+  const envToken = envValue(process.env.BOTNOTE_TOKEN);
   if (!existsSync(p)) {
     return { baseUrl: envBaseUrl ?? DEFAULT_BASE_URL, token: envToken };
   }
@@ -58,11 +54,17 @@ async function callApi<T>(
   const cfg = readConfig();
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (cfg.token) headers.authorization = `Bearer ${cfg.token}`;
-  const res = await fetch(`${cfg.baseUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${cfg.baseUrl}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch (err) {
+    console.error(unreachableHint(cfg.baseUrl, err));
+    process.exit(1);
+  }
   if (res.status === 401 && !opts.allowNoAuth) {
     console.error(
       "401 unauthorized — run `botnote login` and paste a token from Settings → API tokens."
@@ -111,8 +113,8 @@ Usage:
   botnote search "<query>" [--limit 10]    Hybrid search
 
 Env:
-  BOTNOTE_URL   override the server base URL (default ${DEFAULT_BASE_URL})
-  BOTNOTE_TOKEN override the saved bearer token
+  BOTNOTE_URL   override the server base URL (default ${DEFAULT_BASE_URL}, the daemon on this machine)
+  BOTNOTE_TOKEN override the saved bearer token (not needed for a trusted local daemon)
 
 Config: ${configPath()}
 `;
@@ -148,14 +150,15 @@ function parseArgs(argv: string[]): Args {
 
 async function cmdLogin(): Promise<void> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const baseUrl = (await rl.question(`Base URL [${DEFAULT_BASE_URL}]: `)).trim() || DEFAULT_BASE_URL;
-  const token = (await rl.question("Token (bn_...): ")).trim();
+  const current = readConfig();
+  const baseUrl = (await rl.question(`Base URL [${current.baseUrl}]: `)).trim() || current.baseUrl;
+  const token = (await rl.question("Token (bn_..., empty for a trusted local daemon): ")).trim();
   rl.close();
-  if (!token.startsWith("bn_")) {
+  if (token && !token.startsWith("bn_")) {
     console.error("token should start with 'bn_'. Aborting.");
     process.exit(1);
   }
-  writeConfig({ baseUrl, token });
+  writeConfig(token ? { baseUrl, token } : { baseUrl });
   console.log(`saved to ${configPath()}`);
 }
 

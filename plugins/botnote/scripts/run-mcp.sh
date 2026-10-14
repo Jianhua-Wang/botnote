@@ -15,16 +15,19 @@
 # The MCP server itself is an HTTP client of the botnote daemon — it reads
 # BOTNOTE_URL / BOTNOTE_TOKEN / BOTNOTE_CF_ACCESS_CLIENT_{ID,SECRET} from env.
 # Those are populated by Claude Code from the plugin's userConfig at startup.
+# When neither userConfig nor ~/.config/botnote/config.json names a URL, the
+# CLI's own default applies (the daemon on this machine); this wrapper never
+# picks a host itself.
 
 set -euo pipefail
 
 plugin_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 plugin_version="$(node -e "const fs=require('fs'); const path=require('path'); for (const rel of ['.codex-plugin/plugin.json', '.claude-plugin/plugin.json']) { try { const c=JSON.parse(fs.readFileSync(path.join(process.argv[1], rel), 'utf8')); if (typeof c.version === 'string') { process.stdout.write(c.version); process.exit(0); } } catch {} }" "$plugin_root" 2>/dev/null || true)"
 
-if [[ "${BOTNOTE_URL:-}" == '${user_config.botnote_url}' ]]; then
+if [[ "${BOTNOTE_URL:-}" == '${user_config.botnote_url}' || -z "${BOTNOTE_URL:-}" ]]; then
   unset BOTNOTE_URL
 fi
-if [[ "${BOTNOTE_TOKEN:-}" == '${user_config.botnote_token}' ]]; then
+if [[ "${BOTNOTE_TOKEN:-}" == '${user_config.botnote_token}' || -z "${BOTNOTE_TOKEN:-}" ]]; then
   unset BOTNOTE_TOKEN
 fi
 
@@ -43,8 +46,6 @@ if [[ -f "$config_path" ]]; then
     fi
   fi
 fi
-
-export BOTNOTE_URL="${BOTNOTE_URL:-https://botnote.net}"
 
 if [[ -n "${BOTNOTE_BIN:-}" && -x "$BOTNOTE_BIN" ]]; then
   exec "$BOTNOTE_BIN" mcp

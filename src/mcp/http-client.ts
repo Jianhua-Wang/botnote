@@ -11,6 +11,8 @@
  *   - through Cloudflare Tunnel: bearer + optional CF Access service token
  */
 
+import { BotnoteUnreachableError } from "../config.js";
+
 const VERSION_HEADER = "x-botnote-mcp-version";
 
 export interface HttpClientOptions {
@@ -53,11 +55,16 @@ export class BotnoteHttpClient {
     }
     if (this.opts.version) headers[VERSION_HEADER] = this.opts.version;
 
-    const res = await fetch(url.toString(), {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body)
-    });
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body)
+      });
+    } catch (err) {
+      throw new BotnoteUnreachableError(this.opts.baseUrl, err);
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new BotnoteHttpError(res.status, res.statusText, text);
