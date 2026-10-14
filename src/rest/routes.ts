@@ -55,6 +55,7 @@ import {
   stopRecurrence,
   updateRecurrenceRule
 } from "../service/recurrence.js";
+import { listRevisions } from "../service/revisions.js";
 import { tasksRange } from "../service/tasks.js";
 import { createToken, listTokens, revokeToken, tokenLabels } from "../service/tokens.js";
 import {
@@ -455,6 +456,24 @@ export async function registerRoutes(
   );
 
   app.get(
+    "/v1/entities/:id/revisions",
+    {
+      schema: {
+        tags: ["entities"],
+        summary:
+          "Content history, newest first: each row is the title/body/tags/priority/status before one update, with who made that update",
+        params: EntityIdParams
+      }
+    },
+    async (req, reply) => {
+      const { id } = EntityIdParams.parse(req.params);
+      const rows = await listRevisions(req.scope, ctx.db, id);
+      if (!rows) return reply.code(404).send({ error: "not_found" });
+      return rows;
+    }
+  );
+
+  app.get(
     "/v1/entities/:id/related",
     {
       schema: {
@@ -826,7 +845,9 @@ export async function registerRoutes(
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
       const fields = UpdateInput.parse(req.body);
-      const updated = await update(req.scope, ctx.db, id, fields);
+      const updated = await update(req.scope, ctx.db, id, fields, {
+        actorTokenId: req.actorTokenId
+      });
       if (
         ctx.embedding.isEnabled() &&
         (fields.body !== undefined || fields.bodyAppend !== undefined || fields.title !== undefined)

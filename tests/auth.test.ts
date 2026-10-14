@@ -301,6 +301,49 @@ describe("write attribution", () => {
     expect(fetched.json()).toMatchObject({ actor: { kind: "agent", label: "auth-test" } });
   });
 
+  it("attributes revisions to the bearer token and serves them with labels", async () => {
+    const headers = { authorization: `Bearer ${bearer}` };
+    const created = await server.inject({
+      method: "POST",
+      url: "/v1/tasks",
+      remoteAddress: "127.0.0.1",
+      payload: { title: "before edit", body: "v1" }
+    });
+    const taskId = created.json().id as string;
+
+    const patched = await server.inject({
+      method: "PATCH",
+      url: `/v1/entities/${taskId}`,
+      remoteAddress: LAN_PEER,
+      headers,
+      payload: { title: "after edit", body: "v2" }
+    });
+    expect(patched.statusCode).toBe(200);
+
+    const revisions = await server.inject({
+      method: "GET",
+      url: `/v1/entities/${taskId}/revisions`,
+      remoteAddress: "127.0.0.1"
+    });
+    expect(revisions.statusCode).toBe(200);
+    expect(revisions.json()).toHaveLength(1);
+    expect(revisions.json()[0]).toMatchObject({
+      revision: 1,
+      title: "before edit",
+      body: "v1",
+      actorKind: "agent",
+      actorTokenId: bearerTokenId,
+      actor: { kind: "agent", label: "auth-test" }
+    });
+
+    const missing = await server.inject({
+      method: "GET",
+      url: "/v1/entities/00000000-0000-0000-0000-000000000000/revisions",
+      remoteAddress: "127.0.0.1"
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+
   it("falls back to the actor kind for session and trusted-loopback writes and ignores a spoofed actorTokenId", async () => {
     const loopback = await server.inject({
       method: "POST",

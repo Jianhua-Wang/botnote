@@ -4,6 +4,7 @@ import type {
   CreateTaskInput,
   CreatedToken,
   Entity,
+  EntityRevision,
   ListFeedbackInput,
   OpeningBriefResponse,
   Project,
@@ -106,6 +107,7 @@ export const api = {
     }),
 
   getEntity: (id: string) => request<Entity>(`/v1/entities/${id}`),
+  entityRevisions: (id: string) => request<EntityRevision[]>(`/v1/entities/${id}/revisions`),
   getEntityByKey: (projectKey: string, seq: number) =>
     request<Entity>(
       `/v1/projects/by-key/${encodeURIComponent(projectKey)}/entities/by-seq/${seq}`

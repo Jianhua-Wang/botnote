@@ -16,9 +16,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { lineDiff, withContext } from "../lib/lineDiff";
 import {
   useConfigureRecurrence,
   useEntity,
+  useEntityRevisions,
   useProjects,
   useRecurrence,
   useRelatedEntities,
@@ -509,9 +511,134 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
               project={project}
             />
           )}
+
+          {entity.kind !== "comment" && <HistorySection entity={entity} />}
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * Edit history. Revision N is the content BEFORE update N, so the change made
+ * by update N is diff(revision N → revision N+1 | current entity).
+ */
+function HistorySection({ entity }: { entity: import("../api/types").Entity }) {
+  const [open, setOpen] = useState(false);
+  const revisions = useEntityRevisions(entity.id, { enabled: open });
+  const rows = revisions.data ?? [];
+
+  return (
+    <div>
+      <button
+        className="flex items-center gap-1.5 text-xxs uppercase tracking-wider text-muted font-semibold hover:text-ink"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <ChevronRight size={12} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        History
+        {open && revisions.data && <span className="text-faint normal-case tracking-normal">{rows.length} edit{rows.length === 1 ? "" : "s"}</span>}
+      </button>
+      {open && (
+        <div className="mt-1.5">
+          {revisions.isLoading ? (
+            <div className="text-xs text-faint p-3 text-center">Loading…</div>
+          ) : rows.length === 0 ? (
+            <div className="text-xs text-faint border border-dashed border-line rounded p-3 text-center">
+              Never edited since it was written.
+            </div>
+          ) : (
+            <div className="border border-line rounded-md divide-y divide-lineSoft overflow-hidden">
+              {rows.map((rev, idx) => {
+                const after = idx === 0 ? entity : rows[idx - 1]!;
+                return <RevisionRow key={rev.id} before={rev} after={after} />;
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type RevisionContent = Pick<
+  import("../api/types").EntityRevision,
+  "title" | "body" | "tags" | "priority" | "status"
+>;
+
+function RevisionRow({
+  before,
+  after
+}: {
+  before: import("../api/types").EntityRevision;
+  after: RevisionContent;
+}) {
+  const fieldChanges: Array<[string, string, string]> = [];
+  if ((before.title ?? "") !== (after.title ?? "")) {
+    fieldChanges.push(["title", before.title ?? "(untitled)", after.title ?? "(untitled)"]);
+  }
+  if (before.status !== after.status) fieldChanges.push(["status", before.status, after.status]);
+  if (before.priority !== after.priority) fieldChanges.push(["priority", before.priority, after.priority]);
+  if (before.tags.join("\u0000") !== after.tags.join("\u0000")) {
+    fieldChanges.push(["tags", before.tags.join(", ") || "—", after.tags.join(", ") || "—"]);
+  }
+  const bodyChanged = before.body !== after.body;
+  const diff = useMemo(
+    () => (bodyChanged ? withContext(lineDiff(before.body, after.body)) : []),
+    [bodyChanged, before.body, after.body]
+  );
+  const who = before.actor?.label ?? before.actorKind;
+
+  return (
+    <div className="px-3 py-2 text-xs">
+      <div className="flex items-baseline gap-2 text-xxs text-muted">
+        <span className="font-mono tabular-nums text-faint">#{before.revision}</span>
+        <span>{new Date(before.createdAt).toLocaleString()}</span>
+        <span>
+          · by <span className="text-ink">{who}</span>
+        </span>
+      </div>
+      {fieldChanges.length > 0 && (
+        <ul className="mt-1 space-y-0.5">
+          {fieldChanges.map(([field, from, to]) => (
+            <li key={field} className="text-xxs">
+              <span className="text-muted">{field}:</span>{" "}
+              <span className="line-through text-danger/80">{from}</span>{" "}
+              <span className="text-faint">→</span> <span className="text-ink">{to}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {bodyChanged && (
+        <pre className="mt-1.5 font-mono text-xxs leading-relaxed whitespace-pre-wrap break-words bg-sidebar/40 rounded p-2 overflow-x-auto">
+          {diff.map((op, i) =>
+            op.type === "skip" ? (
+              <div key={i} className="text-faint italic">
+                … {op.count} unchanged line{op.count === 1 ? "" : "s"}
+              </div>
+            ) : (
+              <div
+                key={i}
+                className={
+                  op.type === "add"
+                    ? "bg-success/10 text-ink"
+                    : op.type === "del"
+                      ? "bg-danger/10 text-muted line-through"
+                      : "text-muted"
+                }
+              >
+                <span className="select-none text-faint mr-1">
+                  {op.type === "add" ? "+" : op.type === "del" ? "−" : " "}
+                </span>
+                {op.text || " "}
+              </div>
+            )
+          )}
+        </pre>
+      )}
+      {!bodyChanged && fieldChanges.length === 0 && (
+        <div className="mt-1 text-xxs text-faint">No visible difference.</div>
+      )}
+    </div>
   );
 }
 
