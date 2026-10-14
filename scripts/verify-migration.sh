@@ -79,7 +79,17 @@ log "restored; $applied_before migrations recorded"
 log "snapshot: before"
 psql_staging -f - < "$REPO_DIR/scripts/invariants.sql" > "$WORK_DIR/before.txt"
 
-if [ ! -f "$REPO_DIR/dist/db/migrate.js" ] || [ "$REPO_DIR/src/db/migrate.ts" -nt "$REPO_DIR/dist/db/migrate.js" ]; then
+dist_stale() {
+  [ ! -f "$REPO_DIR/dist/db/migrate.js" ] && return 0
+  [ "$REPO_DIR/src/db/migrate.ts" -nt "$REPO_DIR/dist/db/migrate.js" ] && return 0
+  for f in "$REPO_DIR"/src/db/migrations/*.sql; do
+    [ -f "$REPO_DIR/dist/db/migrations/$(basename "$f")" ] || return 0
+    [ "$f" -nt "$REPO_DIR/dist/db/migrations/$(basename "$f")" ] && return 0
+  done
+  return 1
+}
+
+if dist_stale; then
   log "building server (dist is missing or stale)"
   (cd "$REPO_DIR" && pnpm build:server >"$WORK_DIR/build.log" 2>&1) || die "build failed; see $WORK_DIR/build.log"
 fi
