@@ -1373,6 +1373,65 @@ describe("botnote service", () => {
     expect(formatted).toContain("!urgent");
   });
 
+  it("concurrent writes to one project get distinct consecutive sequence ids", async () => {
+    const p = await createProject(db, { key: "SEQ", name: "Seq Project" });
+    const rows = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        write(db, {
+          kind: i % 2 === 0 ? "task" : "note",
+          projectId: p.id,
+          title: `Concurrent ${i}`,
+          body: "",
+          tags: [],
+          status: "open",
+          actorKind: "agent",
+          metadata: {}
+        })
+      )
+    );
+    const ids = rows.map((r) => r.sequenceId).sort((a, b) => (a ?? 0) - (b ?? 0));
+    expect(new Set(ids).size).toBe(20);
+    expect(ids).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+
+    const next = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "After the burst",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "agent",
+      metadata: {}
+    });
+    expect(next.sequenceId).toBe(21);
+  });
+
+  it("explicit sequence ids advance the counter and duplicates are rejected", async () => {
+    const p = await createProject(db, { key: "EXP", name: "Explicit Seq" });
+    await db.execute(sql`
+      INSERT INTO entities (project_id, kind, title, sequence_id)
+      VALUES (${p.id}::uuid, 'task', 'imported', 40)
+    `);
+    const after = await write(db, {
+      kind: "task",
+      projectId: p.id,
+      title: "auto after import",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "agent",
+      metadata: {}
+    });
+    expect(after.sequenceId).toBe(41);
+
+    await expect(
+      db.execute(sql`
+        INSERT INTO entities (project_id, kind, title, sequence_id)
+        VALUES (${p.id}::uuid, 'task', 'collision', 40)
+      `)
+    ).rejects.toThrow(/entities_project_seq_unique/);
+  });
+
   it("addComment appends a worklog entry that inherits the project but no sequence id", async () => {
     const p = await createProject(db, { key: "CMT", name: "CMT Project" });
     const task = await write(db, {
