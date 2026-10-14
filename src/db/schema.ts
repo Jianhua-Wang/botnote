@@ -112,6 +112,9 @@ export const entities = pgTable(
       .default(sql`'{}'::text[]`),
     status: text("status").notNull().default("open"),
     actorKind: text("actor_kind").notNull().default("human"),
+    // API token that performed the write, when the request carried one.
+    // Resolves to a human-readable author label ("Claude Code @ MacBook").
+    actorTokenId: uuid("actor_token_id").references(() => tokens.id, { onDelete: "set null" }),
     idempotencyKey: text("idempotency_key"),
     parentId: uuid("parent_id"),
     bodyTsv: tsvector("body_tsv"),

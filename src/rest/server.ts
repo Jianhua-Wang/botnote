@@ -52,6 +52,9 @@ declare module "fastify" {
   interface FastifyRequest {
     /** Workspace the request is allowed to touch. Set by onRequest, never by a route. */
     scope: Scope;
+    /** API token that authenticated this request, for write attribution.
+     *  null for session-cookie and trusted-loopback requests. */
+    actorTokenId: string | null;
   }
 }
 
@@ -215,8 +218,10 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   // null (not an object literal) so every request shares one hidden-class
   // shape; the hook right below assigns the real value before any handler.
   app.decorateRequest("scope", null as unknown as Scope);
+  app.decorateRequest("actorTokenId", null);
   app.addHook("onRequest", async (req) => {
     req.scope = defaultScope;
+    req.actorTokenId = null;
   });
 
   // ----- auth -----
@@ -225,49 +230,54 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   // is "loopback" is decided by the TCP peer address, never by headers: a LAN
   // client hitting a 0.0.0.0 bind gets the same gate as the public internet,
   // and forged x-forwarded-for from an untrusted peer changes nothing.
-  if (auth.required) {
-    // IMPORTANT: register at onRequest, not preHandler. fastify-type-provider-zod
-    // runs schema validation at preValidation, which is BEFORE preHandler — so
-    // a preHandler auth gate lets an unauthenticated POST get a 400 zod error
-    // back, leaking the request schema. onRequest fires first; no body has been
-    // parsed yet, but headers and cookies are all we need.
-    app.addHook("onRequest", async (req, reply) => {
-      if (!req.url.startsWith("/v1/")) return;
-      // The login endpoint is the entry point — gating it would be a
-      // chicken-and-egg loop. Logout is fine to leave open too (it's a noop
-      // when no cookie is present).
-      if (
-        req.url.startsWith("/v1/auth/login") ||
-        req.url.startsWith("/v1/auth/logout")
-      ) {
+  // IMPORTANT: register at onRequest, not preHandler. fastify-type-provider-zod
+  // runs schema validation at preValidation, which is BEFORE preHandler — so
+  // a preHandler auth gate lets an unauthenticated POST get a 400 zod error
+  // back, leaking the request schema. onRequest fires first; no body has been
+  // parsed yet, but headers and cookies are all we need.
+  //
+  // A presented bearer token is always resolved, even on a trusted loopback
+  // connection or when auth is off: that is what attributes the write to a
+  // named token ("Claude Code @ MacBook"). Only the 401 depends on auth.required.
+  app.addHook("onRequest", async (req, reply) => {
+    if (!req.url.startsWith("/v1/")) return;
+    // The login endpoint is the entry point — gating it would be a
+    // chicken-and-egg loop. Logout is fine to leave open too (it's a noop
+    // when no cookie is present).
+    if (
+      req.url.startsWith("/v1/auth/login") ||
+      req.url.startsWith("/v1/auth/logout")
+    ) {
+      return;
+    }
+
+    // CLI / MCP path: bearer token.
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const plaintext = authHeader.slice("Bearer ".length).trim();
+      const tok = await consumeToken(opts.db, plaintext);
+      if (tok) {
+        req.scope = scopeFor(tok.workspaceId);
+        req.actorTokenId = tok.id;
         return;
       }
-      if (isTrustedWithoutCredential(req, auth)) return;
+    }
 
-      // Browser path: session cookie set by /v1/auth/login.
-      const cookieToken = req.cookies?.botnote_session;
-      if (cookieToken) {
-        const session = await consumeSession(opts.db, cookieToken);
-        if (session) {
-          req.scope = scopeFor(session.workspaceId);
-          return;
-        }
+    if (!auth.required) return;
+    if (isTrustedWithoutCredential(req, auth)) return;
+
+    // Browser path: session cookie set by /v1/auth/login.
+    const cookieToken = req.cookies?.botnote_session;
+    if (cookieToken) {
+      const session = await consumeSession(opts.db, cookieToken);
+      if (session) {
+        req.scope = scopeFor(session.workspaceId);
+        return;
       }
+    }
 
-      // CLI / MCP path: bearer token.
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        const plaintext = authHeader.slice("Bearer ".length).trim();
-        const tok = await consumeToken(opts.db, plaintext);
-        if (tok) {
-          req.scope = scopeFor(tok.workspaceId);
-          return;
-        }
-      }
-
-      return reply.code(401).send({ error: "unauthenticated" });
-    });
-  }
+    return reply.code(401).send({ error: "unauthenticated" });
+  });
   app.log.info(describeAuthConfig(auth));
 
   await registerRoutes(app, { db: opts.db, embedding: opts.embedding, auth, defaultScope });

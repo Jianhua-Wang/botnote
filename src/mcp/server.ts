@@ -958,7 +958,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         }
         const lines = rows.map((r) => {
           const when = (r.createdAt ?? "").slice(0, 16).replace("T", " ");
-          return `[${when} · ${r.actorKind}]\n${r.body}`;
+          return `[${when} · ${r.actor?.label ?? r.actorKind}]\n${r.body}`;
         });
         return { content: [{ type: "text", text: lines.join("\n\n---\n\n") }] };
       } catch (err: unknown) {

@@ -3,7 +3,7 @@ import type { Database } from "../db/client.js";
 import { entities, type Entity, type FeedbackCategory } from "../db/schema.js";
 import { write } from "./entities.js";
 import type { Scope } from "./scope.js";
-import type { CreateFeedbackInput, ListFeedbackInput } from "./types.js";
+import type { CreateFeedbackInput, ListFeedbackInput, WriteAttribution } from "./types.js";
 
 /**
  * File product feedback about botnote itself. Feedback is a first-class
@@ -14,7 +14,8 @@ import type { CreateFeedbackInput, ListFeedbackInput } from "./types.js";
 export async function submitFeedback(
   scope: Scope,
   db: Database["db"],
-  input: CreateFeedbackInput
+  input: CreateFeedbackInput,
+  attribution: WriteAttribution = {}
 ): Promise<Entity> {
   return write(scope, db, {
     kind: "feedback",
@@ -24,6 +25,7 @@ export async function submitFeedback(
     tags: [input.category],
     status: "open",
     actorKind: input.actorKind,
+    actorTokenId: attribution.actorTokenId ?? null,
     metadata: {
       ...input.metadata,
       category: input.category,

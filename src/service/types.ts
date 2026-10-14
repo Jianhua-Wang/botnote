@@ -41,6 +41,9 @@ export const WriteInput = z.object({
   status: z.string().default("open"),
   parentId: Uuid.nullish(),
   actorKind: ActorKindEnum.default("human"),
+  /** Token that authenticated the write. Set by the transport from the
+   *  request credential, never accepted from a request body. */
+  actorTokenId: Uuid.nullish(),
   metadata: z.record(z.unknown()).default({}),
   dueAt: z.coerce.date().nullish(),
   priority: PriorityEnum.default("none"),
@@ -50,6 +53,11 @@ export const WriteInput = z.object({
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type WriteInput = z.infer<typeof WriteInput>;
+
+/** Request-derived attribution passed alongside kind-specific create inputs. */
+export interface WriteAttribution {
+  actorTokenId?: string | null;
+}
 
 /** Create a task. Title required, body optional, dueAt + priority + status
  *  apply natively. */

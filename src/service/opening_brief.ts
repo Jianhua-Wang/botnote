@@ -4,6 +4,7 @@ import { entities, type Entity, type Project } from "../db/schema.js";
 import { blockersFor, type Blocker } from "./blockers.js";
 import { getProject } from "./projects.js";
 import type { Scope } from "./scope.js";
+import { tokenLabels } from "./tokens.js";
 import { DEFAULT_WORKSPACE_TIMEZONE, getWorkspaceSettings } from "./workspace_settings.js";
 import type { OpeningBriefInput } from "./types.js";
 
@@ -18,6 +19,9 @@ export interface OpeningBrief {
   /** Open task id → unfinished tasks that `blocks` it. Absent when unblocked. */
   blockedBy: Record<string, Blocker[]>;
   recent: Entity[];
+  /** Token id -> token name for the authors of latestComments, so the
+   *  worklog line can say who wrote it. */
+  actorLabels: Record<string, string>;
   generatedAt: Date;
   timezone: string;
 }
@@ -106,6 +110,16 @@ export async function openingBrief(
     }
   }
 
+  const actorLabels: Record<string, string> = {};
+  const authorTokenIds = latestComments.map((c) => c.actorTokenId).filter((id): id is string => !!id);
+  if (authorTokenIds.length > 0) {
+    const labels = await tokenLabels(scope, db);
+    for (const id of authorTokenIds) {
+      const name = labels.get(id);
+      if (name) actorLabels[id] = name;
+    }
+  }
+
   return {
     project,
     agentsMd: project?.agentsMd ?? "",
@@ -114,6 +128,7 @@ export async function openingBrief(
     latestComments,
     blockedBy,
     recent: recentRows,
+    actorLabels,
     generatedAt: new Date(),
     timezone: settings.timezone
   };
@@ -225,9 +240,10 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
       const log = worklogByTask.get(t.id);
       if (log) {
         const when = log.createdAt.toISOString().slice(0, 16).replace("T", " ");
+        const who = (log.actorTokenId && brief.actorLabels[log.actorTokenId]) || log.actorKind;
         const excerpt = log.body.trim().replace(/\s+/g, " ");
         lines.push(
-          `  ↳ last log ${when}: ${excerpt.length > 300 ? `${excerpt.slice(0, 300)}…` : excerpt}`
+          `  ↳ last log ${when} by ${who}: ${excerpt.length > 300 ? `${excerpt.slice(0, 300)}…` : excerpt}`
         );
       }
     }

@@ -56,7 +56,7 @@ import {
   updateRecurrenceRule
 } from "../service/recurrence.js";
 import { tasksRange } from "../service/tasks.js";
-import { createToken, listTokens, revokeToken } from "../service/tokens.js";
+import { createToken, listTokens, revokeToken, tokenLabels } from "../service/tokens.js";
 import {
   CreateCommentInput,
   CreateFeedbackInput,
@@ -86,6 +86,7 @@ import {
   Uuid
 } from "../service/types.js";
 import { VERSION } from "../version.js";
+import { attachActorLabels } from "./attribution.js";
 import { requestOrigin } from "./auth.js";
 import type { ServerContext } from "./server.js";
 
@@ -172,6 +173,14 @@ export async function registerRoutes(
   ctx: ServerContext
 ): Promise<void> {
   const app = rawApp.withTypeProvider<ZodTypeProvider>();
+
+  // Additive `actor: { kind, label }` on every serialized entity, resolved
+  // from the token that wrote it. Centralised here so the entity-returning
+  // routes (and anything nested: hits, links, briefs) stay unaware of it.
+  app.addHook("preSerialization", async (req, _reply, payload) => {
+    if (!req.url.startsWith("/v1/")) return payload;
+    return attachActorLabels(payload, () => tokenLabels(req.scope, ctx.db));
+  });
 
   app.get("/health", async () => {
     const embedding = ctx.embedding.runtimeStatus();
@@ -660,7 +669,12 @@ export async function registerRoutes(
     },
     async (req) => {
       const body = CreateTaskInput.parse(req.body);
-      const entity = await write(req.scope, ctx.db, { ...body, kind: "task", pinned: false });
+      const entity = await write(req.scope, ctx.db, {
+        ...body,
+        kind: "task",
+        pinned: false,
+        actorTokenId: req.actorTokenId
+      });
       if (ctx.embedding.isEnabled()) {
         ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
       }
@@ -690,7 +704,8 @@ export async function registerRoutes(
         kind: "note",
         status: "open",
         priority: "none",
-        dueAt: null
+        dueAt: null,
+        actorTokenId: req.actorTokenId
       });
       if (supersededId) {
         await markSuperseded(req.scope, ctx.db, entity.id, supersededId);
@@ -733,7 +748,9 @@ export async function registerRoutes(
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
       const body = CreateCommentInput.parse(req.body);
-      const entity = await addComment(req.scope, ctx.db, id, body);
+      const entity = await addComment(req.scope, ctx.db, id, body, {
+        actorTokenId: req.actorTokenId
+      });
       if (ctx.embedding.isEnabled()) {
         ctx.embedding.enqueue(entity.id, entity.body);
       }
@@ -767,7 +784,9 @@ export async function registerRoutes(
     },
     async (req) => {
       const body = CreateFeedbackInput.parse(req.body);
-      const entity = await submitFeedback(req.scope, ctx.db, body);
+      const entity = await submitFeedback(req.scope, ctx.db, body, {
+        actorTokenId: req.actorTokenId
+      });
       if (ctx.embedding.isEnabled()) {
         ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
       }

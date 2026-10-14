@@ -47,7 +47,7 @@ import { entities, recurrenceExceptions, recurrenceRules } from "../src/db/schem
 import { listFeedback, submitFeedback } from "../src/service/feedback.js";
 import { findSimilar, search, timeDecayFor } from "../src/service/search.js";
 import { tasksRange } from "../src/service/tasks.js";
-import { consumeToken, createToken, listTokens } from "../src/service/tokens.js";
+import { consumeToken, createToken, listTokens, revokeToken } from "../src/service/tokens.js";
 import {
   getWorkspaceSettings,
   updateWorkspaceSettings
@@ -1840,7 +1840,71 @@ describe("botnote service", () => {
 
     const formatted = formatOpeningBrief(brief);
     expect(formatted).toContain("↳ last log");
+    expect(formatted).toContain("by agent:");
     expect(formatted).toContain("stopped at the REST layer");
+  });
+
+  it("stores the token behind a write and keeps the row when the token is revoked", async () => {
+    const { token } = await createToken(S, db, { name: "Claude Code @ MacBook" });
+    const task = await write(S, db, {
+      kind: "task",
+      title: "Attributed task",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "agent",
+      actorTokenId: token.id,
+      metadata: {}
+    });
+    expect(task.actorTokenId).toBe(token.id);
+
+    const comment = await addComment(
+      S,
+      db,
+      task.id,
+      { body: "Attributed log.", actorKind: "agent", metadata: {} },
+      { actorTokenId: token.id }
+    );
+    expect(comment.actorTokenId).toBe(token.id);
+
+    const unattributed = await addComment(S, db, task.id, {
+      body: "Session log.",
+      actorKind: "human",
+      metadata: {}
+    });
+    expect(unattributed.actorTokenId).toBeNull();
+
+    expect(await revokeToken(S, db, token.id)).toBe(true);
+    const after = await get(S, db, task.id);
+    expect(after?.id).toBe(task.id);
+    expect(after?.actorTokenId).toBeNull();
+  });
+
+  it("openingBrief names the token that wrote the latest worklog line", async () => {
+    const p = await createProject(S, db, { key: "ATTR", name: "Attribution" });
+    const { token } = await createToken(S, db, { name: "Codex @ Mini" });
+    const task = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Attributed resumable task",
+      body: "",
+      tags: [],
+      status: "in_progress",
+      actorKind: "human",
+      metadata: {}
+    });
+    await addComment(
+      S,
+      db,
+      task.id,
+      { body: "Parser done, REST layer next.", actorKind: "agent", metadata: {} },
+      { actorTokenId: token.id }
+    );
+
+    const brief = await openingBrief(S, db, { projectId: p.id, recentLimit: 5 });
+    expect(brief.actorLabels).toEqual({ [token.id]: "Codex @ Mini" });
+    const formatted = formatOpeningBrief(brief);
+    expect(formatted).toContain("by Codex @ Mini: Parser done, REST layer next.");
   });
 
   it("formatOpeningBrief truncates oversized pinned notes with a fetch hint", async () => {

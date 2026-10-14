@@ -18,7 +18,8 @@ import type {
   ListTagsInput,
   RecentInput,
   UpdateInput,
-  WriteInput
+  WriteInput,
+  WriteAttribution
 } from "./types.js";
 
 function clientError(message: string, statusCode: number): Error {
@@ -142,6 +143,7 @@ export async function write(scope: Scope, db: Database["db"], input: WriteInput)
       status,
       parentId: input.parentId ?? null,
       actorKind: input.actorKind,
+      actorTokenId: input.actorTokenId ?? null,
       metadata: input.metadata,
       dueAt: normalizeDueAt(input.dueAt),
       priority: input.priority,
@@ -176,7 +178,8 @@ export async function addComment(
   scope: Scope,
   db: Database["db"],
   parentIdOrPrefix: string,
-  input: CreateCommentInput
+  input: CreateCommentInput,
+  attribution: WriteAttribution = {}
 ): Promise<Entity> {
   const parent = await get(scope, db, parentIdOrPrefix);
   if (!parent) throw clientError(`entity ${parentIdOrPrefix} not found`, 404);
@@ -193,6 +196,7 @@ export async function addComment(
     status: "open",
     parentId: parent.id,
     actorKind: input.actorKind,
+    actorTokenId: attribution.actorTokenId ?? null,
     metadata: input.metadata,
     dueAt: null,
     priority: "none",
