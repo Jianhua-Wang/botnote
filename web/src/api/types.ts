@@ -60,6 +60,15 @@ export interface Entity {
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Present on tasks from /v1/tasks/range: unfinished tasks that block this one. */
+  blockedBy?: Blocker[];
+}
+
+export interface Blocker {
+  id: string;
+  ref: string;
+  title: string;
+  status: string | null;
 }
 
 export interface VirtualOccurrence {

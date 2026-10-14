@@ -129,6 +129,9 @@ function summarizeEntity(e: EntityDTO, projectKey: string | null): string {
   } else if (e.dueAt) {
     parts.push(`due ${e.dueAt.slice(0, 10)}`);
   }
+  if (e.blockedBy?.length) {
+    parts.push(`BLOCKED by ${e.blockedBy.map((b) => b.ref).join(", ")}`);
+  }
   return `${base} (${parts.join(", ")})`;
 }
 
