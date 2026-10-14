@@ -68,8 +68,8 @@ Because publish runs the full test suite first, a broken commit fails CI and
 ## Verify
 
 ```bash
-gh run list  --repo Jianhua-Wang/botnote --limit 5
-gh run watch <run-id> --repo Jianhua-Wang/botnote --exit-status
+gh run list  --repo botnote-dev/botnote --limit 5
+gh run watch <run-id> --repo botnote-dev/botnote --exit-status
 npm view botnote version          # should show the new version
 ```
 

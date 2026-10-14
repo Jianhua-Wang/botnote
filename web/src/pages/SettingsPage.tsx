@@ -353,7 +353,7 @@ function PluginSection() {
           steps: [
             {
               note: "In Claude Code, add the marketplace and install the plugin:",
-              code: "/plugin marketplace add Jianhua-Wang/botnote\n/plugin install botnote@botnote"
+              code: "/plugin marketplace add botnote-dev/botnote\n/plugin install botnote@botnote"
             },
             {
               note: (
@@ -406,7 +406,7 @@ function PluginSection() {
           steps: [
             {
               note: "Add the Git marketplace. Sparse checkout keeps it light:",
-              code: "codex plugin marketplace add https://github.com/Jianhua-Wang/botnote.git \\\n  --sparse .agents/plugins \\\n  --sparse plugins/botnote"
+              code: "codex plugin marketplace add https://github.com/botnote-dev/botnote.git \\\n  --sparse .agents/plugins \\\n  --sparse plugins/botnote"
             },
             {
               note: "Install the plugin from it:",
@@ -452,7 +452,7 @@ function PluginSection() {
                   <code className="text-ink">.cursor-plugin/marketplace.json</code>:
                 </>
               ),
-              code: "https://github.com/Jianhua-Wang/botnote"
+              code: "https://github.com/botnote-dev/botnote"
             },
             {
               note: "Then install:",
@@ -486,7 +486,7 @@ function PluginSection() {
           steps: [
             {
               note: "Install all botnote skills straight from the GitHub repo:",
-              code: "npx skills add Jianhua-Wang/botnote"
+              code: "npx skills add botnote-dev/botnote"
             },
             {
               note: (
@@ -661,12 +661,12 @@ function PluginSection() {
         <div>
           Plugin distribution lives at{" "}
           <a
-            href="https://github.com/Jianhua-Wang/botnote"
+            href="https://github.com/botnote-dev/botnote"
             target="_blank"
             className="text-accent hover:underline"
             rel="noreferrer"
           >
-            Jianhua-Wang/botnote
+            botnote-dev/botnote
           </a>
           {". "}
           Claude Code updates through <code className="text-ink">/plugin</code>; after updating or
