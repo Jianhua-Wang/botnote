@@ -61,6 +61,9 @@ export const projects = pgTable(
     icon: text("icon").notNull().default("circle"),
     agentsMd: text("agents_md").notNull().default(""),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // Per-project sequence counter, advanced by the entities insert trigger
+    // (migration 0026). Never written from application code.
+    nextSeq: integer("next_seq").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
