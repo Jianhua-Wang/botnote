@@ -1334,6 +1334,136 @@ describe("botnote service", () => {
     expect(fetched?.bodyVec?.length).toBe(384);
   });
 
+  it("a fresh service instance picks up rows left without vectors", async () => {
+    const p = await createProject(S, db, { key: "RST", name: "Restart" });
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const e = await write(S, db, {
+        kind: "note",
+        projectId: p.id,
+        title: `Orphaned ${i}`,
+        body: "written while the worker was down",
+        tags: [],
+        status: "open",
+        actorKind: "human",
+        metadata: {}
+      });
+      ids.push(e.id);
+    }
+
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const svc = new EmbeddingService(db, {
+      embedBatchFn: async (texts) => {
+        await gate;
+        return texts.map(() => new Array(384).fill(0.3));
+      },
+      logger: () => undefined
+    });
+    const first = await svc.enqueueMissing();
+    expect(first.enqueued).toBe(3);
+    const again = await svc.enqueueMissing();
+    expect(again.enqueued).toBe(0);
+    expect(again.pendingCount).toBe(3);
+    release();
+    await svc.drain(5000);
+
+    for (const id of ids) {
+      const fetched = await get(S, db, id);
+      expect(fetched?.bodyVec?.[0]).toBeCloseTo(0.3, 6);
+    }
+    expect((await svc.enqueueMissing()).enqueued).toBe(0);
+  });
+
+  it("batches backfill requests and matches the single-text path", async () => {
+    const p = await createProject(S, db, { key: "BAT", name: "Batch" });
+    const vecFor = async (text: string): Promise<number[]> => {
+      let h = 2166136261;
+      for (const ch of text) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+      return new Array(384).fill(0).map((_, i) => ((h + i * 7919) % 1000) / 1000);
+    };
+    const rows = 250;
+    const ids: string[] = [];
+    for (let i = 0; i < rows; i++) {
+      const e = await write(S, db, {
+        kind: i % 2 === 0 ? "note" : "task",
+        projectId: p.id,
+        title: `Row ${i}`,
+        body: `body text ${i}`,
+        tags: [],
+        status: "open",
+        actorKind: "human",
+        metadata: {}
+      });
+      ids.push(e.id);
+    }
+
+    const batchSizes: number[] = [];
+    const batched = new EmbeddingService(db, {
+      embedBatchFn: async (texts) => {
+        batchSizes.push(texts.length);
+        return Promise.all(texts.map(vecFor));
+      },
+      logger: () => undefined
+    });
+    expect((await batched.enqueueMissing()).enqueued).toBe(rows);
+    await batched.drain(10000);
+    expect(batchSizes.length).toBe(3);
+    expect(Math.max(...batchSizes)).toBe(100);
+
+    const twin = await write(S, db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Row 0",
+      body: "body text 0",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const single = new EmbeddingService(db, { embedFn: vecFor, logger: () => undefined });
+    expect((await single.enqueueMissing()).enqueued).toBe(1);
+    await single.drain(5000);
+
+    const viaBatch = await get(S, db, ids[0]!);
+    const viaSingle = await get(S, db, twin.id);
+    expect(viaBatch?.bodyVec).toEqual(viaSingle?.bodyVec);
+    expect(viaBatch?.bodyVec?.[0]).toBeCloseTo((await vecFor("Row 0\nbody text 0"))[0]!, 6);
+  });
+
+  it("a failing text is retried alone and does not poison its batch", async () => {
+    const p = await createProject(S, db, { key: "PSN", name: "Poison" });
+    const make = (title: string) =>
+      write(S, db, {
+        kind: "note",
+        projectId: p.id,
+        title,
+        body: "b",
+        tags: [],
+        status: "open",
+        actorKind: "human",
+        metadata: {}
+      });
+    const good = await Promise.all([make("good 1"), make("good 2"), make("good 3")]);
+    const bad = await make("poison");
+
+    const logs: string[] = [];
+    const svc = new EmbeddingService(db, {
+      embedBatchFn: async (texts) => {
+        if (texts.some((t) => t.includes("poison"))) throw new Error("provider rejected input");
+        return texts.map(() => new Array(384).fill(0.6));
+      },
+      logger: (m) => logs.push(m)
+    });
+    expect((await svc.enqueueMissing()).enqueued).toBe(4);
+    await svc.drain(10000);
+
+    for (const e of good) expect((await get(S, db, e.id))?.bodyVec?.length).toBe(384);
+    expect((await get(S, db, bad.id))?.bodyVec).toBeNull();
+    expect(logs.some((l) => l.includes("giving up"))).toBe(true);
+    expect((await svc.enqueueMissing()).enqueued).toBe(1);
+  });
+
   it("hybrid search merges BM25 + cosine via RRF", async () => {
     const p = await createProject(S, db, { key: "HYB", name: "Hybrid" });
 

@@ -20,6 +20,9 @@ const DEFAULT_TRASH_RETENTION_DAYS = 30;
 const DAILY_MS = 24 * 60 * 60 * 1000;
 const TRASH_PURGE_INTERVAL_MS = DAILY_MS;
 const SESSION_PRUNE_INTERVAL_MS = DAILY_MS;
+// Re-queues task/note rows still without a vector: rows left behind by a
+// restart or by a provider outage become searchable without manual backfill.
+const EMBEDDING_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 
 function endOfToday(): Date {
   const end = new Date();
@@ -46,6 +49,7 @@ async function runRest(): Promise<void> {
   const auth = authConfigFromEnv();
   const app = await buildServer({ db, embedding, logLevel, auth, defaultScope });
   await app.listen({ port, host });
+  embedding.setLogger((msg) => app.log.warn(`embedding: ${msg}`));
 
   app.log.info(
     `botnote v${VERSION} listening on http://${host}:${port} (docs: /docs, embeddings ${embedding.isEnabled() ? "ON" : "OFF"})`
@@ -122,11 +126,28 @@ async function runRest(): Promise<void> {
   await pruneSessions();
   const sessionTimer = setInterval(pruneSessions, SESSION_PRUNE_INTERVAL_MS);
 
+  const sweepMissingEmbeddings = async () => {
+    if (!embedding.isEnabled()) return;
+    try {
+      const queued = await embedding.enqueueMissing();
+      if (queued.enqueued > 0) {
+        app.log.info(
+          `queued ${queued.enqueued} entit(ies) for embedding backfill (${queued.pendingCount} pending)`
+        );
+      }
+    } catch (err) {
+      app.log.error({ err }, "embedding backfill sweep failed");
+    }
+  };
+  await sweepMissingEmbeddings();
+  const embeddingTimer = setInterval(sweepMissingEmbeddings, EMBEDDING_SWEEP_INTERVAL_MS);
+
   const shutdown = async (sig: string) => {
     app.log.info(`shutting down on ${sig}`);
     if (recurrenceTimer) clearInterval(recurrenceTimer);
     if (trashTimer) clearInterval(trashTimer);
     clearInterval(sessionTimer);
+    clearInterval(embeddingTimer);
     await app.close();
     process.exit(0);
   };
