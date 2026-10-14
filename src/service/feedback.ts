@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type FeedbackCategory } from "../db/schema.js";
 import { write } from "./entities.js";
+import type { Scope } from "./scope.js";
 import type { CreateFeedbackInput, ListFeedbackInput } from "./types.js";
 
 /**
@@ -11,10 +12,11 @@ import type { CreateFeedbackInput, ListFeedbackInput } from "./types.js";
  * rejected (won't fix). The category lives in metadata.category.
  */
 export async function submitFeedback(
+  scope: Scope,
   db: Database["db"],
   input: CreateFeedbackInput
 ): Promise<Entity> {
-  return write(db, {
+  return write(scope, db, {
     kind: "feedback",
     projectId: input.projectId ?? null,
     title: input.title,
@@ -36,10 +38,15 @@ export async function submitFeedback(
 
 /** Feedback entries for triage, newest first, filterable by category/status. */
 export async function listFeedback(
+  scope: Scope,
   db: Database["db"],
   input: ListFeedbackInput
 ): Promise<Entity[]> {
-  const conds = [eq(entities.kind, "feedback"), isNull(entities.deletedAt)];
+  const conds = [
+    eq(entities.workspaceId, scope.workspaceId),
+    eq(entities.kind, "feedback"),
+    isNull(entities.deletedAt)
+  ];
   if (input.status) conds.push(eq(entities.status, input.status));
   if (input.category) {
     conds.push(

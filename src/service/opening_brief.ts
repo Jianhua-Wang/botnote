@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type Project } from "../db/schema.js";
 import { getProject } from "./projects.js";
+import type { Scope } from "./scope.js";
 import { DEFAULT_WORKSPACE_TIMEZONE, getWorkspaceSettings } from "./workspace_settings.js";
 import type { OpeningBriefInput } from "./types.js";
 
@@ -19,17 +20,20 @@ export interface OpeningBrief {
 }
 
 export async function openingBrief(
+  scope: Scope,
   db: Database["db"],
   input: OpeningBriefInput
 ): Promise<OpeningBrief> {
-  const project = input.projectId ? await getProject(db, input.projectId) : null;
+  const project = input.projectId ? await getProject(scope, db, input.projectId) : null;
 
-  const projectFilter = input.projectId
-    ? eq(entities.projectId, input.projectId)
-    : isNull(entities.projectId);
+  const inWorkspace = eq(entities.workspaceId, scope.workspaceId);
+  const projectFilter = and(
+    inWorkspace,
+    input.projectId ? eq(entities.projectId, input.projectId) : isNull(entities.projectId)
+  )!;
 
   const [settings, pinnedNotes, openTasks, recentRows] = await Promise.all([
-    getWorkspaceSettings(db).catch(() => ({ timezone: DEFAULT_WORKSPACE_TIMEZONE })),
+    getWorkspaceSettings(scope, db).catch(() => ({ timezone: DEFAULT_WORKSPACE_TIMEZONE })),
     db
       .select()
       .from(entities)
@@ -76,6 +80,7 @@ export async function openingBrief(
       .from(entities)
       .where(
         and(
+          inWorkspace,
           eq(entities.kind, "comment"),
           inArray(entities.parentId, inProgressIds),
           isNull(entities.deletedAt)

@@ -9,6 +9,7 @@ import {
   previewSecret
 } from "./embedding_settings.js";
 import { setBodyVec } from "./entities.js";
+import { DEFAULT_SCOPE, type Scope } from "./scope.js";
 import type { EmbeddingProvider } from "./types.js";
 
 export const EMBED_MODEL = DEFAULT_EMBEDDING_MODEL;
@@ -48,6 +49,9 @@ export class EmbeddingService {
   private queue: Job[] = [];
   private working = false;
   private envApiKey: string | undefined;
+  /** The daemon runs one embedding worker; its provider config is read from
+   *  this workspace's embedding_settings row (the default workspace today). */
+  private scope: Scope;
   private status: EmbeddingRuntimeStatus = {
     enabled: false,
     provider: DEFAULT_EMBEDDING_PROVIDER,
@@ -66,9 +70,11 @@ export class EmbeddingService {
       apiKey?: string | undefined;
       embedFn?: EmbedFn;
       logger?: (msg: string) => void;
+      scope?: Scope;
     } = {}
   ) {
     this.envApiKey = opts.apiKey;
+    this.scope = opts.scope ?? DEFAULT_SCOPE;
     if (opts.embedFn) {
       this.injected = true;
       this.embedFn = opts.embedFn;
@@ -94,7 +100,7 @@ export class EmbeddingService {
   async reloadConfig(): Promise<EmbeddingRuntimeStatus> {
     if (this.injected) return this.status;
 
-    const settings = await getEmbeddingSettings(this.db);
+    const settings = await getEmbeddingSettings(this.scope, this.db);
     const settingsKey = settings.apiKey?.trim() || null;
     const envKey = this.envApiKey?.trim() || null;
     const apiKey = settingsKey ?? envKey;

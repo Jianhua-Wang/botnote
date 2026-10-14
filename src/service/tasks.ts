@@ -17,6 +17,7 @@ import {
 import type { Database } from "../db/client.js";
 import { entities, recurrenceExceptions, recurrenceRules, type Entity } from "../db/schema.js";
 import { buildRRule, materializeScheduledRecurrences, normalizeOccurrenceDueAt } from "./recurrence.js";
+import type { Scope } from "./scope.js";
 import type { TasksRangeInput } from "./types.js";
 
 export interface VirtualOccurrence {
@@ -70,19 +71,22 @@ function materializationHorizon(input: TasksRangeInput, now: Date): Date {
  * cannot also appear in the overdue alert.
  */
 export async function tasksRange(
+  scope: Scope,
   db: Database["db"],
   input: TasksRangeInput
 ): Promise<TasksRangeResult> {
   const now = new Date();
   await materializeScheduledRecurrences(db, materializationHorizon(input, now));
 
+  const inWorkspace = eq(entities.workspaceId, scope.workspaceId);
   const projectFilter = input.projectIds?.length
     ? inArray(entities.projectId, input.projectIds)
     : undefined;
   const activeProjectFilter = projectFilter
     ? undefined
     : sql`(${entities.projectId} IS NULL OR ${entities.projectId} IN (
-        SELECT id FROM projects WHERE status <> 'archived'
+        SELECT id FROM projects
+        WHERE status <> 'archived' AND workspace_id = ${scope.workspaceId}::uuid
       ))`;
 
   const notStatus = (status: string): SQL =>
@@ -93,6 +97,7 @@ export async function tasksRange(
   // includeDone means "show completion history", not "show abandoned work",
   // and a cancelled task with a leftover dueAt is not scheduled for anything.
   const baseConds: SQL[] = [
+    inWorkspace,
     eq(entities.kind, "task"),
     isNull(entities.deletedAt),
     notStatus("rejected"),
@@ -133,6 +138,7 @@ export async function tasksRange(
   let doneByCompleted: Entity[] = [];
   if (input.includeDone) {
     const doneByCompletedConds: SQL[] = [
+      inWorkspace,
       eq(entities.kind, "task"),
       isNull(entities.deletedAt),
       eq(entities.status, "done"),
@@ -148,6 +154,7 @@ export async function tasksRange(
       .orderBy(asc(entities.completedAt));
 
     const legacyDoneConds: SQL[] = [
+      inWorkspace,
       eq(entities.kind, "task"),
       isNull(entities.deletedAt),
       eq(entities.status, "done"),
@@ -173,6 +180,7 @@ export async function tasksRange(
     (!input.to || now < new Date(input.to));
   if (todayInRange) {
     const ipConds: SQL[] = [
+      inWorkspace,
       eq(entities.kind, "task"),
       isNull(entities.deletedAt),
       eq(entities.status, "in_progress")
@@ -199,6 +207,7 @@ export async function tasksRange(
   // later in the same day.
   const overdueCutoff = input.from ?? now;
   const overdueConds: SQL[] = [
+    inWorkspace,
     eq(entities.kind, "task"),
     isNull(entities.deletedAt),
     isNotNull(entities.dueAt),
@@ -226,7 +235,7 @@ export async function tasksRange(
       .limit(200);
   }
 
-  const virtualOccurrences = await expandVirtualOccurrences(db, input, scheduled);
+  const virtualOccurrences = await expandVirtualOccurrences(scope, db, input, scheduled);
   return { scheduled, overdue, backlog, virtualOccurrences };
 }
 
@@ -240,6 +249,7 @@ export async function tasksRange(
  * future ghosts are returned.
  */
 async function expandVirtualOccurrences(
+  scope: Scope,
   db: Database["db"],
   input: TasksRangeInput,
   realScheduled: Entity[]
@@ -258,6 +268,7 @@ async function expandVirtualOccurrences(
     .from(recurrenceRules)
     .where(
       and(
+        eq(recurrenceRules.workspaceId, scope.workspaceId),
         eq(recurrenceRules.enabled, true),
         eq(recurrenceRules.anchor, "scheduled"),
         lte(recurrenceRules.dtstart, windowEnd),
@@ -280,7 +291,9 @@ async function expandVirtualOccurrences(
   const displaySourceRows = await db
     .select()
     .from(entities)
-    .where(inArray(entities.id, uniqueDisplaySourceIds));
+    .where(
+      and(eq(entities.workspaceId, scope.workspaceId), inArray(entities.id, uniqueDisplaySourceIds))
+    );
   const displaySourceById = new Map<string, Entity>(
     displaySourceRows.map((e) => [e.id, e])
   );

@@ -31,6 +31,7 @@ import {
   updateProject
 } from "../service/projects.js";
 import { findSimilar, search } from "../service/search.js";
+import type { Scope } from "../service/scope.js";
 import { listFeedback, submitFeedback } from "../service/feedback.js";
 import {
   embeddingCoverage,
@@ -134,17 +135,17 @@ function publicToken(t: Token) {
   };
 }
 
-async function workspaceSettingsResponse(db: ServerContext["db"]) {
-  const settings = await getWorkspaceSettings(db);
+async function workspaceSettingsResponse(scope: Scope, db: ServerContext["db"]) {
+  const settings = await getWorkspaceSettings(scope, db);
   return {
     timezone: settings.timezone,
     updatedAt: settings.updatedAt
   };
 }
 
-async function embeddingSettingsResponse(ctx: ServerContext) {
-  const settings = await getEmbeddingSettings(ctx.db);
-  const coverage = await embeddingCoverage(ctx.db);
+async function embeddingSettingsResponse(scope: Scope, ctx: ServerContext) {
+  const settings = await getEmbeddingSettings(scope, ctx.db);
+  const coverage = await embeddingCoverage(scope, ctx.db);
   const runtime = ctx.embedding.runtimeStatus();
   return {
     enabled: settings.enabled,
@@ -197,7 +198,7 @@ export async function registerRoutes(
         summary: "Read embedding provider/model/key status and vector coverage"
       }
     },
-    async () => embeddingSettingsResponse(ctx)
+    async (req) => embeddingSettingsResponse(req.scope, ctx)
   );
 
   app.patch(
@@ -212,9 +213,9 @@ export async function registerRoutes(
     },
     async (req) => {
       const body = UpdateEmbeddingSettingsInput.parse(req.body);
-      await updateEmbeddingSettings(ctx.db, body);
+      await updateEmbeddingSettings(req.scope, ctx.db, body);
       await ctx.embedding.reloadConfig();
-      return embeddingSettingsResponse(ctx);
+      return embeddingSettingsResponse(req.scope, ctx);
     }
   );
 
@@ -230,7 +231,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const body = EmbeddingBackfillInput.parse(req.body ?? {});
-      const coverage = await embeddingCoverage(ctx.db);
+      const coverage = await embeddingCoverage(req.scope, ctx.db);
       const limit = body.limit ?? coverage.missingCount;
       const queued =
         limit > 0
@@ -238,7 +239,7 @@ export async function registerRoutes(
           : { enqueued: 0, pendingCount: ctx.embedding.pendingCount() };
       return {
         ...queued,
-        settings: await embeddingSettingsResponse(ctx)
+        settings: await embeddingSettingsResponse(req.scope, ctx)
       };
     }
   );
@@ -251,7 +252,7 @@ export async function registerRoutes(
         summary: "Read workspace settings (timezone)"
       }
     },
-    async () => workspaceSettingsResponse(ctx.db)
+    async (req) => workspaceSettingsResponse(req.scope, ctx.db)
   );
 
   app.patch(
@@ -266,8 +267,8 @@ export async function registerRoutes(
     },
     async (req) => {
       const body = UpdateWorkspaceSettingsInput.parse(req.body);
-      await updateWorkspaceSettings(ctx.db, body);
-      return workspaceSettingsResponse(ctx.db);
+      await updateWorkspaceSettings(req.scope, ctx.db, body);
+      return workspaceSettingsResponse(req.scope, ctx.db);
     }
   );
 
@@ -281,10 +282,10 @@ export async function registerRoutes(
         summary: "Server time, workspace timezone, version, and project list for agent date-math"
       }
     },
-    async () => {
+    async (req) => {
       const [settings, projects] = await Promise.all([
-        getWorkspaceSettings(ctx.db),
-        listProjects(ctx.db, { includeArchived: false })
+        getWorkspaceSettings(req.scope, ctx.db),
+        listProjects(req.scope, ctx.db, { includeArchived: false })
       ]);
       return {
         now: new Date().toISOString(),
@@ -300,7 +301,7 @@ export async function registerRoutes(
   app.post(
     "/v1/projects",
     { schema: { tags: ["projects"], summary: "Create a project", body: CreateProjectInput } },
-    async (req) => createProject(ctx.db, CreateProjectInput.parse(req.body))
+    async (req) => createProject(req.scope, ctx.db, CreateProjectInput.parse(req.body))
   );
 
   app.get(
@@ -314,7 +315,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const query = ListProjectsInput.parse(ListProjectsQuery.parse(req.query));
-      return listProjects(ctx.db, query);
+      return listProjects(req.scope, ctx.db, query);
     }
   );
 
@@ -323,7 +324,7 @@ export async function registerRoutes(
     { schema: { tags: ["projects"], summary: "Fetch a project by id (includes AGENTS.md)", params: IdParams } },
     async (req, reply) => {
       const { id } = IdParams.parse(req.params);
-      const p = await getProject(ctx.db, id);
+      const p = await getProject(req.scope, ctx.db, id);
       if (!p) return reply.code(404).send({ error: "not_found" });
       return p;
     }
@@ -342,7 +343,7 @@ export async function registerRoutes(
     async (req) => {
       const { id } = IdParams.parse(req.params);
       const body = UpdateProjectInput.parse(req.body);
-      return updateProject(ctx.db, id, body);
+      return updateProject(req.scope, ctx.db, id, body);
     }
   );
 
@@ -351,7 +352,7 @@ export async function registerRoutes(
     { schema: { tags: ["projects"], summary: "Fetch a project by key", params: KeyParams } },
     async (req, reply) => {
       const { key } = KeyParams.parse(req.params);
-      const p = await getProjectByKey(ctx.db, key);
+      const p = await getProjectByKey(req.scope, ctx.db, key);
       if (!p) return reply.code(404).send({ error: "not_found" });
       return p;
     }
@@ -373,7 +374,7 @@ export async function registerRoutes(
       const { id } = IdParams.parse(req.params);
       const bodyOpts = OpeningBriefBody.parse(req.body);
       const input = OpeningBriefInput.parse({ projectId: id, recentLimit: bodyOpts?.recentLimit });
-      const brief = await openingBrief(ctx.db, input);
+      const brief = await openingBrief(req.scope, ctx.db, input);
       return {
         ...brief,
         pinnedNotes: serializeEntities(brief.pinnedNotes),
@@ -400,7 +401,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const input = OpeningBriefInput.parse(req.body ?? {});
-      const brief = await openingBrief(ctx.db, input);
+      const brief = await openingBrief(req.scope, ctx.db, input);
       return {
         ...brief,
         pinnedNotes: serializeEntities(brief.pinnedNotes),
@@ -419,9 +420,9 @@ export async function registerRoutes(
     { schema: { tags: ["entities"], summary: "Fetch an entity by id", params: EntityIdParams } },
     async (req, reply) => {
       const { id } = EntityIdParams.parse(req.params);
-      const e = await get(ctx.db, id);
+      const e = await get(req.scope, ctx.db, id);
       if (!e) return reply.code(404).send({ error: "not_found" });
-      await bumpAccess(ctx.db, e.id);
+      await bumpAccess(req.scope, ctx.db, e.id);
       return serializeEntity(e);
     }
   );
@@ -437,9 +438,9 @@ export async function registerRoutes(
     },
     async (req, reply) => {
       const { key, seq } = KeySeqParams.parse(req.params);
-      const e = await getByKey(ctx.db, key, seq);
+      const e = await getByKey(req.scope, ctx.db, key, seq);
       if (!e) return reply.code(404).send({ error: "not_found" });
-      await bumpAccess(ctx.db, e.id);
+      await bumpAccess(req.scope, ctx.db, e.id);
       return serializeEntity(e);
     }
   );
@@ -455,7 +456,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
-      return serializeEntities(await listRelated(ctx.db, id));
+      return serializeEntities(await listRelated(req.scope, ctx.db, id));
     }
   );
 
@@ -471,7 +472,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
-      return serializeEntities(await listChildren(ctx.db, id));
+      return serializeEntities(await listChildren(req.scope, ctx.db, id));
     }
   );
 
@@ -484,7 +485,7 @@ export async function registerRoutes(
         body: RecentInput.optional()
       }
     },
-    async (req) => serializeEntities(await recent(ctx.db, RecentInput.parse(req.body ?? {})))
+    async (req) => serializeEntities(await recent(req.scope, ctx.db, RecentInput.parse(req.body ?? {})))
   );
 
   app.post(
@@ -501,7 +502,7 @@ export async function registerRoutes(
     async (req) => {
       const body = SearchInput.parse(req.body);
       const queryEmbedding = await ctx.embedding.embedQuery(body.query);
-      const hits = await search(ctx.db, body, queryEmbedding ? { queryEmbedding } : {});
+      const hits = await search(req.scope, ctx.db, body, queryEmbedding ? { queryEmbedding } : {});
       return {
         hits: hits.map((h) => ({ ...h, entity: serializeEntity(h.entity) })),
         embeddingUsed: queryEmbedding != null
@@ -521,7 +522,7 @@ export async function registerRoutes(
       }
     },
     async (req) => {
-      const result = await tasksRange(ctx.db, TasksRangeInput.parse(req.body));
+      const result = await tasksRange(req.scope, ctx.db, TasksRangeInput.parse(req.body));
       return {
         scheduled: serializeEntities(result.scheduled),
         overdue: serializeEntities(result.overdue),
@@ -544,7 +545,7 @@ export async function registerRoutes(
     async (req) => {
       const { id } = IdParams.parse(req.params);
       const body = RecurrenceInput.parse(req.body);
-      return createRecurrenceRule(ctx.db, id, body);
+      return createRecurrenceRule(req.scope, ctx.db, id, body);
     }
   );
 
@@ -559,7 +560,7 @@ export async function registerRoutes(
     },
     async (req, reply) => {
       const { id } = IdParams.parse(req.params);
-      const recurrence = await getRecurrenceForTask(ctx.db, id);
+      const recurrence = await getRecurrenceForTask(req.scope, ctx.db, id);
       if (!recurrence) {
         reply.code(404);
         return { error: "not_found", path: req.url };
@@ -586,7 +587,7 @@ export async function registerRoutes(
     async (req) => {
       const { id } = RuleIdParams.parse(req.params);
       const body = UpdateRecurrenceInput.parse(req.body);
-      return updateRecurrenceRule(ctx.db, id, body);
+      return updateRecurrenceRule(req.scope, ctx.db, id, body);
     }
   );
 
@@ -603,7 +604,7 @@ export async function registerRoutes(
     async (req) => {
       const { id } = IdParams.parse(req.params);
       const body = SkipOccurrenceInput.parse(req.body ?? {});
-      const result = await skipOccurrence(ctx.db, id, body);
+      const result = await skipOccurrence(req.scope, ctx.db, id, body);
       return {
         ...result,
         skipped: serializeEntity(result.skipped),
@@ -625,7 +626,7 @@ export async function registerRoutes(
     async (req) => {
       const { id } = RuleIdParams.parse(req.params);
       const body = StopRecurrenceInput.parse(req.body ?? {});
-      return stopRecurrence(ctx.db, id, body);
+      return stopRecurrence(req.scope, ctx.db, id, body);
     }
   );
 
@@ -642,7 +643,7 @@ export async function registerRoutes(
     async (req) => {
       const { id } = RuleIdParams.parse(req.params);
       const body = SplitRecurrenceInput.parse(req.body);
-      return splitRecurrence(ctx.db, id, body);
+      return splitRecurrence(req.scope, ctx.db, id, body);
     }
   );
 
@@ -659,7 +660,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const body = CreateTaskInput.parse(req.body);
-      const entity = await write(ctx.db, { ...body, kind: "task", pinned: false });
+      const entity = await write(req.scope, ctx.db, { ...body, kind: "task", pinned: false });
       if (ctx.embedding.isEnabled()) {
         ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
       }
@@ -680,11 +681,11 @@ export async function registerRoutes(
       const { supersedes, ...body } = CreateNoteInput.parse(req.body);
       // Resolve the supersedes target BEFORE writing so a bad reference
       // fails the whole request instead of leaving an orphaned note.
-      const supersededId = supersedes ? (await get(ctx.db, supersedes))?.id ?? null : null;
+      const supersededId = supersedes ? (await get(req.scope, ctx.db, supersedes))?.id ?? null : null;
       if (supersedes && !supersededId) {
         return reply.code(404).send({ error: `supersedes target ${supersedes} not found` });
       }
-      const entity = await write(ctx.db, {
+      const entity = await write(req.scope, ctx.db, {
         ...body,
         kind: "note",
         status: "open",
@@ -692,7 +693,7 @@ export async function registerRoutes(
         dueAt: null
       });
       if (supersededId) {
-        await markSuperseded(ctx.db, entity.id, supersededId);
+        await markSuperseded(req.scope, ctx.db, entity.id, supersededId);
       }
       if (ctx.embedding.isEnabled()) {
         ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
@@ -704,7 +705,7 @@ export async function registerRoutes(
       if (!supersededId) {
         const label = (entity.title ?? entity.body.split("\n")[0] ?? "").trim().slice(0, 200);
         const queryEmbedding = label ? await ctx.embedding.embedQuery(label) : null;
-        const hits = await findSimilar(ctx.db, {
+        const hits = await findSimilar(req.scope, ctx.db, {
           title: entity.title,
           body: entity.body,
           projectId: entity.projectId,
@@ -732,7 +733,7 @@ export async function registerRoutes(
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
       const body = CreateCommentInput.parse(req.body);
-      const entity = await addComment(ctx.db, id, body);
+      const entity = await addComment(req.scope, ctx.db, id, body);
       if (ctx.embedding.isEnabled()) {
         ctx.embedding.enqueue(entity.id, entity.body);
       }
@@ -751,7 +752,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
-      return serializeEntities(await listComments(ctx.db, id));
+      return serializeEntities(await listComments(req.scope, ctx.db, id));
     }
   );
 
@@ -766,7 +767,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const body = CreateFeedbackInput.parse(req.body);
-      const entity = await submitFeedback(ctx.db, body);
+      const entity = await submitFeedback(req.scope, ctx.db, body);
       if (ctx.embedding.isEnabled()) {
         ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
       }
@@ -789,7 +790,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const query = ListFeedbackInput.parse(req.query);
-      return serializeEntities(await listFeedback(ctx.db, query));
+      return serializeEntities(await listFeedback(req.scope, ctx.db, query));
     }
   );
 
@@ -806,7 +807,7 @@ export async function registerRoutes(
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
       const fields = UpdateInput.parse(req.body);
-      const updated = await update(ctx.db, id, fields);
+      const updated = await update(req.scope, ctx.db, id, fields);
       if (
         ctx.embedding.isEnabled() &&
         (fields.body !== undefined || fields.bodyAppend !== undefined || fields.title !== undefined)
@@ -836,7 +837,7 @@ export async function registerRoutes(
     async (req, reply) => {
       const { id } = EntityIdParams.parse(req.params);
       const query = DeleteEntityQuery.parse(req.query);
-      const ok = query.purge ? await purge(ctx.db, id) : await remove(ctx.db, id);
+      const ok = query.purge ? await purge(req.scope, ctx.db, id) : await remove(req.scope, ctx.db, id);
       if (!ok) return reply.code(404).send({ error: "not_found" });
       return reply.code(204).send();
     }
@@ -853,7 +854,7 @@ export async function registerRoutes(
     },
     async (req, reply) => {
       const { id } = EntityIdParams.parse(req.params);
-      const restored = await restore(ctx.db, id);
+      const restored = await restore(req.scope, ctx.db, id);
       if (!restored) return reply.code(404).send({ error: "not_found" });
       return serializeEntity(restored);
     }
@@ -874,7 +875,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const query = TrashQuery.parse(req.query);
-      return serializeEntities(await listTrash(ctx.db, query.limit));
+      return serializeEntities(await listTrash(req.scope, ctx.db, query.limit));
     }
   );
 
@@ -891,7 +892,7 @@ export async function registerRoutes(
     async (req) => {
       const { id } = IdParams.parse(req.params);
       const body = LinkBody.parse(req.body);
-      return link(ctx.db, { fromId: id, toId: body.toId, kind: body.kind });
+      return link(req.scope, ctx.db, { fromId: id, toId: body.toId, kind: body.kind });
     }
   );
 
@@ -914,7 +915,7 @@ export async function registerRoutes(
       const { id } = IdParams.parse(req.params);
       const query = GetLinksQuery.parse(req.query);
       const input = GetLinksInput.parse({ id, kind: query.kind, direction: query.direction ?? "both" });
-      const links = await getLinks(ctx.db, input);
+      const links = await getLinks(req.scope, ctx.db, input);
       return links.map((l) => ({
         kind: l.kind,
         direction: l.direction,
@@ -939,7 +940,7 @@ export async function registerRoutes(
     async (req) => {
       const query = ListTagsQuery.parse(req.query);
       const input = ListTagsInput.parse({ projectId: query.projectId ?? null });
-      return listTags(ctx.db, input);
+      return listTags(req.scope, ctx.db, input);
     }
   );
 
@@ -970,7 +971,7 @@ export async function registerRoutes(
         return reply.code(401).send({ error: "invalid_password" });
       }
       const ua = (req.headers["user-agent"] as string | undefined) ?? null;
-      const { plaintext, session } = await createSession(ctx.db, { userAgent: ua });
+      const { plaintext, session } = await createSession(req.scope, ctx.db, { userAgent: ua });
       reply.setCookie("botnote_session", plaintext, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -1027,7 +1028,7 @@ export async function registerRoutes(
   app.get(
     "/v1/tokens",
     { schema: { tags: ["tokens"], summary: "List API tokens (no hash; includes recoverable plaintext when available)" } },
-    async () => (await listTokens(ctx.db)).map(publicToken)
+    async (req) => (await listTokens(req.scope, ctx.db)).map(publicToken)
   );
 
   // Token write endpoints get a much tighter cap (30/hour per IP). These are
@@ -1045,7 +1046,7 @@ export async function registerRoutes(
     },
     async (req) => {
       const body = CreateTokenInput.parse(req.body);
-      const { token, plaintext } = await createToken(ctx.db, body);
+      const { token, plaintext } = await createToken(req.scope, ctx.db, body);
       return { ...publicToken(token), plaintext };
     }
   );
@@ -1058,7 +1059,7 @@ export async function registerRoutes(
     },
     async (req, reply) => {
       const { id } = IdParams.parse(req.params);
-      const ok = await revokeToken(ctx.db, id);
+      const ok = await revokeToken(req.scope, ctx.db, id);
       if (!ok) return reply.code(404).send({ error: "not_found" });
       return reply.code(204).send();
     }

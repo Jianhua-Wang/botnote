@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   embeddingSettings,
@@ -6,6 +6,7 @@ import {
   VECTOR_DIMENSIONS,
   type EmbeddingSettings
 } from "../db/schema.js";
+import type { Scope } from "./scope.js";
 import type { UpdateEmbeddingSettingsInput } from "./types.js";
 
 export const DEFAULT_EMBEDDING_PROVIDER = "openai";
@@ -31,20 +32,25 @@ export function previewSecret(value: string | null | undefined): string | null {
   return `${value.slice(0, 7)}...${value.slice(-4)}`;
 }
 
+function rowFilter(scope: Scope) {
+  return and(
+    eq(embeddingSettings.id, EMBEDDING_SETTINGS_ID),
+    eq(embeddingSettings.workspaceId, scope.workspaceId)
+  );
+}
+
 export async function getEmbeddingSettings(
+  scope: Scope,
   db: Database["db"]
 ): Promise<EmbeddingSettings> {
-  const [existing] = await db
-    .select()
-    .from(embeddingSettings)
-    .where(eq(embeddingSettings.id, EMBEDDING_SETTINGS_ID))
-    .limit(1);
+  const [existing] = await db.select().from(embeddingSettings).where(rowFilter(scope)).limit(1);
   if (existing) return existing;
 
   await db
     .insert(embeddingSettings)
     .values({
       id: EMBEDDING_SETTINGS_ID,
+      workspaceId: scope.workspaceId,
       enabled: true,
       provider: DEFAULT_EMBEDDING_PROVIDER,
       model: DEFAULT_EMBEDDING_MODEL,
@@ -52,20 +58,17 @@ export async function getEmbeddingSettings(
     })
     .onConflictDoNothing();
 
-  const [created] = await db
-    .select()
-    .from(embeddingSettings)
-    .where(eq(embeddingSettings.id, EMBEDDING_SETTINGS_ID))
-    .limit(1);
+  const [created] = await db.select().from(embeddingSettings).where(rowFilter(scope)).limit(1);
   if (!created) throw new Error("embedding settings row missing after insert");
   return created;
 }
 
 export async function updateEmbeddingSettings(
+  scope: Scope,
   db: Database["db"],
   input: UpdateEmbeddingSettingsInput
 ): Promise<EmbeddingSettings> {
-  const current = await getEmbeddingSettings(db);
+  const current = await getEmbeddingSettings(scope, db);
   const apiKey = normalizeNullable(input.apiKey);
   const baseUrl = normalizeNullable(input.baseUrl);
   const set = {
@@ -80,13 +83,16 @@ export async function updateEmbeddingSettings(
   const [updated] = await db
     .update(embeddingSettings)
     .set(set)
-    .where(eq(embeddingSettings.id, EMBEDDING_SETTINGS_ID))
+    .where(rowFilter(scope))
     .returning();
   if (!updated) throw new Error("embedding settings update returned no row");
   return updated;
 }
 
-export async function embeddingCoverage(db: Database["db"]): Promise<EmbeddingCoverage> {
+export async function embeddingCoverage(
+  scope: Scope,
+  db: Database["db"]
+): Promise<EmbeddingCoverage> {
   const [row] = (
     await db.execute<{
       total_count: string | number;
@@ -99,6 +105,7 @@ export async function embeddingCoverage(db: Database["db"]): Promise<EmbeddingCo
         count(*) FILTER (WHERE body_vec IS NULL)::int AS missing_count
       FROM ${entities}
       WHERE kind IN ('task', 'note')
+        AND workspace_id = ${scope.workspaceId}::uuid
         AND length(trim(coalesce(title, '') || E'\n' || coalesce(body, ''))) > 0
     `)
   ).rows;

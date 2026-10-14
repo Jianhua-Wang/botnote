@@ -9,6 +9,7 @@ import {
   type RecurrenceRule
 } from "../db/schema.js";
 import { allDayDueAtInZone, normalizeDueAt } from "./dates.js";
+import type { Scope } from "./scope.js";
 import type {
   RecurrenceInput,
   SplitRecurrenceInput,
@@ -191,11 +192,28 @@ function computeNextScheduledAfter(rule: RecurrenceRule, after: Date): Date | nu
   return next ? normalizeOccurrenceDueAt(rule, next) : null;
 }
 
+/** Internal fetch by id for rows already known to belong to a rule's workspace. */
 async function fetchEntity(db: Database["db"], id: string): Promise<Entity> {
   const rows = await db.select().from(entities).where(eq(entities.id, id)).limit(1);
   const row = rows[0];
   if (!row) throw new Error(`entity ${id} not found`);
   return row;
+}
+
+/** Entry-point fetch: the caller's scope decides whether the id is visible at all. */
+async function fetchEntityInScope(scope: Scope, db: Database["db"], id: string): Promise<Entity> {
+  const rows = await db
+    .select()
+    .from(entities)
+    .where(and(eq(entities.id, id), eq(entities.workspaceId, scope.workspaceId)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) throw new Error(`entity ${id} not found`);
+  return row;
+}
+
+function ruleInScope(scope: Scope, ruleId: string) {
+  return and(eq(recurrenceRules.id, ruleId), eq(recurrenceRules.workspaceId, scope.workspaceId));
 }
 
 export async function findRuleForTask(
@@ -221,10 +239,11 @@ export async function findRuleForTask(
 }
 
 export async function getRecurrenceForTask(
+  scope: Scope,
   db: Database["db"],
   taskId: string
 ): Promise<RecurrenceDetails | null> {
-  const task = await fetchEntity(db, taskId);
+  const task = await fetchEntityInScope(scope, db, taskId);
   const rule = await findRuleForTask(db, task);
   if (!rule) return null;
   const currentOccurrence = rule.currentOccurrenceId
@@ -234,11 +253,12 @@ export async function getRecurrenceForTask(
 }
 
 export async function createRecurrenceRule(
+  scope: Scope,
   db: Database["db"],
   taskId: string,
   input: RecurrenceInput
 ): Promise<RecurrenceRule> {
-  const task = await fetchEntity(db, taskId);
+  const task = await fetchEntityInScope(scope, db, taskId);
   if (task.kind !== "task") throw new Error("recurrence can only be attached to tasks");
   if (!task.dueAt) throw new Error("recurring tasks require a first due date");
   if (task.status === "done" || task.status === "rejected") {
@@ -246,7 +266,7 @@ export async function createRecurrenceRule(
   }
 
   // Resolve timezone: explicit input wins; otherwise fall back to workspace tz.
-  const timezone = input.timezone ?? (await getWorkspaceSettings(db)).timezone;
+  const timezone = input.timezone ?? (await getWorkspaceSettings(scope, db)).timezone;
 
   const existingRule = await findRuleForTask(db, task);
   const seriesId = existingRule?.seriesId ?? recurrenceMarker(task)?.seriesId ?? task.id;
@@ -284,6 +304,7 @@ export async function createRecurrenceRule(
     const [inserted] = await db
       .insert(recurrenceRules)
       .values({
+        workspaceId: scope.workspaceId,
         seriesId,
         currentOccurrenceId: task.id,
         enabled: true,
@@ -320,11 +341,12 @@ export async function createRecurrenceRule(
 }
 
 export async function updateRecurrenceRule(
+  scope: Scope,
   db: Database["db"],
   ruleId: string,
   input: UpdateRecurrenceInput
 ): Promise<RecurrenceRule> {
-  const rows = await db.select().from(recurrenceRules).where(eq(recurrenceRules.id, ruleId)).limit(1);
+  const rows = await db.select().from(recurrenceRules).where(ruleInScope(scope, ruleId)).limit(1);
   const current = rows[0];
   if (!current) throw new Error(`recurrence rule ${ruleId} not found`);
   const currentOccurrence = current.currentOccurrenceId
@@ -557,6 +579,7 @@ async function insertNextOccurrence(
   };
 
   const values = {
+    workspaceId: rule.workspaceId,
     kind: "task",
     projectId: occurrence.projectId,
     title: baseline && "title" in baseline ? baseline.title : occurrence.title,
@@ -578,7 +601,12 @@ async function insertNextOccurrence(
     .onConflictDoNothing()
     .returning();
   if (inserted[0]) return inserted[0];
-  const rows = await db.select().from(entities).where(eq(entities.idempotencyKey, idempotencyKey));
+  const rows = await db
+    .select()
+    .from(entities)
+    .where(
+      and(eq(entities.idempotencyKey, idempotencyKey), eq(entities.workspaceId, rule.workspaceId))
+    );
   const existing = rows[0];
   if (!existing) throw new Error("recurrence idempotent insert returned no row");
   return existing;
@@ -702,11 +730,12 @@ export async function advanceRecurrenceOnCompletion(
 }
 
 export async function skipOccurrence(
+  scope: Scope,
   db: Database["db"],
   taskId: string,
   input: { reason?: string; actorKind?: string } = {}
 ): Promise<{ skipped: Entity; next: Entity | null; rule: RecurrenceRule }> {
-  const task = await fetchEntity(db, taskId);
+  const task = await fetchEntityInScope(scope, db, taskId);
   if (task.kind !== "task") throw new Error("only tasks can be skipped");
   const rule = await findRuleForTask(db, task, false);
   if (!rule) throw new Error("task is not an active recurring occurrence");
@@ -743,6 +772,7 @@ export async function skipOccurrence(
 }
 
 export async function stopRecurrence(
+  scope: Scope,
   db: Database["db"],
   ruleId: string,
   _input: StopRecurrenceInput = {}
@@ -754,7 +784,7 @@ export async function stopRecurrence(
       nextOccurrenceAt: null,
       endedAt: new Date()
     })
-    .where(eq(recurrenceRules.id, ruleId))
+    .where(ruleInScope(scope, ruleId))
     .returning();
   if (!updated) throw new Error(`recurrence rule ${ruleId} not found`);
   return updated;
@@ -784,6 +814,7 @@ export async function stopRecurrence(
  * index holds at every step.
  */
 export async function splitRecurrence(
+  scope: Scope,
   db: Database["db"],
   ruleId: string,
   input: SplitRecurrenceInput
@@ -792,7 +823,7 @@ export async function splitRecurrence(
     const ruleRows = await tx
       .select()
       .from(recurrenceRules)
-      .where(eq(recurrenceRules.id, ruleId))
+      .where(ruleInScope(scope, ruleId))
       .limit(1);
     const oldRule = ruleRows[0];
     if (!oldRule) throw new Error(`recurrence rule ${ruleId} not found`);
@@ -862,6 +893,7 @@ export async function splitRecurrence(
     const [created] = await tx
       .insert(recurrenceRules)
       .values({
+        workspaceId: oldRule.workspaceId,
         seriesId: oldRule.seriesId,
         currentOccurrenceId: current.id,
         enabled: true,

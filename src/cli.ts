@@ -6,6 +6,7 @@ import { buildMcpServer } from "./mcp/server.js";
 import { EmbeddingService } from "./service/embedding.js";
 import { purgeExpired } from "./service/entities.js";
 import { materializeScheduledRecurrences } from "./service/recurrence.js";
+import { resolveDefaultScope } from "./service/scope.js";
 import { DEFAULT_PORT, envValue, resolveBaseUrl } from "./config.js";
 import { authConfigFromEnv, isLoopback } from "./rest/auth.js";
 import { buildServer } from "./rest/server.js";
@@ -34,11 +35,12 @@ async function runRest(): Promise<void> {
   await migrate();
 
   const { db } = createDb();
+  const defaultScope = await resolveDefaultScope(db);
   const embedding = new EmbeddingService(db, { apiKey: process.env.OPENAI_API_KEY });
   await embedding.reloadConfig();
 
   const auth = authConfigFromEnv();
-  const app = await buildServer({ db, embedding, logLevel, auth });
+  const app = await buildServer({ db, embedding, logLevel, auth, defaultScope });
   await app.listen({ port, host });
 
   app.log.info(

@@ -5,6 +5,7 @@ import { DEFAULT_WORKSPACE_ID } from "../src/db/schema.js";
 import { write } from "../src/service/entities.js";
 import { createProject } from "../src/service/projects.js";
 import { createToken } from "../src/service/tokens.js";
+import { DEFAULT_SCOPE as S } from "../src/service/scope.js";
 import { createTestDb } from "./test_db.js";
 
 const { db, pool } = createTestDb();
@@ -42,8 +43,8 @@ describe("workspaces schema (migration 0028)", () => {
   });
 
   it("stamps every new row with the default workspace without code changes", async () => {
-    const p = await createProject(db, { key: "WS", name: "Workspace" });
-    await write(db, {
+    const p = await createProject(S, db, { key: "WS", name: "Workspace" });
+    await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "scoped",
@@ -53,7 +54,7 @@ describe("workspaces schema (migration 0028)", () => {
       actorKind: "agent",
       metadata: {}
     });
-    await createToken(db, { name: "ws-token" });
+    await createToken(S, db, { name: "ws-token" });
 
     for (const table of ["projects", "entities", "tokens", "embedding_settings", "workspace_settings"]) {
       const ids = await workspaceIdsOf(table);

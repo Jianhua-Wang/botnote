@@ -11,6 +11,7 @@ import {
 import { buildServer } from "../src/rest/server.js";
 import { EmbeddingService } from "../src/service/embedding.js";
 import { createToken } from "../src/service/tokens.js";
+import { DEFAULT_SCOPE as S } from "../src/service/scope.js";
 import { createTestDb } from "./test_db.js";
 
 const { db, pool } = createTestDb();
@@ -34,7 +35,7 @@ beforeAll(async () => {
   process.env.BOTNOTE_PASSWORD = PASSWORD;
   server = await buildServer({ db, embedding, logLevel: "silent", auth: enforcing });
   await server.ready();
-  bearer = (await createToken(db, { name: "auth-test" })).plaintext;
+  bearer = (await createToken(S, db, { name: "auth-test" })).plaintext;
 });
 
 afterAll(async () => {

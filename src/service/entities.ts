@@ -10,6 +10,7 @@ import {
   upsertModifiedExceptionBaseline,
   type ContentFieldKey
 } from "./recurrence.js";
+import type { Scope } from "./scope.js";
 import type {
   CreateCommentInput,
   GetLinksInput,
@@ -34,13 +35,24 @@ function normalizeStatus(value: string): string {
   return value === "delayed" || value === "archived" ? "done" : value;
 }
 
-function activeProjectVisibility() {
+function inScope(scope: Scope) {
+  return eq(entities.workspaceId, scope.workspaceId);
+}
+
+function activeProjectVisibility(scope: Scope) {
   return sql`(${entities.projectId} IS NULL OR ${entities.projectId} IN (
-    SELECT id FROM projects WHERE status <> 'archived'
+    SELECT id FROM projects
+    WHERE status <> 'archived' AND workspace_id = ${scope.workspaceId}::uuid
   ))`;
 }
 
+/**
+ * Resolve a full UUID or a unique prefix to an entity id. A full UUID passes
+ * through without a lookup, so every caller still filters its own query by
+ * scope; prefixes are matched only inside the scope.
+ */
 export async function resolveEntityId(
+  scope: Scope,
   db: Database["db"],
   idOrPrefix: string
 ): Promise<string | null> {
@@ -51,7 +63,8 @@ export async function resolveEntityId(
     await db.execute<{ id: string }>(sql`
       SELECT id::text AS id
       FROM entities
-      WHERE id::text LIKE ${`${idOrPrefix.toLowerCase()}%`}
+      WHERE workspace_id = ${scope.workspaceId}::uuid
+        AND id::text LIKE ${`${idOrPrefix.toLowerCase()}%`}
       LIMIT 2
     `)
   ).rows;
@@ -61,12 +74,22 @@ export async function resolveEntityId(
   return null;
 }
 
+async function existsInScope(scope: Scope, db: Database["db"], id: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(and(eq(entities.id, id), inScope(scope)))
+    .limit(1);
+  return rows.length > 0;
+}
+
 /**
  * A parent link must never point back at the entity itself, directly or via
  * the parent's own parent. listChildren would otherwise list an entity as its
  * own child (the Letheia import did exactly this; see migration 0027).
  */
 async function assertParentAllowed(
+  scope: Scope,
   db: Database["db"],
   entityId: string,
   parentId: string
@@ -77,7 +100,7 @@ async function assertParentAllowed(
   const [parent] = await db
     .select({ parentId: entities.parentId })
     .from(entities)
-    .where(eq(entities.id, parentId))
+    .where(and(eq(entities.id, parentId), inScope(scope)))
     .limit(1);
   if (!parent) throw clientError(`parent entity ${parentId} not found`, 404);
   if (parent.parentId === entityId) {
@@ -85,12 +108,12 @@ async function assertParentAllowed(
   }
 }
 
-export async function write(db: Database["db"], input: WriteInput): Promise<Entity> {
+export async function write(scope: Scope, db: Database["db"], input: WriteInput): Promise<Entity> {
   if (input.idempotencyKey) {
     const existing = await db
       .select()
       .from(entities)
-      .where(eq(entities.idempotencyKey, input.idempotencyKey))
+      .where(and(eq(entities.idempotencyKey, input.idempotencyKey), inScope(scope)))
       .limit(1);
     if (existing.length > 0) return existing[0]!;
   }
@@ -99,9 +122,13 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
   if (input.completedAt != null && !(input.kind === "task" && status === "done")) {
     throw clientError("completedAt is only valid on a task created with status 'done'", 400);
   }
+  if (input.parentId && !(await existsInScope(scope, db, input.parentId))) {
+    throw clientError(`parent entity ${input.parentId} not found`, 404);
+  }
   const [row] = await db
     .insert(entities)
     .values({
+      workspaceId: scope.workspaceId,
       kind: input.kind,
       projectId: input.projectId ?? null,
       title: input.title ?? null,
@@ -141,16 +168,17 @@ export async function write(db: Database["db"], input: WriteInput): Promise<Enti
  * gets a KEY-SEQ number (the sequence trigger skips kind='comment').
  */
 export async function addComment(
+  scope: Scope,
   db: Database["db"],
   parentIdOrPrefix: string,
   input: CreateCommentInput
 ): Promise<Entity> {
-  const parent = await get(db, parentIdOrPrefix);
+  const parent = await get(scope, db, parentIdOrPrefix);
   if (!parent) throw clientError(`entity ${parentIdOrPrefix} not found`, 404);
   if (parent.kind === "comment") {
     throw clientError("comments cannot be nested; comment on the task itself", 400);
   }
-  return write(db, {
+  return write(scope, db, {
     kind: "comment",
     projectId: parent.projectId,
     title: null,
@@ -169,17 +197,19 @@ export async function addComment(
 
 /** Comments for one parent entity, oldest first (chronological worklog). */
 export async function listComments(
+  scope: Scope,
   db: Database["db"],
   parentIdOrPrefix: string,
   limit = 50
 ): Promise<Entity[]> {
-  const entityId = await resolveEntityId(db, parentIdOrPrefix);
+  const entityId = await resolveEntityId(scope, db, parentIdOrPrefix);
   if (!entityId) return [];
   return db
     .select()
     .from(entities)
     .where(
       and(
+        inScope(scope),
         eq(entities.parentId, entityId),
         eq(entities.kind, "comment"),
         isNull(entities.deletedAt)
@@ -192,13 +222,14 @@ export async function listComments(
 const CONTENT_FIELDS: ContentFieldKey[] = ["title", "body", "tags", "priority"];
 
 export async function update(
+  scope: Scope,
   db: Database["db"],
   id: string,
   fields: UpdateInput
 ): Promise<Entity> {
-  const entityId = await resolveEntityId(db, id);
+  const entityId = await resolveEntityId(scope, db, id);
   if (!entityId) throw new Error(`entity ${id} not found`);
-  if (fields.parentId) await assertParentAllowed(db, entityId, fields.parentId);
+  if (fields.parentId) await assertParentAllowed(scope, db, entityId, fields.parentId);
 
   const normalizedFields: UpdateInput = { ...fields };
   if (fields.status !== undefined) {
@@ -239,7 +270,7 @@ export async function update(
         priority: entities.priority
       })
       .from(entities)
-      .where(eq(entities.id, entityId))
+      .where(and(eq(entities.id, entityId), inScope(scope)))
       .limit(1);
     if (!prior[0]) throw new Error(`entity ${id} not found`);
     if (prior[0].kind === "comment") {
@@ -289,7 +320,11 @@ export async function update(
     set.body = sql`CASE WHEN ${entities.body} = '' THEN ${fields.bodyAppend} ELSE ${entities.body} || ${"\n\n"} || ${fields.bodyAppend} END`;
   }
 
-  const [row] = await db.update(entities).set(set).where(eq(entities.id, entityId)).returning();
+  const [row] = await db
+    .update(entities)
+    .set(set)
+    .where(and(eq(entities.id, entityId), inScope(scope)))
+    .returning();
   if (!row) throw new Error(`entity ${id} not found`);
   if (fields.parentId !== undefined && fields.parentId !== null) {
     await db
@@ -336,16 +371,17 @@ export async function update(
 }
 
 export async function listRelated(
+  scope: Scope,
   db: Database["db"],
   parentId: string
 ): Promise<Entity[]> {
-  const entityId = await resolveEntityId(db, parentId);
+  const entityId = await resolveEntityId(scope, db, parentId);
   if (!entityId) return [];
 
   return db
     .select()
     .from(entities)
-    .where(and(eq(entities.parentId, entityId), isNull(entities.deletedAt)))
+    .where(and(inScope(scope), eq(entities.parentId, entityId), isNull(entities.deletedAt)))
     .orderBy(desc(entities.createdAt));
 }
 
@@ -354,14 +390,14 @@ export async function listRelated(
  * get-by-key handlers (not from internal lookups) so access stats reflect
  * deliberate recalls; search gives frequently-recalled entities a light boost.
  */
-export async function bumpAccess(db: Database["db"], id: string): Promise<void> {
+export async function bumpAccess(scope: Scope, db: Database["db"], id: string): Promise<void> {
   await db
     .update(entities)
     .set({
       accessCount: sql`${entities.accessCount} + 1`,
       lastAccessedAt: new Date()
     })
-    .where(eq(entities.id, id));
+    .where(and(eq(entities.id, id), inScope(scope)));
 }
 
 /**
@@ -370,13 +406,14 @@ export async function bumpAccess(db: Database["db"], id: string): Promise<void> 
  * but are downweighted in search.
  */
 export async function markSuperseded(
+  scope: Scope,
   db: Database["db"],
   newId: string,
   oldIdOrPrefix: string
 ): Promise<string> {
   // get() (not resolveEntityId) so a full-UUID reference to a deleted or
   // never-existing row still 404s instead of tripping the FK constraint.
-  const old = await get(db, oldIdOrPrefix);
+  const old = await get(scope, db, oldIdOrPrefix);
   if (!old) throw clientError(`supersedes target ${oldIdOrPrefix} not found`, 404);
   if (old.id === newId) throw clientError("an entity cannot supersede itself", 400);
   await db
@@ -386,11 +423,15 @@ export async function markSuperseded(
   return old.id;
 }
 
-export async function get(db: Database["db"], id: string): Promise<Entity | null> {
-  const entityId = await resolveEntityId(db, id);
+export async function get(scope: Scope, db: Database["db"], id: string): Promise<Entity | null> {
+  const entityId = await resolveEntityId(scope, db, id);
   if (!entityId) return null;
 
-  const rows = await db.select().from(entities).where(eq(entities.id, entityId)).limit(1);
+  const rows = await db
+    .select()
+    .from(entities)
+    .where(and(eq(entities.id, entityId), inScope(scope)))
+    .limit(1);
   return rows[0] ?? null;
 }
 
@@ -399,6 +440,7 @@ export async function get(db: Database["db"], id: string): Promise<Entity | null
  * + sequence id `12` resolves to the entity displayed as `DEMO-12`.
  */
 export async function getByKey(
+  scope: Scope,
   db: Database["db"],
   projectKey: string,
   sequenceId: number
@@ -407,7 +449,13 @@ export async function getByKey(
     .select({ e: entities })
     .from(entities)
     .innerJoin(projects, eq(entities.projectId, projects.id))
-    .where(and(eq(projects.key, projectKey), eq(entities.sequenceId, sequenceId)))
+    .where(
+      and(
+        eq(projects.workspaceId, scope.workspaceId),
+        eq(projects.key, projectKey),
+        eq(entities.sequenceId, sequenceId)
+      )
+    )
     .limit(1);
   return rows[0]?.e ?? null;
 }
@@ -417,34 +465,29 @@ export async function getByKey(
  * restore() brings them back, purge()/purgeExpired() hard-delete them.
  * Idempotent — re-deleting a trashed entity keeps its original trash time.
  */
-export async function remove(db: Database["db"], id: string): Promise<boolean> {
-  const entityId = await resolveEntityId(db, id);
+export async function remove(scope: Scope, db: Database["db"], id: string): Promise<boolean> {
+  const entityId = await resolveEntityId(scope, db, id);
   if (!entityId) return false;
 
   const res = await db
     .update(entities)
     .set({ deletedAt: new Date() })
-    .where(and(eq(entities.id, entityId), isNull(entities.deletedAt)))
+    .where(and(eq(entities.id, entityId), inScope(scope), isNull(entities.deletedAt)))
     .returning({ id: entities.id });
   if (res.length > 0) return true;
 
-  const exists = await db
-    .select({ id: entities.id })
-    .from(entities)
-    .where(eq(entities.id, entityId))
-    .limit(1);
-  return exists.length > 0;
+  return existsInScope(scope, db, entityId);
 }
 
 /** Bring a trashed entity back. Returns null when the id resolves to nothing. */
-export async function restore(db: Database["db"], id: string): Promise<Entity | null> {
-  const entityId = await resolveEntityId(db, id);
+export async function restore(scope: Scope, db: Database["db"], id: string): Promise<Entity | null> {
+  const entityId = await resolveEntityId(scope, db, id);
   if (!entityId) return null;
 
   const [row] = await db
     .update(entities)
     .set({ deletedAt: null })
-    .where(eq(entities.id, entityId))
+    .where(and(eq(entities.id, entityId), inScope(scope)))
     .returning();
   return row ?? null;
 }
@@ -453,28 +496,31 @@ export async function restore(db: Database["db"], id: string): Promise<Entity | 
  * Hard-delete a trashed entity ("delete forever"). Refuses to touch live
  * rows — an entity must go through the trash first.
  */
-export async function purge(db: Database["db"], id: string): Promise<boolean> {
-  const entityId = await resolveEntityId(db, id);
+export async function purge(scope: Scope, db: Database["db"], id: string): Promise<boolean> {
+  const entityId = await resolveEntityId(scope, db, id);
   if (!entityId) return false;
 
   const res = await db
     .delete(entities)
-    .where(and(eq(entities.id, entityId), isNotNull(entities.deletedAt)))
+    .where(and(eq(entities.id, entityId), inScope(scope), isNotNull(entities.deletedAt)))
     .returning({ id: entities.id });
   return res.length > 0;
 }
 
 /** Trashed entities, most recently deleted first. */
-export async function listTrash(db: Database["db"], limit = 100): Promise<Entity[]> {
+export async function listTrash(scope: Scope, db: Database["db"], limit = 100): Promise<Entity[]> {
   return db
     .select()
     .from(entities)
-    .where(isNotNull(entities.deletedAt))
+    .where(and(inScope(scope), isNotNull(entities.deletedAt)))
     .orderBy(desc(entities.deletedAt))
     .limit(limit);
 }
 
-/** Hard-delete trash older than the retention window. Returns rows purged. */
+/**
+ * Hard-delete trash older than the retention window across every workspace.
+ * Daemon-level maintenance, hence no scope. Returns rows purged.
+ */
 export async function purgeExpired(db: Database["db"], retentionDays: number): Promise<number> {
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
   const res = await db
@@ -484,11 +530,15 @@ export async function purgeExpired(db: Database["db"], retentionDays: number): P
   return res.length;
 }
 
-export async function recent(db: Database["db"], input: RecentInput): Promise<Entity[]> {
-  const conds = [];
+export async function recent(
+  scope: Scope,
+  db: Database["db"],
+  input: RecentInput
+): Promise<Entity[]> {
+  const conds = [inScope(scope)];
   if (input.projectId) conds.push(eq(entities.projectId, input.projectId));
   else if (input.projectId === null) conds.push(isNull(entities.projectId));
-  else conds.push(activeProjectVisibility());
+  else conds.push(activeProjectVisibility(scope));
   conds.push(isNull(entities.deletedAt));
   if (input.since) conds.push(gte(entities.createdAt, input.since));
   if (input.kinds?.length) conds.push(inArray(entities.kind, input.kinds));
@@ -502,9 +552,21 @@ export async function recent(db: Database["db"], input: RecentInput): Promise<En
 }
 
 export async function link(
+  scope: Scope,
   db: Database["db"],
   input: LinkInput
 ): Promise<{ fromId: string; toId: string; kind: string; created: boolean }> {
+  if (input.fromId === input.toId) {
+    throw clientError("an entity cannot be linked to itself", 400);
+  }
+  const endpoints = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(and(inArray(entities.id, [input.fromId, input.toId]), inScope(scope)));
+  const found = new Set(endpoints.map((e) => e.id));
+  for (const id of [input.fromId, input.toId]) {
+    if (!found.has(id)) throw clientError(`entity ${id} not found`, 404);
+  }
   const result = await db
     .insert(edges)
     .values({ fromId: input.fromId, toId: input.toId, kind: input.kind })
@@ -518,7 +580,11 @@ export async function link(
   };
 }
 
-export async function listChildren(db: Database["db"], parentId: string): Promise<Entity[]> {
+export async function listChildren(
+  scope: Scope,
+  db: Database["db"],
+  parentId: string
+): Promise<Entity[]> {
   // Children arrive via two linkage styles that both count: the entities.parentId
   // column (create_task / update_entity parentId) and explicit parent_of edges
   // (the link tool). Comments also live on entities.parentId but are worklog,
@@ -539,7 +605,7 @@ export async function listChildren(db: Database["db"], parentId: string): Promis
   return db
     .select()
     .from(entities)
-    .where(and(linkage, ne(entities.kind, "comment"), isNull(entities.deletedAt)))
+    .where(and(inScope(scope), linkage, ne(entities.kind, "comment"), isNull(entities.deletedAt)))
     .orderBy(asc(entities.createdAt));
 }
 
@@ -564,6 +630,7 @@ export interface TagCount {
  * project; omit (or pass null/undefined) for workspace-wide results.
  */
 export async function listTags(
+  scope: Scope,
   db: Database["db"],
   input: ListTagsInput
 ): Promise<TagCount[]> {
@@ -574,7 +641,8 @@ export async function listTags(
   const rows = await db.execute<{ tag: string; count: string }>(sql`
     SELECT tag, COUNT(*)::int AS count
     FROM entities, unnest(tags) AS tag
-    WHERE deleted_at IS NULL ${projectFilter}
+    WHERE deleted_at IS NULL
+      AND workspace_id = ${scope.workspaceId}::uuid ${projectFilter}
     GROUP BY tag
     ORDER BY count DESC, tag ASC
   `);
@@ -595,6 +663,7 @@ export interface LinkResult {
  * Returns the OTHER endpoint entity alongside the edge kind and direction.
  */
 export async function getLinks(
+  scope: Scope,
   db: Database["db"],
   input: GetLinksInput
 ): Promise<LinkResult[]> {
@@ -616,7 +685,7 @@ export async function getLinks(
       const entityRows = await db
         .select()
         .from(entities)
-        .where(and(inArray(entities.id, toIds), isNull(entities.deletedAt)));
+        .where(and(inScope(scope), inArray(entities.id, toIds), isNull(entities.deletedAt)));
       const entityById = new Map(entityRows.map((en) => [en.id, en]));
       for (const row of rows.rows) {
         const entity = entityById.get(row.to_id);
@@ -642,7 +711,7 @@ export async function getLinks(
       const entityRows = await db
         .select()
         .from(entities)
-        .where(and(inArray(entities.id, fromIds), isNull(entities.deletedAt)));
+        .where(and(inScope(scope), inArray(entities.id, fromIds), isNull(entities.deletedAt)));
       const entityById = new Map(entityRows.map((en) => [en.id, en]));
       for (const row of rows.rows) {
         const entity = entityById.get(row.from_id);

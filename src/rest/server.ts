@@ -19,6 +19,7 @@ import {
 import { corsOrigins, DEFAULT_PORT, envValue } from "../config.js";
 import type { Database } from "../db/client.js";
 import type { EmbeddingService } from "../service/embedding.js";
+import { DEFAULT_SCOPE, scopeFor, type Scope } from "../service/scope.js";
 import { consumeSession } from "../service/sessions.js";
 import { consumeToken } from "../service/tokens.js";
 import { VERSION } from "../version.js";
@@ -36,12 +37,22 @@ export interface ServerContext {
   db: Database["db"];
   embedding: EmbeddingService;
   auth: AuthConfig;
+  /** Scope for requests that carry no credential (single-workspace mode). */
+  defaultScope: Scope;
 }
 
-export interface BuildServerOpts extends Omit<ServerContext, "auth"> {
+export interface BuildServerOpts extends Omit<ServerContext, "auth" | "defaultScope"> {
   logLevel?: string;
   webDist?: string;
   auth?: AuthConfig;
+  defaultScope?: Scope;
+}
+
+declare module "fastify" {
+  interface FastifyRequest {
+    /** Workspace the request is allowed to touch. Set by onRequest, never by a route. */
+    scope: Scope;
+  }
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -63,6 +74,7 @@ function resolveWebDist(explicit?: string): string | null {
 export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstance> {
   const isProduction = process.env.NODE_ENV === "production";
   const auth = opts.auth ?? authConfigFromEnv();
+  const defaultScope = opts.defaultScope ?? DEFAULT_SCOPE;
 
   const app = Fastify({
     logger: { level: opts.logLevel ?? "info" },
@@ -196,6 +208,17 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
     return reply.code(500).send({ error: "server_error" });
   });
 
+  // ----- scope -----
+  // Every request starts in the default workspace. The auth hook below
+  // narrows it to the credential's workspace when one is presented, so a
+  // route handler can always pass req.scope straight into the service layer.
+  // null (not an object literal) so every request shares one hidden-class
+  // shape; the hook right below assigns the real value before any handler.
+  app.decorateRequest("scope", null as unknown as Scope);
+  app.addHook("onRequest", async (req) => {
+    req.scope = defaultScope;
+  });
+
   // ----- auth -----
   // Every /v1 request needs a session cookie or bearer token, except a direct
   // loopback connection when BOTNOTE_TRUST_LOCALHOST is on. Whether a request
@@ -225,7 +248,10 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
       const cookieToken = req.cookies?.botnote_session;
       if (cookieToken) {
         const session = await consumeSession(opts.db, cookieToken);
-        if (session) return;
+        if (session) {
+          req.scope = scopeFor(session.workspaceId);
+          return;
+        }
       }
 
       // CLI / MCP path: bearer token.
@@ -233,7 +259,10 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
       if (authHeader && authHeader.startsWith("Bearer ")) {
         const plaintext = authHeader.slice("Bearer ".length).trim();
         const tok = await consumeToken(opts.db, plaintext);
-        if (tok) return;
+        if (tok) {
+          req.scope = scopeFor(tok.workspaceId);
+          return;
+        }
       }
 
       return reply.code(401).send({ error: "unauthenticated" });
@@ -241,7 +270,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   }
   app.log.info(describeAuthConfig(auth));
 
-  await registerRoutes(app, { db: opts.db, embedding: opts.embedding, auth });
+  await registerRoutes(app, { db: opts.db, embedding: opts.embedding, auth, defaultScope });
 
   const webDist = resolveWebDist(opts.webDist);
   if (webDist) {

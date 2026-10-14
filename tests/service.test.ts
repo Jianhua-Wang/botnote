@@ -48,6 +48,7 @@ import {
   updateWorkspaceSettings
 } from "../src/service/workspace_settings.js";
 import { allDayDueAtInZone } from "../src/service/dates.js";
+import { DEFAULT_SCOPE as S } from "../src/service/scope.js";
 import { createTestDb } from "./test_db.js";
 
 const { db, pool } = createTestDb();
@@ -78,7 +79,7 @@ async function withEntitiesTouchDisabled(fn: () => Promise<void>): Promise<void>
 
 describe("botnote service", () => {
   it("creates a project and looks it up by key", async () => {
-    const p = await createProject(db, {
+    const p = await createProject(S, db, {
       key: "TEST",
       name: "Test Project",
       agentsMd: "## Rules\nALWAYS test."
@@ -87,39 +88,39 @@ describe("botnote service", () => {
     expect(p.status).toBe("active");
     expect(p.id).toMatch(/^[0-9a-f-]{36}$/);
 
-    const found = await getProjectByKey(db, "TEST");
+    const found = await getProjectByKey(S, db, "TEST");
     expect(found?.id).toBe(p.id);
   });
 
   it("updates project status for active lifecycle states", async () => {
-    const p = await createProject(db, {
+    const p = await createProject(S, db, {
       key: "STAT",
       name: "Status Project",
       status: "planned"
     });
     expect(p.status).toBe("planned");
 
-    const updated = await updateProject(db, p.id, { status: "watching" });
+    const updated = await updateProject(S, db, p.id, { status: "watching" });
     expect(updated.status).toBe("watching");
 
-    const found = await getProjectByKey(db, "STAT");
+    const found = await getProjectByKey(S, db, "STAT");
     expect(found?.status).toBe("watching");
 
-    const archived = await updateProject(db, p.id, { status: "archived" });
+    const archived = await updateProject(S, db, p.id, { status: "archived" });
     expect(archived.status).toBe("archived");
     expect(archived.archivedAt).not.toBeNull();
 
-    const restored = await updateProject(db, p.id, { status: "active" });
+    const restored = await updateProject(S, db, p.id, { status: "active" });
     expect(restored.status).toBe("active");
     expect(restored.archivedAt).toBeNull();
   });
 
   it("archives projects and hides their entities from workspace views by default", async () => {
-    const active = await createProject(db, { key: "ACT", name: "Active" });
-    const archived = await createProject(db, { key: "ARC", name: "Archived" });
+    const active = await createProject(S, db, { key: "ACT", name: "Active" });
+    const archived = await createProject(S, db, { key: "ARC", name: "Archived" });
     const dueAt = new Date("2026-06-25T12:00:00.000Z");
 
-    await write(db, {
+    await write(S, db, {
       kind: "task",
       projectId: active.id,
       title: "Visible active task",
@@ -130,7 +131,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    const archivedTask = await write(db, {
+    const archivedTask = await write(S, db, {
       kind: "task",
       projectId: archived.id,
       title: "Hidden archived task",
@@ -142,28 +143,28 @@ describe("botnote service", () => {
       dueAt
     });
 
-    const archivedProject = await updateProject(db, archived.id, { status: "archived" });
+    const archivedProject = await updateProject(S, db, archived.id, { status: "archived" });
     expect(archivedProject.status).toBe("archived");
     expect(archivedProject.archivedAt).not.toBeNull();
 
-    expect((await listProjects(db)).map((p) => p.key)).toEqual(["ACT"]);
-    expect((await listProjects(db, { includeArchived: true })).map((p) => p.key)).toEqual([
+    expect((await listProjects(S, db)).map((p) => p.key)).toEqual(["ACT"]);
+    expect((await listProjects(S, db, { includeArchived: true })).map((p) => p.key)).toEqual([
       "ACT",
       "ARC"
     ]);
 
-    const recentRows = await recent(db, { limit: 10 });
+    const recentRows = await recent(S, db, { limit: 10 });
     expect(recentRows.map((e) => e.id)).not.toContain(archivedTask.id);
-    const archivedRecentRows = await recent(db, { projectId: archived.id, limit: 10 });
+    const archivedRecentRows = await recent(S, db, { projectId: archived.id, limit: 10 });
     expect(archivedRecentRows.map((e) => e.id)).toContain(archivedTask.id);
 
-    expect((await search(db, { query: "archive-only needle", limit: 5 })).length).toBe(0);
+    expect((await search(S, db, { query: "archive-only needle", limit: 5 })).length).toBe(0);
     expect(
-      (await search(db, { query: "archive-only needle", projectId: archived.id, limit: 5 }))[0]
+      (await search(S, db, { query: "archive-only needle", projectId: archived.id, limit: 5 }))[0]
         ?.entity.id
     ).toBe(archivedTask.id);
 
-    const range = await tasksRange(db, {
+    const range = await tasksRange(S, db, {
       from: new Date("2026-06-25T00:00:00.000Z"),
       to: new Date("2026-06-26T00:00:00.000Z"),
       includeBacklog: false,
@@ -171,7 +172,7 @@ describe("botnote service", () => {
     });
     expect(range.scheduled.map((e) => e.id)).not.toContain(archivedTask.id);
 
-    const archivedRange = await tasksRange(db, {
+    const archivedRange = await tasksRange(S, db, {
       from: new Date("2026-06-25T00:00:00.000Z"),
       to: new Date("2026-06-26T00:00:00.000Z"),
       projectIds: [archived.id],
@@ -180,16 +181,16 @@ describe("botnote service", () => {
     });
     expect(archivedRange.scheduled.map((e) => e.id)).toContain(archivedTask.id);
 
-    const restored = await updateProject(db, archived.id, { status: "active" });
+    const restored = await updateProject(S, db, archived.id, { status: "active" });
     expect(restored.status).toBe("active");
     expect(restored.archivedAt).toBeNull();
-    expect((await listProjects(db)).map((p) => p.key)).toEqual(["ACT", "ARC"]);
+    expect((await listProjects(S, db)).map((p) => p.key)).toEqual(["ACT", "ARC"]);
   });
 
   it("write entity + get + update + recent", async () => {
-    const p = await createProject(db, { key: "WORK", name: "Work" });
+    const p = await createProject(S, db, { key: "WORK", name: "Work" });
 
-    const t = await write(db, {
+    const t = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Build botnote v0",
@@ -202,27 +203,27 @@ describe("botnote service", () => {
     });
     expect(t.kind).toBe("task");
 
-    const fetched = await get(db, t.id);
+    const fetched = await get(S, db, t.id);
     expect(fetched?.title).toBe("Build botnote v0");
 
-    const fetchedByPrefix = await get(db, t.id.slice(0, 8));
+    const fetchedByPrefix = await get(S, db, t.id.slice(0, 8));
     expect(fetchedByPrefix?.id).toBe(t.id);
 
-    const prefixUpdated = await update(db, t.id.slice(0, 8), { priority: "high" });
+    const prefixUpdated = await update(S, db, t.id.slice(0, 8), { priority: "high" });
     expect(prefixUpdated.priority).toBe("high");
 
-    const updated = await update(db, t.id, { status: "done" });
+    const updated = await update(S, db, t.id, { status: "done" });
     expect(updated.status).toBe("done");
     expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(updated.createdAt.getTime());
 
-    const list = await recent(db, { projectId: p.id, limit: 10 });
+    const list = await recent(S, db, { projectId: p.id, limit: 10 });
     expect(list.length).toBe(1);
   });
 
   it("moves an entity between projects and to workspace scope", async () => {
-    const source = await createProject(db, { key: "SRC", name: "Source" });
-    const destination = await createProject(db, { key: "DST", name: "Destination" });
-    const task = await write(db, {
+    const source = await createProject(S, db, { key: "SRC", name: "Source" });
+    const destination = await createProject(S, db, { key: "DST", name: "Destination" });
+    const task = await write(S, db, {
       kind: "task",
       projectId: source.id,
       title: "Move this task",
@@ -233,18 +234,18 @@ describe("botnote service", () => {
       metadata: {}
     });
 
-    const moved = await update(db, task.id, { projectId: destination.id });
+    const moved = await update(S, db, task.id, { projectId: destination.id });
     expect(moved.projectId).toBe(destination.id);
-    expect(await recent(db, { projectId: source.id, limit: 10 })).toEqual([]);
-    expect((await recent(db, { projectId: destination.id, limit: 10 }))[0]?.id).toBe(task.id);
+    expect(await recent(S, db, { projectId: source.id, limit: 10 })).toEqual([]);
+    expect((await recent(S, db, { projectId: destination.id, limit: 10 }))[0]?.id).toBe(task.id);
 
-    const unscoped = await update(db, task.id, { projectId: null });
+    const unscoped = await update(S, db, task.id, { projectId: null });
     expect(unscoped.projectId).toBeNull();
-    expect((await recent(db, { projectId: null, limit: 10 }))[0]?.id).toBe(task.id);
+    expect((await recent(S, db, { projectId: null, limit: 10 }))[0]?.id).toBe(task.id);
   });
 
   it("write is idempotent on idempotency_key", async () => {
-    const p = await createProject(db, { key: "IDP", name: "Idp" });
+    const p = await createProject(S, db, { key: "IDP", name: "Idp" });
     const input = {
       kind: "note" as const,
       projectId: p.id,
@@ -256,8 +257,8 @@ describe("botnote service", () => {
       metadata: {},
       idempotencyKey: "k-1"
     };
-    const first = await write(db, input);
-    const second = await write(db, {
+    const first = await write(S, db, input);
+    const second = await write(S, db, {
       ...input,
       title: "Different title"
     });
@@ -266,8 +267,8 @@ describe("botnote service", () => {
   });
 
   it("normalizes retired delayed and archived statuses to done", async () => {
-    const p = await createProject(db, { key: "RET", name: "Retired statuses" });
-    const delayed = await write(db, {
+    const p = await createProject(S, db, { key: "RET", name: "Retired statuses" });
+    const delayed = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Normalize delayed task",
@@ -280,7 +281,7 @@ describe("botnote service", () => {
     expect(delayed.status).toBe("done");
     expect(delayed.completedAt).not.toBeNull();
 
-    const open = await write(db, {
+    const open = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Normalize archived update",
@@ -290,17 +291,17 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const archived = await update(db, open.id, { status: "archived" as never });
+    const archived = await update(S, db, open.id, { status: "archived" as never });
     expect(archived.status).toBe("done");
     expect(archived.completedAt).not.toBeNull();
   });
 
   it("allows explicit completedAt on done tasks and rejects it elsewhere", async () => {
-    const p = await createProject(db, { key: "CMPL", name: "Completion stamps" });
+    const p = await createProject(S, db, { key: "CMPL", name: "Completion stamps" });
     const backdated = new Date("2026-07-01T09:00:00.000Z");
 
     // Create already-done with a backdated completion.
-    const created = await write(db, {
+    const created = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Backdated at creation",
@@ -314,7 +315,7 @@ describe("botnote service", () => {
     expect(created.completedAt?.toISOString()).toBe(backdated.toISOString());
 
     // Complete-and-backdate in one update: explicit value beats the auto stamp.
-    const open = await write(db, {
+    const open = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Complete and backdate",
@@ -325,17 +326,17 @@ describe("botnote service", () => {
       metadata: {}
     });
     const doneAt = new Date("2026-07-05T18:00:00.000Z");
-    const done = await update(db, open.id, { status: "done", completedAt: doneAt });
+    const done = await update(S, db, open.id, { status: "done", completedAt: doneAt });
     expect(done.completedAt?.toISOString()).toBe(doneAt.toISOString());
 
     // Fix the timestamp on an already-done task without touching status.
     const fixedAt = new Date("2026-07-06T08:00:00.000Z");
-    const fixed = await update(db, open.id, { completedAt: fixedAt });
+    const fixed = await update(S, db, open.id, { completedAt: fixedAt });
     expect(fixed.status).toBe("done");
     expect(fixed.completedAt?.toISOString()).toBe(fixedAt.toISOString());
 
     // Rejected: setting completedAt on a task that is not done.
-    const stillOpen = await write(db, {
+    const stillOpen = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Still open",
@@ -346,12 +347,12 @@ describe("botnote service", () => {
       metadata: {}
     });
     await expect(
-      update(db, stillOpen.id, { completedAt: new Date() })
+      update(S, db, stillOpen.id, { completedAt: new Date() })
     ).rejects.toThrow(/only be set on a done task/);
 
     // Rejected: creating a non-done task with completedAt.
     await expect(
-      write(db, {
+      write(S, db, {
         kind: "task",
         projectId: p.id,
         title: "Open with stamp",
@@ -366,10 +367,10 @@ describe("botnote service", () => {
   });
 
   it("never stamps completedAt on non-task kinds, and always allows clearing it", async () => {
-    const p = await createProject(db, { key: "NCMP", name: "Non-task completion" });
+    const p = await createProject(S, db, { key: "NCMP", name: "Non-task completion" });
 
     // A note created done carries no completion stamp.
-    const createdDone = await write(db, {
+    const createdDone = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Note created done",
@@ -382,7 +383,7 @@ describe("botnote service", () => {
     expect(createdDone.completedAt).toBeNull();
 
     // Neither does a note that transitions into done.
-    const note = await write(db, {
+    const note = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Note marked done later",
@@ -392,12 +393,12 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const noteDone = await update(db, note.id, { status: "done" });
+    const noteDone = await update(S, db, note.id, { status: "done" });
     expect(noteDone.completedAt).toBeNull();
 
     // Setting a value on a non-task is still rejected...
     await expect(
-      update(db, note.id, { completedAt: new Date() })
+      update(S, db, note.id, { completedAt: new Date() })
     ).rejects.toThrow(/applies to tasks only/);
 
     // ...but clearing must always work, so a stray stamp (e.g. written by an
@@ -405,17 +406,17 @@ describe("botnote service", () => {
     await db.execute(sql`
       UPDATE entities SET completed_at = now() WHERE id = ${note.id}
     `);
-    const cleared = await update(db, note.id, { completedAt: null });
+    const cleared = await update(S, db, note.id, { completedAt: null });
     expect(cleared.completedAt).toBeNull();
   });
 
   it("tasksRange displays done tasks on completion day, not due day", async () => {
-    const p = await createProject(db, { key: "CAL", name: "Calendar" });
+    const p = await createProject(S, db, { key: "CAL", name: "Calendar" });
     const dueAt = new Date("2026-06-01T12:00:00.000Z");
     const completedAt = new Date("2026-06-10T15:30:00.000Z");
     const legacyUpdatedAt = new Date("2026-06-11T09:00:00.000Z");
 
-    const done = await write(db, {
+    const done = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Ship finished task",
@@ -434,7 +435,7 @@ describe("botnote service", () => {
       `);
     });
 
-    const legacyDone = await write(db, {
+    const legacyDone = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Legacy finished task",
@@ -452,7 +453,7 @@ describe("botnote service", () => {
         WHERE id = ${legacyDone.id}
       `);
     });
-    const overdueOpen = await write(db, {
+    const overdueOpen = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Still needs attention",
@@ -464,7 +465,7 @@ describe("botnote service", () => {
       dueAt
     });
 
-    const dueDay = await tasksRange(db, {
+    const dueDay = await tasksRange(S, db, {
       from: new Date("2026-06-01T00:00:00.000Z"),
       to: new Date("2026-06-02T00:00:00.000Z"),
       projectIds: [p.id],
@@ -474,7 +475,7 @@ describe("botnote service", () => {
     expect(dueDay.scheduled.map((t) => t.id)).not.toContain(done.id);
     expect(dueDay.scheduled.map((t) => t.id)).not.toContain(legacyDone.id);
 
-    const completionDay = await tasksRange(db, {
+    const completionDay = await tasksRange(S, db, {
       from: new Date("2026-06-10T00:00:00.000Z"),
       to: new Date("2026-06-11T00:00:00.000Z"),
       projectIds: [p.id],
@@ -485,7 +486,7 @@ describe("botnote service", () => {
     expect(completionDay.scheduled.map((t) => t.id)).not.toContain(legacyDone.id);
     expect(completionDay.overdue.map((t) => t.id)).toContain(overdueOpen.id);
 
-    const legacyCompletionDay = await tasksRange(db, {
+    const legacyCompletionDay = await tasksRange(S, db, {
       from: new Date("2026-06-11T00:00:00.000Z"),
       to: new Date("2026-06-12T00:00:00.000Z"),
       projectIds: [p.id],
@@ -496,12 +497,12 @@ describe("botnote service", () => {
   });
 
   it("tasksRange does not duplicate in-range tasks into overdue", async () => {
-    const p = await createProject(db, { key: "DUP", name: "No Duplicate" });
+    const p = await createProject(S, db, { key: "DUP", name: "No Duplicate" });
     const from = new Date(Date.now() - 2 * 60 * 1000);
     const dueAt = new Date(Date.now() - 60 * 1000);
     const to = new Date(Date.now() + 60 * 60 * 1000);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Show once in the active range",
@@ -513,7 +514,7 @@ describe("botnote service", () => {
       dueAt
     });
 
-    const range = await tasksRange(db, {
+    const range = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -526,8 +527,8 @@ describe("botnote service", () => {
   });
 
   it("tasksRange keeps in-progress tasks on today and out of overdue", async () => {
-    const p = await createProject(db, { key: "NOW", name: "Now" });
-    const task = await write(db, {
+    const p = await createProject(S, db, { key: "NOW", name: "Now" });
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Keep active work visible",
@@ -546,7 +547,7 @@ describe("botnote service", () => {
     const yesterdayStart = new Date(todayStart);
     yesterdayStart.setDate(yesterdayStart.getDate() - 1);
 
-    const today = await tasksRange(db, {
+    const today = await tasksRange(S, db, {
       from: todayStart,
       to: tomorrowStart,
       projectIds: [p.id],
@@ -556,7 +557,7 @@ describe("botnote service", () => {
     expect(today.scheduled.map((t) => t.id)).toContain(task.id);
     expect(today.overdue.map((t) => t.id)).not.toContain(task.id);
 
-    const yesterday = await tasksRange(db, {
+    const yesterday = await tasksRange(S, db, {
       from: yesterdayStart,
       to: todayStart,
       projectIds: [p.id],
@@ -567,8 +568,8 @@ describe("botnote service", () => {
   });
 
   it("tasksRange keeps cancelled tasks out of every bucket", async () => {
-    const p = await createProject(db, { key: "INBX", name: "Inbox" });
-    const open = await write(db, {
+    const p = await createProject(S, db, { key: "INBX", name: "Inbox" });
+    const open = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Show undated task",
@@ -578,7 +579,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const cancelled = await write(db, {
+    const cancelled = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Show cancelled undated task",
@@ -589,7 +590,7 @@ describe("botnote service", () => {
       metadata: {}
     });
     // A leftover dueAt on a cancelled task must not resurrect it as Scheduled.
-    const cancelledDated = await write(db, {
+    const cancelledDated = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Cancelled task with stale due date",
@@ -601,7 +602,7 @@ describe("botnote service", () => {
       dueAt: new Date()
     });
 
-    const range = await tasksRange(db, {
+    const range = await tasksRange(S, db, {
       projectIds: [p.id],
       includeBacklog: true,
       includeDone: true
@@ -613,8 +614,8 @@ describe("botnote service", () => {
   });
 
   it("listChildren unions parentId and parent_of children and excludes comments", async () => {
-    const p = await createProject(db, { key: "MILE", name: "Milestone" });
-    const parent = await write(db, {
+    const p = await createProject(S, db, { key: "MILE", name: "Milestone" });
+    const parent = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Milestone parent",
@@ -624,7 +625,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const byColumn = await write(db, {
+    const byColumn = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Child via parentId",
@@ -635,7 +636,7 @@ describe("botnote service", () => {
       metadata: {},
       parentId: parent.id
     });
-    const byEdge = await write(db, {
+    const byEdge = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Child via parent_of edge",
@@ -645,11 +646,11 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await link(db, { fromId: parent.id, toId: byEdge.id, kind: "parent_of" });
+    await link(S, db, { fromId: parent.id, toId: byEdge.id, kind: "parent_of" });
     // Worklog comments hang off parentId too but are not child work items.
-    const comment = await addComment(db, parent.id, { body: "worklog", actorKind: "agent" });
+    const comment = await addComment(S, db, parent.id, { body: "worklog", actorKind: "agent" });
 
-    const children = await listChildren(db, parent.id);
+    const children = await listChildren(S, db, parent.id);
     const ids = children.map((ch) => ch.id);
     expect(ids).toContain(byColumn.id);
     expect(ids).toContain(byEdge.id);
@@ -657,10 +658,10 @@ describe("botnote service", () => {
   });
 
   it("creates a recurrence rule and generates the next scheduled occurrence on completion", async () => {
-    const p = await createProject(db, { key: "REC", name: "Recurrence" });
+    const p = await createProject(S, db, { key: "REC", name: "Recurrence" });
     const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Review recurring task",
@@ -673,7 +674,7 @@ describe("botnote service", () => {
       priority: "medium"
     });
 
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -682,8 +683,8 @@ describe("botnote service", () => {
     });
     expect(rule.rrule).toContain("FREQ=DAILY");
 
-    await update(db, task.id, { status: "done" });
-    const details = await getRecurrenceForTask(db, task.id);
+    await update(S, db, task.id, { status: "done" });
+    const details = await getRecurrenceForTask(S, db, task.id);
     expect(details?.rule.currentOccurrenceId).not.toBe(task.id);
     expect(details?.currentOccurrence?.title).toBe(task.title);
     expect(details?.currentOccurrence?.status).toBe("open");
@@ -692,13 +693,13 @@ describe("botnote service", () => {
       new Date(dueAt.getTime() + 24 * 60 * 60 * 1000).toISOString()
     );
 
-    await update(db, task.id, { status: "done" });
-    const afterRetry = await getRecurrenceForTask(db, task.id);
+    await update(S, db, task.id, { status: "done" });
+    const afterRetry = await getRecurrenceForTask(S, db, task.id);
     expect(afterRetry?.rule.currentOccurrenceId).toBe(details?.rule.currentOccurrenceId);
   });
 
   it("tasksRange materializes scheduled recurrences through today", async () => {
-    const p = await createProject(db, { key: "RMT", name: "Recurrence Materialize Today" });
+    const p = await createProject(S, db, { key: "RMT", name: "Recurrence Materialize Today" });
     // Use UTC-based dates so allDayDueAtInZone(date, "UTC") produces predictable noon-UTC results
     // regardless of the test machine's local timezone.
     const todayStartUTC = new Date();
@@ -712,7 +713,7 @@ describe("botnote service", () => {
     const todayDue = new Date(todayStartUTC);
     todayDue.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Publish daily recurring task",
@@ -723,7 +724,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: twoDaysAgo
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -731,7 +732,7 @@ describe("botnote service", () => {
       anchor: "scheduled"
     });
 
-    const range = await tasksRange(db, {
+    const range = await tasksRange(S, db, {
       from: todayStart,
       to: tomorrowStart,
       projectIds: [p.id],
@@ -745,16 +746,16 @@ describe("botnote service", () => {
     expect(todayOccurrence?.status).toBe("open");
     expect(range.overdue.filter((row) => row.title === task.title)).toHaveLength(2);
 
-    const details = await getRecurrenceForTask(db, task.id);
+    const details = await getRecurrenceForTask(S, db, task.id);
     expect(details?.currentOccurrence?.id).toBe(todayOccurrence?.id);
     expect(details?.rule.generatedCount).toBe(3);
   });
 
   it("supports repeat-after-completion anchor", async () => {
-    const p = await createProject(db, { key: "RAC", name: "Repeat After Completion" });
+    const p = await createProject(S, db, { key: "RAC", name: "Repeat After Completion" });
     const dueAt = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Replace maintenance item",
@@ -766,7 +767,7 @@ describe("botnote service", () => {
       dueAt
     });
 
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 2,
       timezone: "UTC",
@@ -774,9 +775,9 @@ describe("botnote service", () => {
       anchor: "completion"
     });
     const before = Date.now();
-    await update(db, task.id, { status: "done" });
+    await update(S, db, task.id, { status: "done" });
     const after = Date.now();
-    const details = await getRecurrenceForTask(db, task.id);
+    const details = await getRecurrenceForTask(S, db, task.id);
     const nextDue = details?.currentOccurrence?.dueAt?.getTime() ?? 0;
 
     // For all-day completion-anchor rules with timezone "UTC", the next occurrence is
@@ -795,10 +796,10 @@ describe("botnote service", () => {
   });
 
   it("skips recurring occurrence and stops when count is exhausted", async () => {
-    const p = await createProject(db, { key: "RSK", name: "Recurrence Skip" });
+    const p = await createProject(S, db, { key: "RSK", name: "Recurrence Skip" });
     const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Attend recurring meeting",
@@ -810,7 +811,7 @@ describe("botnote service", () => {
       dueAt
     });
 
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "weekly",
       interval: 1,
       count: 2,
@@ -818,19 +819,19 @@ describe("botnote service", () => {
       allDay: true,
       anchor: "scheduled"
     });
-    const skipped = await skipOccurrence(db, task.id, { actorKind: "human" });
+    const skipped = await skipOccurrence(S, db, task.id, { actorKind: "human" });
     expect(skipped.skipped.status).toBe("rejected");
     expect(skipped.next?.status).toBe("open");
 
-    await update(db, skipped.next!.id, { status: "done" });
-    const details = await getRecurrenceForTask(db, skipped.next!.id);
+    await update(S, db, skipped.next!.id, { status: "done" });
+    const details = await getRecurrenceForTask(S, db, skipped.next!.id);
     expect(details?.rule.enabled).toBe(false);
     expect(details?.rule.currentOccurrenceId).toBeNull();
   });
 
   it("rejects recurrence rules for tasks without due dates", async () => {
-    const p = await createProject(db, { key: "RNO", name: "Recurrence No Due" });
-    const task = await write(db, {
+    const p = await createProject(S, db, { key: "RNO", name: "Recurrence No Due" });
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Needs a first due date",
@@ -842,7 +843,7 @@ describe("botnote service", () => {
     });
 
     await expect(
-      createRecurrenceRule(db, task.id, {
+      createRecurrenceRule(S, db, task.id, {
         preset: "weekly",
         interval: 1,
         timezone: "UTC",
@@ -853,8 +854,8 @@ describe("botnote service", () => {
   });
 
   it("link creates edge + listChildren via parentId", async () => {
-    const p = await createProject(db, { key: "LNK", name: "Link" });
-    const parent = await write(db, {
+    const p = await createProject(S, db, { key: "LNK", name: "Link" });
+    const parent = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Parent task",
@@ -864,7 +865,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const child = await write(db, {
+    const child = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Child note",
@@ -876,14 +877,14 @@ describe("botnote service", () => {
       parentId: parent.id
     });
 
-    const result = await link(db, {
+    const result = await link(S, db, {
       fromId: parent.id,
       toId: child.id,
       kind: "references"
     });
     expect(result.created).toBe(true);
 
-    const dup = await link(db, {
+    const dup = await link(S, db, {
       fromId: parent.id,
       toId: child.id,
       kind: "references"
@@ -892,15 +893,15 @@ describe("botnote service", () => {
   });
 
   it("updateProject edits AGENTS.md", async () => {
-    const p = await createProject(db, { key: "AGT", name: "Agt" });
+    const p = await createProject(S, db, { key: "AGT", name: "Agt" });
     expect(p.agentsMd).toBe("");
-    const updated = await updateProject(db, p.id, { agentsMd: "## Be brief." });
+    const updated = await updateProject(S, db, p.id, { agentsMd: "## Be brief." });
     expect(updated.agentsMd).toBe("## Be brief.");
   });
 
   it("search returns BM25 hit on tsvector match", async () => {
-    const p = await createProject(db, { key: "SRC", name: "Src" });
-    await write(db, {
+    const p = await createProject(S, db, { key: "SRC", name: "Src" });
+    await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Postgres hybrid retrieval",
@@ -910,7 +911,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await write(db, {
+    await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Coffee order",
@@ -920,13 +921,13 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const hits = await search(db, { query: "RRF hybrid", projectId: p.id, limit: 5 });
+    const hits = await search(S, db, { query: "RRF hybrid", projectId: p.id, limit: 5 });
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0]?.entity.title).toBe("Postgres hybrid retrieval");
   });
 
   it("supersedes edge downweights the outdated entity in search", async () => {
-    const p = await createProject(db, { key: "SUP", name: "Sup" });
+    const p = await createProject(S, db, { key: "SUP", name: "Sup" });
     const noteInput = {
       kind: "note" as const,
       projectId: p.id,
@@ -937,13 +938,13 @@ describe("botnote service", () => {
       actorKind: "human" as const,
       metadata: {}
     };
-    const replacement = await write(db, noteInput);
+    const replacement = await write(S, db, noteInput);
     // The outdated note is created LAST so time decay would naturally rank it
     // first — only the supersedes penalty can flip the order.
-    const outdated = await write(db, noteInput);
-    await markSuperseded(db, replacement.id, outdated.id);
+    const outdated = await write(S, db, noteInput);
+    await markSuperseded(S, db, replacement.id, outdated.id);
 
-    const hits = await search(db, { query: "cache flush deploy", projectId: p.id, limit: 5 });
+    const hits = await search(S, db, { query: "cache flush deploy", projectId: p.id, limit: 5 });
     const ids = hits.map((h) => h.entity.id);
     expect(ids.indexOf(replacement.id)).toBeLessThan(ids.indexOf(outdated.id));
     expect(hits.find((h) => h.entity.id === outdated.id)?.superseded).toBe(true);
@@ -951,8 +952,8 @@ describe("botnote service", () => {
   });
 
   it("markSuperseded rejects self-reference and missing targets", async () => {
-    const p = await createProject(db, { key: "SUX", name: "Sux" });
-    const note = await write(db, {
+    const p = await createProject(S, db, { key: "SUX", name: "Sux" });
+    const note = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Lone note",
@@ -962,15 +963,15 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await expect(markSuperseded(db, note.id, note.id)).rejects.toThrow(/supersede itself/);
+    await expect(markSuperseded(S, db, note.id, note.id)).rejects.toThrow(/supersede itself/);
     await expect(
-      markSuperseded(db, note.id, "00000000-0000-0000-0000-000000000000")
+      markSuperseded(S, db, note.id, "00000000-0000-0000-0000-000000000000")
     ).rejects.toThrow(/not found/);
   });
 
   it("findSimilar surfaces near-duplicate notes and excludes the new note itself", async () => {
-    const p = await createProject(db, { key: "DUP", name: "Dup" });
-    const existing = await write(db, {
+    const p = await createProject(S, db, { key: "DUP", name: "Dup" });
+    const existing = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Staging DB password lives in 1Password",
@@ -980,7 +981,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const fresh = await write(db, {
+    const fresh = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Staging DB password lives in 1Password",
@@ -991,7 +992,7 @@ describe("botnote service", () => {
       metadata: {}
     });
 
-    const similar = await findSimilar(db, {
+    const similar = await findSimilar(S, db, {
       title: fresh.title,
       body: fresh.body,
       projectId: p.id,
@@ -1002,8 +1003,8 @@ describe("botnote service", () => {
   });
 
   it("submitFeedback stores categorized feedback and listFeedback filters it", async () => {
-    const p = await createProject(db, { key: "FBK", name: "Fbk" });
-    const bug = await submitFeedback(db, {
+    const p = await createProject(S, db, { key: "FBK", name: "Fbk" });
+    const bug = await submitFeedback(S, db, {
       category: "bug",
       title: "search drops KEY-SEQ refs from queries",
       body: "Searching for BOT-12 returns nothing even though the task exists.",
@@ -1021,7 +1022,7 @@ describe("botnote service", () => {
     expect(bug.sequenceId).toBe(1);
 
     // Idempotent replay returns the same row.
-    const replay = await submitFeedback(db, {
+    const replay = await submitFeedback(S, db, {
       category: "bug",
       title: "search drops KEY-SEQ refs from queries",
       body: "",
@@ -1031,7 +1032,7 @@ describe("botnote service", () => {
     });
     expect(replay.id).toBe(bug.id);
 
-    await submitFeedback(db, {
+    await submitFeedback(S, db, {
       category: "idea",
       title: "opening brief could include a weekly summary",
       body: "",
@@ -1039,16 +1040,16 @@ describe("botnote service", () => {
       metadata: {}
     });
 
-    const bugs = await listFeedback(db, { category: "bug", limit: 20 });
+    const bugs = await listFeedback(S, db, { category: "bug", limit: 20 });
     expect(bugs.map((f) => f.id)).toEqual([bug.id]);
-    const all = await listFeedback(db, { limit: 20 });
+    const all = await listFeedback(S, db, { limit: 20 });
     expect(all.length).toBe(2);
-    const done = await listFeedback(db, { status: "done", limit: 20 });
+    const done = await listFeedback(S, db, { status: "done", limit: 20 });
     expect(done.length).toBe(0);
   });
 
   it("bumpAccess tracks reads and boosts frequently-recalled entities in search", async () => {
-    const p = await createProject(db, { key: "ACC", name: "Acc" });
+    const p = await createProject(S, db, { key: "ACC", name: "Acc" });
     const noteInput = {
       kind: "note" as const,
       projectId: p.id,
@@ -1059,16 +1060,16 @@ describe("botnote service", () => {
       actorKind: "human" as const,
       metadata: {}
     };
-    const recalled = await write(db, noteInput);
+    const recalled = await write(S, db, noteInput);
     // Newer twin would win on time decay if access count did not matter.
-    const untouched = await write(db, noteInput);
+    const untouched = await write(S, db, noteInput);
 
-    for (let i = 0; i < 20; i += 1) await bumpAccess(db, recalled.id);
-    const fetched = await get(db, recalled.id);
+    for (let i = 0; i < 20; i += 1) await bumpAccess(S, db, recalled.id);
+    const fetched = await get(S, db, recalled.id);
     expect(fetched?.accessCount).toBe(20);
     expect(fetched?.lastAccessedAt).not.toBeNull();
 
-    const hits = await search(db, { query: "redis eviction policy", projectId: p.id, limit: 5 });
+    const hits = await search(S, db, { query: "redis eviction policy", projectId: p.id, limit: 5 });
     const ids = hits.map((h) => h.entity.id);
     expect(ids.indexOf(recalled.id)).toBeLessThan(ids.indexOf(untouched.id));
     expect(hits.find((h) => h.entity.id === recalled.id)?.components.accessBoost).toBeGreaterThan(0);
@@ -1083,7 +1084,7 @@ describe("botnote service", () => {
   });
 
   it("embedding settings persist and reload the runtime", async () => {
-    const initial = await getEmbeddingSettings(db);
+    const initial = await getEmbeddingSettings(S, db);
     expect(initial.enabled).toBe(true);
     expect(initial.model).toBe("text-embedding-3-small");
 
@@ -1092,7 +1093,7 @@ describe("botnote service", () => {
     expect(missing.enabled).toBe(false);
     expect(missing.reason).toBe("missing_api_key");
 
-    await updateEmbeddingSettings(db, {
+    await updateEmbeddingSettings(S, db, {
       provider: "openai",
       model: "text-embedding-3-large",
       apiKey: "sk-test"
@@ -1106,7 +1107,7 @@ describe("botnote service", () => {
   });
 
   it("openai-compatible embedding settings require a base URL", async () => {
-    await updateEmbeddingSettings(db, {
+    await updateEmbeddingSettings(S, db, {
       provider: "openai_compatible",
       model: "custom-384",
       apiKey: "sk-compatible"
@@ -1117,7 +1118,7 @@ describe("botnote service", () => {
     expect(missingBaseUrl.enabled).toBe(false);
     expect(missingBaseUrl.reason).toBe("missing_base_url");
 
-    await updateEmbeddingSettings(db, {
+    await updateEmbeddingSettings(S, db, {
       baseUrl: "https://embeddings.example.com/v1"
     });
 
@@ -1128,10 +1129,10 @@ describe("botnote service", () => {
   });
 
   it("stores recoverable API token plaintext for Settings copy", async () => {
-    const { plaintext } = await createToken(db, { name: "laptop" });
+    const { plaintext } = await createToken(S, db, { name: "laptop" });
     expect(plaintext).toMatch(/^bn_[0-9a-f]{48}$/);
 
-    const rows = await listTokens(db);
+    const rows = await listTokens(S, db);
     expect(rows[0]?.name).toBe("laptop");
     expect(rows[0]?.prefix).toBe(plaintext.slice(0, 11));
     expect(rows[0]?.plaintext).toBe(plaintext);
@@ -1141,8 +1142,8 @@ describe("botnote service", () => {
   });
 
   it("embedding queue drains via injected embedFn + sets body_vec", async () => {
-    const p = await createProject(db, { key: "EMB", name: "Emb" });
-    const note = await write(db, {
+    const p = await createProject(S, db, { key: "EMB", name: "Emb" });
+    const note = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Sample note",
@@ -1161,14 +1162,14 @@ describe("botnote service", () => {
     svc.enqueue(note.id, "embedding worker test");
     await svc.drain(5000);
 
-    const fetched = await get(db, note.id);
+    const fetched = await get(S, db, note.id);
     expect(fetched?.bodyVec).not.toBeNull();
     expect(fetched?.bodyVec?.length).toBe(384);
   });
 
   it("embedding backfill queues only entities without vectors", async () => {
-    const p = await createProject(db, { key: "BFI", name: "Backfill" });
-    const missing = await write(db, {
+    const p = await createProject(S, db, { key: "BFI", name: "Backfill" });
+    const missing = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Needs embedding",
@@ -1178,7 +1179,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const alreadyEmbedded = await write(db, {
+    const alreadyEmbedded = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Already embedded",
@@ -1190,7 +1191,7 @@ describe("botnote service", () => {
     });
     await setBodyVec(db, alreadyEmbedded.id, new Array(384).fill(0.2));
 
-    const before = await embeddingCoverage(db);
+    const before = await embeddingCoverage(S, db);
     expect(before.missingCount).toBe(1);
     expect(before.embeddedCount).toBe(1);
 
@@ -1202,15 +1203,15 @@ describe("botnote service", () => {
     expect(queued.enqueued).toBe(1);
     await svc.drain(5000);
 
-    const fetchedMissing = await get(db, missing.id);
-    const fetchedExisting = await get(db, alreadyEmbedded.id);
+    const fetchedMissing = await get(S, db, missing.id);
+    const fetchedExisting = await get(S, db, alreadyEmbedded.id);
     expect(fetchedMissing?.bodyVec?.[0]).toBe(0.4);
     expect(fetchedExisting?.bodyVec?.[0]).toBe(0.2);
   });
 
   it("embedding queue retries on transient failure", async () => {
-    const p = await createProject(db, { key: "RTY", name: "Rty" });
-    const note = await write(db, {
+    const p = await createProject(S, db, { key: "RTY", name: "Rty" });
+    const note = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Retry test",
@@ -1233,12 +1234,12 @@ describe("botnote service", () => {
     svc.enqueue(note.id, "x");
     await svc.drain(5000);
     expect(calls).toBeGreaterThanOrEqual(2);
-    const fetched = await get(db, note.id);
+    const fetched = await get(S, db, note.id);
     expect(fetched?.bodyVec?.length).toBe(384);
   });
 
   it("hybrid search merges BM25 + cosine via RRF", async () => {
-    const p = await createProject(db, { key: "HYB", name: "Hybrid" });
+    const p = await createProject(S, db, { key: "HYB", name: "Hybrid" });
 
     const dim = 384;
     function vec(seed: number): number[] {
@@ -1254,7 +1255,7 @@ describe("botnote service", () => {
       return v.map((c) => c / norm);
     }
 
-    const target = await write(db, {
+    const target = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Esoteric subject zenith",
@@ -1264,7 +1265,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const noise = await write(db, {
+    const noise = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Coffee order",
@@ -1279,8 +1280,7 @@ describe("botnote service", () => {
     await setBodyVec(db, target.id, targetVec);
     await setBodyVec(db, noise.id, vec(99999));
 
-    const hits = await search(
-      db,
+    const hits = await search(S, db,
       { query: "unrelated query", projectId: p.id, limit: 5 },
       { queryEmbedding: targetVec }
     );
@@ -1290,12 +1290,12 @@ describe("botnote service", () => {
   });
 
   it("openingBrief gathers project context", async () => {
-    const p = await createProject(db, {
+    const p = await createProject(S, db, {
       key: "OBR",
       name: "OBR Project",
       agentsMd: "## NEVER push to main"
     });
-    const openTask = await write(db, {
+    const openTask = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Open task A",
@@ -1305,7 +1305,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await write(db, {
+    await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Pinned deployment note",
@@ -1316,7 +1316,7 @@ describe("botnote service", () => {
       metadata: {},
       pinned: true
     });
-    await write(db, {
+    await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Random thought",
@@ -1326,7 +1326,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const brief = await openingBrief(db, { projectId: p.id, recentLimit: 10 });
+    const brief = await openingBrief(S, db, { projectId: p.id, recentLimit: 10 });
     expect(brief.project?.key).toBe("OBR");
     expect(brief.agentsMd).toContain("NEVER push");
     expect(brief.openTasks.length).toBe(1);
@@ -1342,7 +1342,7 @@ describe("botnote service", () => {
   });
 
   it("openingBrief surfaces in_progress tasks first and orders open tasks by urgency", async () => {
-    const p = await createProject(db, { key: "OBR2", name: "OBR2 Project" });
+    const p = await createProject(S, db, { key: "OBR2", name: "OBR2 Project" });
     const base = {
       kind: "task" as const,
       projectId: p.id,
@@ -1351,18 +1351,18 @@ describe("botnote service", () => {
       actorKind: "human" as const,
       metadata: {}
     };
-    const backlog = await write(db, { ...base, title: "Backlog idea", status: "open" });
-    const started = await write(db, { ...base, title: "Started yesterday", status: "in_progress" });
-    const overdue = await write(db, {
+    const backlog = await write(S, db, { ...base, title: "Backlog idea", status: "open" });
+    const started = await write(S, db, { ...base, title: "Started yesterday", status: "in_progress" });
+    const overdue = await write(S, db, {
       ...base,
       title: "Overdue chore",
       status: "open",
       dueAt: new Date("2026-01-05T12:00:00.000Z")
     });
-    const urgent = await write(db, { ...base, title: "Urgent no date", status: "open", priority: "urgent" });
-    await write(db, { ...base, title: "Already done", status: "done" });
+    const urgent = await write(S, db, { ...base, title: "Urgent no date", status: "open", priority: "urgent" });
+    await write(S, db, { ...base, title: "Already done", status: "done" });
 
-    const brief = await openingBrief(db, { projectId: p.id, recentLimit: 10 });
+    const brief = await openingBrief(S, db, { projectId: p.id, recentLimit: 10 });
     const ids = brief.openTasks.map((t) => t.id);
     expect(ids).toEqual([started.id, overdue.id, urgent.id, backlog.id]);
 
@@ -1375,10 +1375,10 @@ describe("botnote service", () => {
   });
 
   it("concurrent writes to one project get distinct consecutive sequence ids", async () => {
-    const p = await createProject(db, { key: "SEQ", name: "Seq Project" });
+    const p = await createProject(S, db, { key: "SEQ", name: "Seq Project" });
     const rows = await Promise.all(
       Array.from({ length: 20 }, (_, i) =>
-        write(db, {
+        write(S, db, {
           kind: i % 2 === 0 ? "task" : "note",
           projectId: p.id,
           title: `Concurrent ${i}`,
@@ -1394,7 +1394,7 @@ describe("botnote service", () => {
     expect(new Set(ids).size).toBe(20);
     expect(ids).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
 
-    const next = await write(db, {
+    const next = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "After the burst",
@@ -1408,12 +1408,12 @@ describe("botnote service", () => {
   });
 
   it("explicit sequence ids advance the counter and duplicates are rejected", async () => {
-    const p = await createProject(db, { key: "EXP", name: "Explicit Seq" });
+    const p = await createProject(S, db, { key: "EXP", name: "Explicit Seq" });
     await db.execute(sql`
       INSERT INTO entities (project_id, kind, title, sequence_id)
       VALUES (${p.id}::uuid, 'task', 'imported', 40)
     `);
-    const after = await write(db, {
+    const after = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "auto after import",
@@ -1434,35 +1434,35 @@ describe("botnote service", () => {
   });
 
   it("update rejects self-parenting and direct parent cycles", async () => {
-    const p = await createProject(db, { key: "PAR", name: "Parents" });
+    const p = await createProject(S, db, { key: "PAR", name: "Parents" });
     const base = { body: "", tags: [], status: "open", actorKind: "human", metadata: {} } as const;
-    const a = await write(db, { kind: "task", projectId: p.id, title: "A", ...base });
-    const b = await write(db, { kind: "task", projectId: p.id, title: "B", parentId: a.id, ...base });
+    const a = await write(S, db, { kind: "task", projectId: p.id, title: "A", ...base });
+    const b = await write(S, db, { kind: "task", projectId: p.id, title: "B", parentId: a.id, ...base });
 
-    await expect(update(db, a.id, { parentId: a.id })).rejects.toMatchObject({
+    await expect(update(S, db, a.id, { parentId: a.id })).rejects.toMatchObject({
       statusCode: 400
     });
-    await expect(update(db, a.id, { parentId: b.id })).rejects.toMatchObject({
+    await expect(update(S, db, a.id, { parentId: b.id })).rejects.toMatchObject({
       statusCode: 400
     });
     await expect(
-      update(db, a.id, { parentId: "00000000-0000-4000-8000-000000000000" })
+      update(S, db, a.id, { parentId: "00000000-0000-4000-8000-000000000000" })
     ).rejects.toMatchObject({ statusCode: 404 });
 
-    const c = await write(db, { kind: "note", projectId: p.id, title: "C", ...base });
-    const moved = await update(db, c.id, { parentId: b.id });
+    const c = await write(S, db, { kind: "note", projectId: p.id, title: "C", ...base });
+    const moved = await update(S, db, c.id, { parentId: b.id });
     expect(moved.parentId).toBe(b.id);
-    expect((await get(db, a.id))?.parentId).toBeNull();
+    expect((await get(S, db, a.id))?.parentId).toBeNull();
   });
 
   it("migration 0027 clears self-parent rows and self edges and is idempotent", async () => {
-    const p = await createProject(db, { key: "SLF", name: "Self" });
+    const p = await createProject(S, db, { key: "SLF", name: "Self" });
     const base = { body: "", tags: [], status: "open", actorKind: "human", metadata: {} } as const;
-    const legacy = await write(db, { kind: "note", projectId: p.id, title: "legacy", ...base });
-    const child = await write(db, { kind: "note", projectId: p.id, title: "child", parentId: legacy.id, ...base });
+    const legacy = await write(S, db, { kind: "note", projectId: p.id, title: "legacy", ...base });
+    const child = await write(S, db, { kind: "note", projectId: p.id, title: "child", parentId: legacy.id, ...base });
     await db.execute(sql`UPDATE entities SET parent_id = id WHERE id = ${legacy.id}::uuid`);
     await db.execute(sql`INSERT INTO edges (from_id, to_id, kind) VALUES (${legacy.id}::uuid, ${legacy.id}::uuid, 'parent_of')`);
-    expect((await listChildren(db, legacy.id)).map((e) => e.id)).toContain(legacy.id);
+    expect((await listChildren(S, db, legacy.id)).map((e) => e.id)).toContain(legacy.id);
 
     const migration = readFileSync(
       new URL("../src/db/migrations/0027_self_parent_repair.sql", import.meta.url),
@@ -1470,17 +1470,17 @@ describe("botnote service", () => {
     );
     for (let pass = 0; pass < 2; pass++) await db.execute(sql.raw(migration));
 
-    expect((await get(db, legacy.id))?.parentId).toBeNull();
-    expect((await listChildren(db, legacy.id)).map((e) => e.id)).toEqual([child.id]);
+    expect((await get(S, db, legacy.id))?.parentId).toBeNull();
+    expect((await listChildren(S, db, legacy.id)).map((e) => e.id)).toEqual([child.id]);
     const selfEdges = await db.execute(sql`SELECT count(*)::int AS n FROM edges WHERE from_id = to_id`);
     expect((selfEdges.rows[0] as { n: number }).n).toBe(0);
-    const outgoing = await getLinks(db, { id: legacy.id, kind: null, direction: "outgoing" });
+    const outgoing = await getLinks(S, db, { id: legacy.id, kind: null, direction: "outgoing" });
     expect(outgoing.map((l) => l.entity.id)).toEqual([child.id]);
   });
 
   it("addComment appends a worklog entry that inherits the project but no sequence id", async () => {
-    const p = await createProject(db, { key: "CMT", name: "CMT Project" });
-    const task = await write(db, {
+    const p = await createProject(S, db, { key: "CMT", name: "CMT Project" });
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Task with worklog",
@@ -1491,7 +1491,7 @@ describe("botnote service", () => {
       metadata: {}
     });
 
-    const c1 = await addComment(db, task.id, {
+    const c1 = await addComment(S, db, task.id, {
       body: "Implemented the parser, tests green.",
       actorKind: "agent",
       metadata: {},
@@ -1503,7 +1503,7 @@ describe("botnote service", () => {
     expect(c1.sequenceId).toBeNull();
 
     // idempotent re-write returns the same row
-    const again = await addComment(db, task.id, {
+    const again = await addComment(S, db, task.id, {
       body: "Implemented the parser, tests green.",
       actorKind: "agent",
       metadata: {},
@@ -1511,27 +1511,27 @@ describe("botnote service", () => {
     });
     expect(again.id).toBe(c1.id);
 
-    await addComment(db, task.id, {
+    await addComment(S, db, task.id, {
       body: "Blocked on the flaky CI runner.",
       actorKind: "agent",
       metadata: {}
     });
-    const all = await listComments(db, task.id);
+    const all = await listComments(S, db, task.id);
     expect(all.map((c) => c.body)).toEqual([
       "Implemented the parser, tests green.",
       "Blocked on the flaky CI runner."
     ]);
 
     // append-only: comments reject updates, nesting is refused
-    await expect(update(db, c1.id, { body: "rewritten" })).rejects.toThrow(/append-only/);
+    await expect(update(S, db, c1.id, { body: "rewritten" })).rejects.toThrow(/append-only/);
     await expect(
-      addComment(db, c1.id, { body: "nested", actorKind: "agent", metadata: {} })
+      addComment(S, db, c1.id, { body: "nested", actorKind: "agent", metadata: {} })
     ).rejects.toThrow(/nested/);
   });
 
   it("openingBrief surfaces the latest worklog comment for in_progress tasks", async () => {
-    const p = await createProject(db, { key: "CMT2", name: "CMT2 Project" });
-    const task = await write(db, {
+    const p = await createProject(S, db, { key: "CMT2", name: "CMT2 Project" });
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Resumable task",
@@ -1541,14 +1541,14 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await addComment(db, task.id, { body: "First log.", actorKind: "agent", metadata: {} });
-    await addComment(db, task.id, {
+    await addComment(S, db, task.id, { body: "First log.", actorKind: "agent", metadata: {} });
+    await addComment(S, db, task.id, {
       body: "Second log — stopped at the REST layer.",
       actorKind: "agent",
       metadata: {}
     });
 
-    const brief = await openingBrief(db, { projectId: p.id, recentLimit: 10 });
+    const brief = await openingBrief(S, db, { projectId: p.id, recentLimit: 10 });
     expect(brief.latestComments.length).toBe(1);
     expect(brief.latestComments[0]?.body).toContain("Second log");
 
@@ -1558,8 +1558,8 @@ describe("botnote service", () => {
   });
 
   it("formatOpeningBrief truncates oversized pinned notes with a fetch hint", async () => {
-    const p = await createProject(db, { key: "OBR3", name: "OBR3 Project" });
-    await write(db, {
+    const p = await createProject(S, db, { key: "OBR3", name: "OBR3 Project" });
+    await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Huge pinned doc",
@@ -1570,7 +1570,7 @@ describe("botnote service", () => {
       metadata: {},
       pinned: true
     });
-    const brief = await openingBrief(db, { projectId: p.id, recentLimit: 5 });
+    const brief = await openingBrief(S, db, { projectId: p.id, recentLimit: 5 });
     const formatted = formatOpeningBrief(brief);
     expect(formatted).toContain("truncated — fetch");
     // 2000-char per-note cap plus surrounding sections; the raw 5000-char body must not appear.
@@ -1611,38 +1611,38 @@ describe("botnote service", () => {
   // workspace settings service tests
 
   it("getWorkspaceSettings lazy-creates default row with UTC timezone", async () => {
-    const settings = await getWorkspaceSettings(db);
+    const settings = await getWorkspaceSettings(S, db);
     expect(settings.timezone).toBe("UTC");
     expect(settings.id).toBe("default");
   });
 
   it("getWorkspaceSettings is idempotent (lazy-create does not duplicate rows)", async () => {
-    const first = await getWorkspaceSettings(db);
-    const second = await getWorkspaceSettings(db);
+    const first = await getWorkspaceSettings(S, db);
+    const second = await getWorkspaceSettings(S, db);
     expect(first.id).toBe(second.id);
     expect(first.timezone).toBe(second.timezone);
   });
 
   it("updateWorkspaceSettings persists a valid IANA timezone", async () => {
-    const updated = await updateWorkspaceSettings(db, { timezone: "America/New_York" });
+    const updated = await updateWorkspaceSettings(S, db, { timezone: "America/New_York" });
     expect(updated.timezone).toBe("America/New_York");
 
-    const fetched = await getWorkspaceSettings(db);
+    const fetched = await getWorkspaceSettings(S, db);
     expect(fetched.timezone).toBe("America/New_York");
   });
 
   it("updateWorkspaceSettings rejects an invalid timezone string", async () => {
     await expect(
-      updateWorkspaceSettings(db, { timezone: "Not/Real_TZ" })
+      updateWorkspaceSettings(S, db, { timezone: "Not/Real_TZ" })
     ).rejects.toThrow("Invalid IANA timezone");
   });
 
   it("createRecurrenceRule with no input.timezone adopts the workspace timezone", async () => {
-    await updateWorkspaceSettings(db, { timezone: "America/Chicago" });
+    await updateWorkspaceSettings(S, db, { timezone: "America/Chicago" });
 
-    const p = await createProject(db, { key: "WSTZ", name: "Workspace TZ" });
+    const p = await createProject(S, db, { key: "WSTZ", name: "Workspace TZ" });
     const dueAt = new Date("2026-06-23T12:00:00.000Z");
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Workspace TZ task",
@@ -1654,7 +1654,7 @@ describe("botnote service", () => {
       dueAt
     });
 
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       allDay: true,
@@ -1670,10 +1670,10 @@ describe("botnote service", () => {
   // -----------------------------------------------------------------------
 
   it("this-only title edit does not propagate to next occurrence", async () => {
-    const p = await createProject(db, { key: "SC1", name: "Scope1" });
+    const p = await createProject(S, db, { key: "SC1", name: "Scope1" });
     const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Original title",
@@ -1684,7 +1684,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -1693,20 +1693,20 @@ describe("botnote service", () => {
     });
 
     // Edit title with scope='this'
-    await update(db, task.id, { title: "Changed title", recurrenceScope: "this" });
+    await update(S, db, task.id, { title: "Changed title", recurrenceScope: "this" });
 
     // Complete to advance
-    await update(db, task.id, { status: "done" });
+    await update(S, db, task.id, { status: "done" });
 
-    const details = await getRecurrenceForTask(db, task.id);
+    const details = await getRecurrenceForTask(S, db, task.id);
     expect(details?.currentOccurrence?.title).toBe("Original title");
   });
 
   it("going-forward edit propagates title to next occurrence", async () => {
-    const p = await createProject(db, { key: "SC2", name: "Scope2" });
+    const p = await createProject(S, db, { key: "SC2", name: "Scope2" });
     const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Original title",
@@ -1717,7 +1717,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -1726,18 +1726,18 @@ describe("botnote service", () => {
     });
 
     // Edit title with scope='future' (explicit)
-    await update(db, task.id, { title: "New title", recurrenceScope: "future" });
-    await update(db, task.id, { status: "done" });
+    await update(S, db, task.id, { title: "New title", recurrenceScope: "future" });
+    await update(S, db, task.id, { status: "done" });
 
-    const details = await getRecurrenceForTask(db, task.id);
+    const details = await getRecurrenceForTask(S, db, task.id);
     expect(details?.currentOccurrence?.title).toBe("New title");
   });
 
   it("baseline merge: earliest-wins — two this-only title edits preserve original", async () => {
-    const p = await createProject(db, { key: "SC3", name: "Scope3" });
+    const p = await createProject(S, db, { key: "SC3", name: "Scope3" });
     const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Original title",
@@ -1748,7 +1748,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -1756,19 +1756,19 @@ describe("botnote service", () => {
       anchor: "scheduled"
     });
 
-    await update(db, task.id, { title: "First change", recurrenceScope: "this" });
-    await update(db, task.id, { title: "Second change", recurrenceScope: "this" });
-    await update(db, task.id, { status: "done" });
+    await update(S, db, task.id, { title: "First change", recurrenceScope: "this" });
+    await update(S, db, task.id, { title: "Second change", recurrenceScope: "this" });
+    await update(S, db, task.id, { status: "done" });
 
-    const details = await getRecurrenceForTask(db, task.id);
+    const details = await getRecurrenceForTask(S, db, task.id);
     expect(details?.currentOccurrence?.title).toBe("Original title");
   });
 
   it("mixed: this-only title + going-forward priority", async () => {
-    const p = await createProject(db, { key: "SC4", name: "Scope4" });
+    const p = await createProject(S, db, { key: "SC4", name: "Scope4" });
     const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Original title",
@@ -1780,7 +1780,7 @@ describe("botnote service", () => {
       dueAt,
       priority: "low"
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -1789,20 +1789,20 @@ describe("botnote service", () => {
     });
 
     // Edit title this-only, then priority going-forward (two separate calls)
-    await update(db, task.id, { title: "Changed title", recurrenceScope: "this" });
-    await update(db, task.id, { priority: "high", recurrenceScope: "future" });
-    await update(db, task.id, { status: "done" });
+    await update(S, db, task.id, { title: "Changed title", recurrenceScope: "this" });
+    await update(S, db, task.id, { priority: "high", recurrenceScope: "future" });
+    await update(S, db, task.id, { status: "done" });
 
-    const details = await getRecurrenceForTask(db, task.id);
+    const details = await getRecurrenceForTask(S, db, task.id);
     expect(details?.currentOccurrence?.title).toBe("Original title");
     expect(details?.currentOccurrence?.priority).toBe("high");
   });
 
   it("exception row has correct shape for this-only body edit", async () => {
-    const p = await createProject(db, { key: "SC5", name: "Scope5" });
+    const p = await createProject(S, db, { key: "SC5", name: "Scope5" });
     const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Task",
@@ -1813,7 +1813,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -1821,7 +1821,7 @@ describe("botnote service", () => {
       anchor: "scheduled"
     });
 
-    await update(db, task.id, { body: "changed body", recurrenceScope: "this" });
+    await update(S, db, task.id, { body: "changed body", recurrenceScope: "this" });
 
     const exceptions = await db
       .select()
@@ -1846,10 +1846,10 @@ describe("botnote service", () => {
   });
 
   it("going-forward edit clears prior this-only baseline for that field", async () => {
-    const p = await createProject(db, { key: "SC6", name: "Scope6" });
+    const p = await createProject(S, db, { key: "SC6", name: "Scope6" });
     const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Original title",
@@ -1860,7 +1860,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -1869,9 +1869,9 @@ describe("botnote service", () => {
     });
 
     // First set a this-only baseline for title
-    await update(db, task.id, { title: "This-only change", recurrenceScope: "this" });
+    await update(S, db, task.id, { title: "This-only change", recurrenceScope: "this" });
     // Then override going-forward — should clear the baseline
-    await update(db, task.id, { title: "Going-forward change", recurrenceScope: "future" });
+    await update(S, db, task.id, { title: "Going-forward change", recurrenceScope: "future" });
 
     // No modified exception should exist for this field now
     const exceptions = await db
@@ -1891,20 +1891,20 @@ describe("botnote service", () => {
     }
 
     // Complete and verify next occurrence gets going-forward value
-    await update(db, task.id, { status: "done" });
-    const details = await getRecurrenceForTask(db, task.id);
+    await update(S, db, task.id, { status: "done" });
+    const details = await getRecurrenceForTask(S, db, task.id);
     expect(details?.currentOccurrence?.title).toBe("Going-forward change");
   });
 
   it("materializeScheduledRecurrences respects baseline for scheduled-anchor series", async () => {
-    const p = await createProject(db, { key: "SC7", name: "Scope7" });
+    const p = await createProject(S, db, { key: "SC7", name: "Scope7" });
     const todayStartUTC = new Date();
     todayStartUTC.setUTCHours(0, 0, 0, 0);
     const twoDaysAgo = new Date(todayStartUTC);
     twoDaysAgo.setUTCDate(twoDaysAgo.getUTCDate() - 2);
     twoDaysAgo.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Series title",
@@ -1915,7 +1915,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: twoDaysAgo
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -1924,7 +1924,7 @@ describe("botnote service", () => {
     });
 
     // Mark current occurrence as this-only title change
-    await update(db, task.id, { title: "Occurrence-only title", recurrenceScope: "this" });
+    await update(S, db, task.id, { title: "Occurrence-only title", recurrenceScope: "this" });
 
     // Materialize upcoming occurrences
     const upTo = new Date();
@@ -1942,8 +1942,8 @@ describe("botnote service", () => {
   });
 
   it("recurrenceScope is a no-op for non-recurring entities", async () => {
-    const p = await createProject(db, { key: "SC8", name: "Scope8" });
-    const task = await write(db, {
+    const p = await createProject(S, db, { key: "SC8", name: "Scope8" });
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Plain task",
@@ -1955,7 +1955,7 @@ describe("botnote service", () => {
     });
 
     // Update with recurrenceScope should work fine and update the field
-    const updated = await update(db, task.id, {
+    const updated = await update(S, db, task.id, {
       title: "Updated title",
       recurrenceScope: "this"
     });
@@ -1970,10 +1970,10 @@ describe("botnote service", () => {
   });
 
   it("skip after this-only edit: next occurrence has original series field", async () => {
-    const p = await createProject(db, { key: "SC9", name: "Scope9" });
+    const p = await createProject(S, db, { key: "SC9", name: "Scope9" });
     const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Original title",
@@ -1984,7 +1984,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -1993,20 +1993,20 @@ describe("botnote service", () => {
     });
 
     // Edit title this-only, then skip
-    await update(db, task.id, { title: "This-only title", recurrenceScope: "this" });
-    const { next } = await skipOccurrence(db, task.id, { actorKind: "human" });
+    await update(S, db, task.id, { title: "This-only title", recurrenceScope: "this" });
+    const { next } = await skipOccurrence(S, db, task.id, { actorKind: "human" });
 
     expect(next?.title).toBe("Original title");
   });
 
   it("all-day recurrence under non-UTC workspace tz computes occurrence on correct local calendar day", async () => {
     // Set workspace to America/New_York (UTC-4 in summer).
-    await updateWorkspaceSettings(db, { timezone: "America/New_York" });
+    await updateWorkspaceSettings(S, db, { timezone: "America/New_York" });
 
-    const p = await createProject(db, { key: "NYTK", name: "NY TZ Recurrence" });
+    const p = await createProject(S, db, { key: "NYTK", name: "NY TZ Recurrence" });
     // dtstart noon UTC = noon UTC on June 23, which is June 23 08:00 EDT — calendar day June 23 in NY.
     const dueAt = new Date("2026-06-23T12:00:00.000Z");
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "NY daily task",
@@ -2018,7 +2018,7 @@ describe("botnote service", () => {
       dueAt
     });
 
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       allDay: true,
@@ -2034,10 +2034,10 @@ describe("botnote service", () => {
   // ---------------------------------------------------------------------------
 
   it("virtualOccurrences is [] when includeVirtualRecurrences is false (hard boundary)", async () => {
-    const p = await createProject(db, { key: "VRT0", name: "Virtual0" });
+    const p = await createProject(S, db, { key: "VRT0", name: "Virtual0" });
     const dueAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Daily recurring",
@@ -2048,7 +2048,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2061,7 +2061,7 @@ describe("botnote service", () => {
     const to = new Date(from);
     to.setUTCDate(to.getUTCDate() + 14);
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2073,13 +2073,13 @@ describe("botnote service", () => {
   });
 
   it("daily rule fills window; materialized occurrence subtracted; virtuals have correct shape", async () => {
-    const p = await createProject(db, { key: "VRT1", name: "Virtual1" });
+    const p = await createProject(S, db, { key: "VRT1", name: "Virtual1" });
     // Task due tomorrow (so window starts after now but rule is already set up)
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Virtual daily",
@@ -2090,7 +2090,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2103,7 +2103,7 @@ describe("botnote service", () => {
     const to = new Date(from);
     to.setUTCDate(to.getUTCDate() + 5);
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2137,12 +2137,12 @@ describe("botnote service", () => {
   });
 
   it("virtual id format is virtual:<ruleId>:<iso>", async () => {
-    const p = await createProject(db, { key: "VRT2", name: "Virtual2" });
+    const p = await createProject(S, db, { key: "VRT2", name: "Virtual2" });
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "ID check",
@@ -2153,7 +2153,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2165,7 +2165,7 @@ describe("botnote service", () => {
     const to = new Date(from);
     to.setUTCDate(to.getUTCDate() + 5);
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2180,12 +2180,12 @@ describe("botnote service", () => {
   });
 
   it("skipped exception blocks corresponding virtual occurrence", async () => {
-    const p = await createProject(db, { key: "VRT3", name: "Virtual3" });
+    const p = await createProject(S, db, { key: "VRT3", name: "Virtual3" });
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Skip test",
@@ -2196,7 +2196,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2222,7 +2222,7 @@ describe("botnote service", () => {
     const to = new Date(from);
     to.setUTCDate(to.getUTCDate() + 7);
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2239,12 +2239,12 @@ describe("botnote service", () => {
 
   it("all-day + non-UTC timezone → dueAt is noon UTC of correct local calendar day", async () => {
     // Set workspace to America/New_York (UTC-4 summer)
-    await updateWorkspaceSettings(db, { timezone: "America/New_York" });
+    await updateWorkspaceSettings(S, db, { timezone: "America/New_York" });
 
-    const p = await createProject(db, { key: "VRT4", name: "Virtual4" });
+    const p = await createProject(S, db, { key: "VRT4", name: "Virtual4" });
     // dueAt: noon UTC June 23 = 08:00 EDT = calendar day June 23 in NY
     const dueAt = new Date("2026-06-23T12:00:00.000Z");
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "NY tz virtual",
@@ -2255,7 +2255,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       allDay: true,
@@ -2270,7 +2270,7 @@ describe("botnote service", () => {
     // If today > 2026-06-30, skip test (won't have future virtuals)
     if (from.getTime() >= to.getTime()) return;
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2288,12 +2288,12 @@ describe("botnote service", () => {
   });
 
   it("COUNT-bounded rule → no virtuals beyond count", async () => {
-    const p = await createProject(db, { key: "VRT5", name: "Virtual5" });
+    const p = await createProject(S, db, { key: "VRT5", name: "Virtual5" });
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Count bounded",
@@ -2304,7 +2304,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       count: 3,
@@ -2318,7 +2318,7 @@ describe("botnote service", () => {
     const to = new Date(from);
     to.setUTCDate(to.getUTCDate() + 30);
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2333,12 +2333,12 @@ describe("botnote service", () => {
   });
 
   it("stopped/disabled rule → no virtuals", async () => {
-    const p = await createProject(db, { key: "VRT6", name: "Virtual6" });
+    const p = await createProject(S, db, { key: "VRT6", name: "Virtual6" });
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Stopped rule",
@@ -2349,7 +2349,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2358,13 +2358,13 @@ describe("botnote service", () => {
     });
 
     // Stop the rule
-    await stopRecurrence(db, rule.id);
+    await stopRecurrence(S, db, rule.id);
 
     const from = new Date();
     const to = new Date(from);
     to.setUTCDate(to.getUTCDate() + 7);
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2377,12 +2377,12 @@ describe("botnote service", () => {
   });
 
   it("completion-anchor rule → no virtuals (anchor must be 'scheduled')", async () => {
-    const p = await createProject(db, { key: "VRT7", name: "Virtual7" });
+    const p = await createProject(S, db, { key: "VRT7", name: "Virtual7" });
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Completion anchor task",
@@ -2393,7 +2393,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2405,7 +2405,7 @@ describe("botnote service", () => {
     const to = new Date(from);
     to.setUTCDate(to.getUTCDate() + 7);
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2418,14 +2418,14 @@ describe("botnote service", () => {
   });
 
   it("project filter restricts virtuals to matching projectId", async () => {
-    const p1 = await createProject(db, { key: "VRP1", name: "Virtual P1" });
-    const p2 = await createProject(db, { key: "VRP2", name: "Virtual P2" });
+    const p1 = await createProject(S, db, { key: "VRP1", name: "Virtual P1" });
+    const p2 = await createProject(S, db, { key: "VRP2", name: "Virtual P2" });
 
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(12, 0, 0, 0);
 
-    const task1 = await write(db, {
+    const task1 = await write(S, db, {
       kind: "task",
       projectId: p1.id,
       title: "P1 daily",
@@ -2436,7 +2436,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    await createRecurrenceRule(db, task1.id, {
+    await createRecurrenceRule(S, db, task1.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2444,7 +2444,7 @@ describe("botnote service", () => {
       anchor: "scheduled"
     });
 
-    const task2 = await write(db, {
+    const task2 = await write(S, db, {
       kind: "task",
       projectId: p2.id,
       title: "P2 daily",
@@ -2455,7 +2455,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    await createRecurrenceRule(db, task2.id, {
+    await createRecurrenceRule(S, db, task2.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2468,7 +2468,7 @@ describe("botnote service", () => {
     to.setUTCDate(to.getUTCDate() + 5);
 
     // Filter to p1 only
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p1.id],
@@ -2484,12 +2484,12 @@ describe("botnote service", () => {
   });
 
   it("virtual dueAt is within [windowStart, to); window clamped to now", async () => {
-    const p = await createProject(db, { key: "VRT8", name: "Virtual8" });
+    const p = await createProject(S, db, { key: "VRT8", name: "Virtual8" });
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Horizon test",
@@ -2500,7 +2500,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2513,7 +2513,7 @@ describe("botnote service", () => {
     to.setUTCDate(to.getUTCDate() + 7);
     const now = Date.now();
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2530,12 +2530,12 @@ describe("botnote service", () => {
   });
 
   it("CORRECTION 1: after going-forward title edit, virtual title reflects NEW title", async () => {
-    const p = await createProject(db, { key: "VRC1", name: "VirtualCorr1" });
+    const p = await createProject(S, db, { key: "VRC1", name: "VirtualCorr1" });
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Original title",
@@ -2546,7 +2546,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2555,13 +2555,13 @@ describe("botnote service", () => {
     });
 
     // Going-forward title edit (no recurrenceScope = going-forward by default)
-    await update(db, task.id, { title: "New series title", recurrenceScope: "future" });
+    await update(S, db, task.id, { title: "New series title", recurrenceScope: "future" });
 
     const from = new Date();
     const to = new Date(from);
     to.setUTCDate(to.getUTCDate() + 5);
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2578,12 +2578,12 @@ describe("botnote service", () => {
   });
 
   it("CORRECTION 1: after this-only title edit, virtual title reflects ORIGINAL (baseline) title", async () => {
-    const p = await createProject(db, { key: "VRC2", name: "VirtualCorr2" });
+    const p = await createProject(S, db, { key: "VRC2", name: "VirtualCorr2" });
     const tomorrow = new Date();
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(12, 0, 0, 0);
 
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Original title",
@@ -2594,7 +2594,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt: tomorrow
     });
-    await createRecurrenceRule(db, task.id, {
+    await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2603,13 +2603,13 @@ describe("botnote service", () => {
     });
 
     // This-only edit: title on current occurrence should not propagate to virtuals
-    await update(db, task.id, { title: "This-occurrence-only title", recurrenceScope: "this" });
+    await update(S, db, task.id, { title: "This-occurrence-only title", recurrenceScope: "this" });
 
     const from = new Date();
     const to = new Date(from);
     to.setUTCDate(to.getUTCDate() + 5);
 
-    const result = await tasksRange(db, {
+    const result = await tasksRange(S, db, {
       from,
       to,
       projectIds: [p.id],
@@ -2626,10 +2626,10 @@ describe("botnote service", () => {
   });
 
   it("splitRecurrence forks a scheduled series at the current occurrence", async () => {
-    const p = await createProject(db, { key: "SPL", name: "Split Scheduled" });
+    const p = await createProject(S, db, { key: "SPL", name: "Split Scheduled" });
     const dueAt = new Date();
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Series task",
@@ -2641,7 +2641,7 @@ describe("botnote service", () => {
       dueAt,
       priority: "high"
     });
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2649,7 +2649,7 @@ describe("botnote service", () => {
       anchor: "scheduled"
     });
 
-    const newRule = await splitRecurrence(db, rule.id, { preset: "weekly", interval: 1 });
+    const newRule = await splitRecurrence(S, db, rule.id, { preset: "weekly", interval: 1 });
 
     // Old rule is frozen with UNTIL at the fork; disabled but kept as history.
     const [oldRow] = await db
@@ -2695,16 +2695,16 @@ describe("botnote service", () => {
     expect(createdAgain).toHaveLength(0);
 
     // The original occurrence still routes to the (disabled) old rule.
-    const fromCurrent = await getRecurrenceForTask(db, task.id);
+    const fromCurrent = await getRecurrenceForTask(S, db, task.id);
     expect(fromCurrent?.rule.id).toBe(rule.id);
   });
 
   it("splitRecurrence with completion anchor re-homes the current occurrence", async () => {
-    const p = await createProject(db, { key: "SPC", name: "Split Completion" });
+    const p = await createProject(S, db, { key: "SPC", name: "Split Completion" });
     const dueAt = new Date();
     dueAt.setUTCDate(dueAt.getUTCDate() - 1);
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Maintenance",
@@ -2715,7 +2715,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -2723,7 +2723,7 @@ describe("botnote service", () => {
       anchor: "scheduled"
     });
 
-    const newRule = await splitRecurrence(db, rule.id, {
+    const newRule = await splitRecurrence(S, db, rule.id, {
       preset: "weekly",
       interval: 1,
       anchor: "completion"
@@ -2742,12 +2742,12 @@ describe("botnote service", () => {
     expect(oldRow.currentOccurrenceId).toBeNull();
 
     // The current occurrence now routes to the new rule.
-    const rehomed = await getRecurrenceForTask(db, task.id);
+    const rehomed = await getRecurrenceForTask(S, db, task.id);
     expect(rehomed?.rule.id).toBe(newRule.id);
 
     // Completing it advances the NEW (weekly, completion) cadence.
-    await update(db, task.id, { status: "done" });
-    const details = await getRecurrenceForTask(db, task.id);
+    await update(S, db, task.id, { status: "done" });
+    const details = await getRecurrenceForTask(S, db, task.id);
     expect(details?.rule.id).toBe(newRule.id);
     expect(details?.rule.currentOccurrenceId).not.toBe(task.id);
     expect(details?.currentOccurrence?.status).toBe("open");
@@ -2757,13 +2757,13 @@ describe("botnote service", () => {
 
   it("splitRecurrence rejects unknown and disabled rules", async () => {
     await expect(
-      splitRecurrence(db, "00000000-0000-0000-0000-000000000000", { preset: "daily" })
+      splitRecurrence(S, db, "00000000-0000-0000-0000-000000000000", { preset: "daily" })
     ).rejects.toThrow(/not found/);
 
-    const p = await createProject(db, { key: "SPD", name: "Split Disabled" });
+    const p = await createProject(S, db, { key: "SPD", name: "Split Disabled" });
     const dueAt = new Date();
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Already stopped",
@@ -2774,23 +2774,23 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
       allDay: true,
       anchor: "scheduled"
     });
-    await stopRecurrence(db, rule.id);
-    await expect(splitRecurrence(db, rule.id, { preset: "weekly" })).rejects.toThrow(/active/);
+    await stopRecurrence(S, db, rule.id);
+    await expect(splitRecurrence(S, db, rule.id, { preset: "weekly" })).rejects.toThrow(/active/);
   });
 
   // ---------------------------------------------------------------------------
   // listTags service tests
 
   it("listTags returns distinct tags ordered by count desc then tag asc", async () => {
-    const p = await createProject(db, { key: "LTAG", name: "List Tags" });
-    await write(db, {
+    const p = await createProject(S, db, { key: "LTAG", name: "List Tags" });
+    await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Task 1",
@@ -2800,7 +2800,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await write(db, {
+    await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Task 2",
@@ -2811,7 +2811,7 @@ describe("botnote service", () => {
       metadata: {}
     });
 
-    const tags = await listTags(db, { projectId: p.id });
+    const tags = await listTags(S, db, { projectId: p.id });
     // alpha appears twice, beta and gamma once
     expect(tags[0]?.tag).toBe("alpha");
     expect(tags[0]?.count).toBe(2);
@@ -2822,9 +2822,9 @@ describe("botnote service", () => {
   });
 
   it("listTags scopes to projectId when provided", async () => {
-    const p1 = await createProject(db, { key: "TLP1", name: "Tags Project 1" });
-    const p2 = await createProject(db, { key: "TLP2", name: "Tags Project 2" });
-    await write(db, {
+    const p1 = await createProject(S, db, { key: "TLP1", name: "Tags Project 1" });
+    const p2 = await createProject(S, db, { key: "TLP2", name: "Tags Project 2" });
+    await write(S, db, {
       kind: "note",
       projectId: p1.id,
       title: "P1 note",
@@ -2834,7 +2834,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await write(db, {
+    await write(S, db, {
       kind: "note",
       projectId: p2.id,
       title: "P2 note",
@@ -2845,18 +2845,18 @@ describe("botnote service", () => {
       metadata: {}
     });
 
-    const tagsP1 = await listTags(db, { projectId: p1.id });
+    const tagsP1 = await listTags(S, db, { projectId: p1.id });
     expect(tagsP1.map((t) => t.tag)).toEqual(["p1-only"]);
 
-    const tagsAll = await listTags(db, { projectId: null });
+    const tagsAll = await listTags(S, db, { projectId: null });
     const tagNames = tagsAll.map((t) => t.tag);
     expect(tagNames).toContain("p1-only");
     expect(tagNames).toContain("p2-only");
   });
 
   it("listTags returns empty array when no tags exist", async () => {
-    const p = await createProject(db, { key: "TLZ", name: "Tags Zero" });
-    await write(db, {
+    const p = await createProject(S, db, { key: "TLZ", name: "Tags Zero" });
+    await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "No tags task",
@@ -2866,7 +2866,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const tags = await listTags(db, { projectId: p.id });
+    const tags = await listTags(S, db, { projectId: p.id });
     expect(tags).toEqual([]);
   });
 
@@ -2874,8 +2874,8 @@ describe("botnote service", () => {
   // getLinks service tests
 
   it("getLinks returns outgoing edges correctly", async () => {
-    const p = await createProject(db, { key: "GLO", name: "Get Links Outgoing" });
-    const taskA = await write(db, {
+    const p = await createProject(S, db, { key: "GLO", name: "Get Links Outgoing" });
+    const taskA = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Task A",
@@ -2885,7 +2885,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const taskB = await write(db, {
+    const taskB = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Task B",
@@ -2895,21 +2895,21 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await link(db, { fromId: taskA.id, toId: taskB.id, kind: "blocks" });
+    await link(S, db, { fromId: taskA.id, toId: taskB.id, kind: "blocks" });
 
-    const outgoing = await getLinks(db, { id: taskA.id, kind: null, direction: "outgoing" });
+    const outgoing = await getLinks(S, db, { id: taskA.id, kind: null, direction: "outgoing" });
     expect(outgoing).toHaveLength(1);
     expect(outgoing[0]?.kind).toBe("blocks");
     expect(outgoing[0]?.direction).toBe("outgoing");
     expect(outgoing[0]?.entity.id).toBe(taskB.id);
 
-    const incoming = await getLinks(db, { id: taskA.id, kind: null, direction: "incoming" });
+    const incoming = await getLinks(S, db, { id: taskA.id, kind: null, direction: "incoming" });
     expect(incoming).toHaveLength(0);
   });
 
   it("getLinks returns incoming edges correctly", async () => {
-    const p = await createProject(db, { key: "GLI", name: "Get Links Incoming" });
-    const taskA = await write(db, {
+    const p = await createProject(S, db, { key: "GLI", name: "Get Links Incoming" });
+    const taskA = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Blocker",
@@ -2919,7 +2919,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const taskB = await write(db, {
+    const taskB = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Blocked",
@@ -2929,9 +2929,9 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await link(db, { fromId: taskA.id, toId: taskB.id, kind: "references" });
+    await link(S, db, { fromId: taskA.id, toId: taskB.id, kind: "references" });
 
-    const incoming = await getLinks(db, { id: taskB.id, kind: null, direction: "incoming" });
+    const incoming = await getLinks(S, db, { id: taskB.id, kind: null, direction: "incoming" });
     expect(incoming).toHaveLength(1);
     expect(incoming[0]?.kind).toBe("references");
     expect(incoming[0]?.direction).toBe("incoming");
@@ -2939,8 +2939,8 @@ describe("botnote service", () => {
   });
 
   it("getLinks returns both directions and supports kind filter", async () => {
-    const p = await createProject(db, { key: "GLB", name: "Get Links Both" });
-    const hub = await write(db, {
+    const p = await createProject(S, db, { key: "GLB", name: "Get Links Both" });
+    const hub = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Hub task",
@@ -2950,7 +2950,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const child = await write(db, {
+    const child = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Child note",
@@ -2960,7 +2960,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    const ref = await write(db, {
+    const ref = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Ref note",
@@ -2970,26 +2970,26 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await link(db, { fromId: hub.id, toId: child.id, kind: "parent_of" });
-    await link(db, { fromId: ref.id, toId: hub.id, kind: "references" });
+    await link(S, db, { fromId: hub.id, toId: child.id, kind: "parent_of" });
+    await link(S, db, { fromId: ref.id, toId: hub.id, kind: "references" });
 
-    const both = await getLinks(db, { id: hub.id, kind: null, direction: "both" });
+    const both = await getLinks(S, db, { id: hub.id, kind: null, direction: "both" });
     expect(both.length).toBe(2);
     const directions = both.map((l) => l.direction).sort();
     expect(directions).toEqual(["incoming", "outgoing"]);
 
     // Filter by kind=parent_of → only outgoing
-    const filtered = await getLinks(db, { id: hub.id, kind: "parent_of", direction: "both" });
+    const filtered = await getLinks(S, db, { id: hub.id, kind: "parent_of", direction: "both" });
     expect(filtered).toHaveLength(1);
     expect(filtered[0]?.kind).toBe("parent_of");
     expect(filtered[0]?.direction).toBe("outgoing");
   });
 
   it("splitRecurrence rolls back when the new cadence has no occurrence after the fork", async () => {
-    const p = await createProject(db, { key: "SPN", name: "Split No Occurrence" });
+    const p = await createProject(S, db, { key: "SPN", name: "Split No Occurrence" });
     const dueAt = new Date();
     dueAt.setUTCHours(12, 0, 0, 0);
-    const task = await write(db, {
+    const task = await write(S, db, {
       kind: "task",
       projectId: p.id,
       title: "Bounded split",
@@ -3000,7 +3000,7 @@ describe("botnote service", () => {
       metadata: {},
       dueAt
     });
-    const rule = await createRecurrenceRule(db, task.id, {
+    const rule = await createRecurrenceRule(S, db, task.id, {
       preset: "daily",
       interval: 1,
       timezone: "UTC",
@@ -3010,7 +3010,7 @@ describe("botnote service", () => {
 
     const beforeFork = new Date(dueAt.getTime() - 7 * 24 * 60 * 60 * 1000);
     await expect(
-      splitRecurrence(db, rule.id, { preset: "weekly", until: beforeFork })
+      splitRecurrence(S, db, rule.id, { preset: "weekly", until: beforeFork })
     ).rejects.toThrow(/no occurrences after the fork/);
 
     // No half-split: the old rule is untouched and remains the only rule.
@@ -3027,8 +3027,8 @@ describe("botnote service", () => {
   });
 
   it("update bodyAppend appends to non-empty body with blank line separator", async () => {
-    const p = await createProject(db, { key: "BAP1", name: "BodyAppend Test 1" });
-    const entity = await write(db, {
+    const p = await createProject(S, db, { key: "BAP1", name: "BodyAppend Test 1" });
+    const entity = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Append note",
@@ -3039,13 +3039,13 @@ describe("botnote service", () => {
       metadata: {}
     });
 
-    const updated = await update(db, entity.id, { bodyAppend: "second paragraph" });
+    const updated = await update(S, db, entity.id, { bodyAppend: "second paragraph" });
     expect(updated.body).toBe("initial content\n\nsecond paragraph");
   });
 
   it("update bodyAppend appends to empty body without leading blank line", async () => {
-    const p = await createProject(db, { key: "BAP2", name: "BodyAppend Test 2" });
-    const entity = await write(db, {
+    const p = await createProject(S, db, { key: "BAP2", name: "BodyAppend Test 2" });
+    const entity = await write(S, db, {
       kind: "note",
       projectId: p.id,
       title: "Empty body note",
@@ -3056,7 +3056,7 @@ describe("botnote service", () => {
       metadata: {}
     });
 
-    const updated = await update(db, entity.id, { bodyAppend: "first content" });
+    const updated = await update(S, db, entity.id, { bodyAppend: "first content" });
     expect(updated.body).toBe("first content");
   });
 

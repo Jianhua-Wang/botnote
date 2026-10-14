@@ -93,7 +93,6 @@ export const projects = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (t) => ({
-    keyIdx: uniqueIndex("projects_key_idx").on(t.key),
     wsKeyIdx: uniqueIndex("projects_ws_key_unique").on(t.workspaceId, t.key)
   })
 );
@@ -146,7 +145,6 @@ export const entities = pgTable(
     ),
     parentIdx: index("entities_parent_idx").on(t.parentId),
     completedAtIdx: index("entities_completed_at_idx").on(t.completedAt),
-    idempotencyIdx: uniqueIndex("entities_idempotency_idx").on(t.idempotencyKey),
     wsIdempotencyIdx: uniqueIndex("entities_ws_idem_unique")
       .on(t.workspaceId, t.idempotencyKey)
       .where(sql`${t.idempotencyKey} IS NOT NULL`),
@@ -263,8 +261,10 @@ export const tokens = pgTable(
 );
 
 export const embeddingSettings = pgTable("embedding_settings", {
-  id: text("id").primaryKey().default("default"),
-  workspaceId: workspaceRef(),
+  // Constant discriminator kept from the singleton era; the row key is the
+  // workspace (migration 0029).
+  id: text("id").notNull().default("default"),
+  workspaceId: workspaceRef().primaryKey(),
   enabled: boolean("enabled").notNull().default(true),
   provider: text("provider").notNull().default("openai"),
   model: text("model").notNull().default("text-embedding-3-small"),
@@ -276,8 +276,8 @@ export const embeddingSettings = pgTable("embedding_settings", {
 });
 
 export const workspaceSettings = pgTable("workspace_settings", {
-  id: text("id").primaryKey().default("default"),
-  workspaceId: workspaceRef(),
+  id: text("id").notNull().default("default"),
+  workspaceId: workspaceRef().primaryKey(),
   timezone: text("timezone").notNull().default("UTC"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
