@@ -304,7 +304,7 @@ skills-only fallback for agents without a plugin system.
 
 ```text
 # In Claude Code
-/plugin marketplace add Jianhua-Wang/botnote
+/plugin marketplace add botnote-dev/botnote
 /plugin install botnote@botnote
 
 # Claude Code will prompt for:
@@ -326,7 +326,7 @@ Slash commands:
 ```
 
 Plugin distribution lives at
-[Jianhua-Wang/botnote](https://github.com/Jianhua-Wang/botnote). The MCP server
+[botnote-dev/botnote](https://github.com/botnote-dev/botnote). The MCP server
 inside the plugin uses the URL + token from the install prompt. A global
 `botnote` CLI install is optional: the plugin runs `npx -y botnote@<plugin-version> mcp`
 when no matching local CLI is available.
@@ -337,7 +337,7 @@ Add the plugin through `/settings -> plugin` in Codex, or add this marketplace
 from the public repository without a full source checkout:
 
 ```bash
-codex plugin marketplace add https://github.com/Jianhua-Wang/botnote.git \
+codex plugin marketplace add https://github.com/botnote-dev/botnote.git \
   --sparse .agents/plugins \
   --sparse plugins/botnote
 
@@ -399,7 +399,7 @@ same MCP server and workflow skills without a second plugin implementation.
 
 ```bash
 # Marketplace root for Cursor plugin clients:
-https://github.com/Jianhua-Wang/botnote
+https://github.com/botnote-dev/botnote
 ```
 
 The Cursor plugin manifest is `plugins/botnote/.cursor-plugin/plugin.json` and
@@ -413,7 +413,7 @@ For agents without a plugin system, the
 skills into 70+ agents:
 
 ```bash
-npx skills add Jianhua-Wang/botnote   # install all 7 skills
+npx skills add botnote-dev/botnote   # install all 7 skills
 npx skills update                     # refresh to the latest version later
 npx skills list                       # see what is installed where
 ```
