@@ -1,3 +1,4 @@
+import { DropdownMenu } from "@cloudflare/kumo/components/dropdown";
 import { format } from "date-fns";
 import { useUpdateEntity } from "../../api/hooks";
 import type { Entity, Priority, Project } from "../../api/types";
@@ -6,7 +7,6 @@ import { useUndoableDelete } from "../../hooks/useUndoableDelete";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { TagChip } from "../TagChip";
 import { PriorityIcon, PRIORITY_LABEL, RecurrenceIcon } from "./icons";
-import { PopoverMenu } from "./PopoverMenu";
 import { StatusPickerButton } from "./StatusPickerButton";
 import { isRecurring, isTaskOverdue } from "./utils";
 
@@ -92,38 +92,36 @@ export function TaskRow({
         </span>
       )}
 
-      <PopoverMenu
-        trigger={
-          <button
-            className="shrink-0 p-0.5 -m-0.5 rounded hover:bg-line/40"
-            onClick={(e) => e.stopPropagation()}
-            title={PRIORITY_LABEL[task.priority]}
+      <DropdownMenu>
+        <DropdownMenu.Trigger
+          render={
+            <button
+              className="shrink-0 p-0.5 -m-0.5 rounded hover:bg-kumo-tint"
+              onClick={(e) => e.stopPropagation()}
+              title={PRIORITY_LABEL[task.priority]}
+            >
+              <PriorityIcon priority={task.priority} />
+            </button>
+          }
+        />
+        <DropdownMenu.Content align="end" onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu.RadioGroup
+            value={task.priority}
+            onValueChange={(p) => {
+              if (p === task.priority) return;
+              update.mutate({ id: task.id, fields: { priority: p as Priority } });
+            }}
           >
-            <PriorityIcon priority={task.priority} />
-          </button>
-        }
-        align="end"
-      >
-        {(close) => (
-          <>
             {PRIORITY_OPTIONS.map((p) => (
-              <button
-                key={p}
-                className="popover-item"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  update.mutate({ id: task.id, fields: { priority: p } });
-                  close();
-                }}
-              >
+              <DropdownMenu.RadioItem key={p} value={p} closeOnClick className="gap-2">
                 <PriorityIcon priority={p} size={12} />
                 <span>{PRIORITY_LABEL[p]}</span>
-                {task.priority === p && <span className="ml-auto text-faint">✓</span>}
-              </button>
+                <DropdownMenu.RadioItemIndicator />
+              </DropdownMenu.RadioItem>
             ))}
-          </>
-        )}
-      </PopoverMenu>
+          </DropdownMenu.RadioGroup>
+        </DropdownMenu.Content>
+      </DropdownMenu>
 
       <button
         className="shrink-0 p-1 -m-1 rounded text-faint opacity-0 group-hover:opacity-100 hover:bg-danger/10 hover:text-danger transition-opacity"

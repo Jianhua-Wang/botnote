@@ -119,14 +119,6 @@
   }
 }
 
-@utility popover {
-  @apply absolute z-40 bg-kumo-control text-kumo-default rounded-lg shadow-lg ring ring-kumo-line p-1 min-w-[160px];
-}
-
-@utility popover-item {
-  @apply flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-kumo-default hover:bg-kumo-tint cursor-pointer w-full text-left;
-}
-
 @layer base {
   html,
   body,
