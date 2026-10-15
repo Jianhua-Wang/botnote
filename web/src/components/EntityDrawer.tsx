@@ -75,9 +75,10 @@ const RECURRENCE_UNIT: Record<RecurrencePreset, string> = {
 
 export function EntityDrawer() {
   const { openId, close } = useDrawer();
+  const { active: activeModal } = useModals();
 
   useEffect(() => {
-    if (!openId) return;
+    if (!openId || activeModal) return;
     const onEsc = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const t = e.target as HTMLElement | null;
@@ -90,7 +91,7 @@ export function EntityDrawer() {
     };
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [openId, close]);
+  }, [openId, activeModal, close]);
 
   if (!openId) return null;
 

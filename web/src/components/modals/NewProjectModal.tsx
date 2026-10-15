@@ -22,7 +22,7 @@ export function NewProjectModal() {
   const valid = /^[A-Z][A-Z0-9_]{0,19}$/.test(key) && name.trim().length > 0;
 
   return (
-    <ModalShell title="New project" width="max-w-md">
+    <ModalShell title="New project" width="sm:w-md">
       <form
         onSubmit={async (e) => {
           e.preventDefault();

@@ -28,7 +28,7 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
 
   if (!project) {
     return (
-      <ModalShell title="Project settings" width="max-w-md">
+      <ModalShell title="Project settings" width="sm:w-md">
         <div className="p-4 text-sm text-muted">Loading…</div>
       </ModalShell>
     );
@@ -43,7 +43,7 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
   const valid = name.trim().length > 0;
 
   return (
-    <ModalShell title={`Settings · ${loadedProject.key}`} width="max-w-md">
+    <ModalShell title={`Settings · ${loadedProject.key}`} width="sm:w-md">
       <form
         onSubmit={async (e) => {
           e.preventDefault();
