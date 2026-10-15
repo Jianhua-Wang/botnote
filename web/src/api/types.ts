@@ -274,6 +274,12 @@ export interface CreateNoteInput {
   idempotencyKey?: string | null;
 }
 
+export interface CreateCommentInput {
+  body: string;
+  actorKind?: ActorKind;
+  idempotencyKey?: string | null;
+}
+
 /** Convenience: the union the QuickCreate modal builds, with `kind` to route
  *  to /v1/tasks or /v1/notes. The client helper splits it for you. */
 export type WriteEntityInput =

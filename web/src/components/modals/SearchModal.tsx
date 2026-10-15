@@ -2,9 +2,9 @@ import { CommandPalette } from "@cloudflare/kumo/components/command-palette";
 import { Loader } from "@cloudflare/kumo/components/loader";
 import {
   ArrowRightIcon,
-  ChatCircleIcon,
+  BrainIcon,
+  ClockCounterClockwiseIcon,
   MegaphoneIcon,
-  NoteIcon,
   type Icon
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
@@ -17,8 +17,8 @@ import { StatusCircle } from "../tasks/icons";
 
 const KIND_META: Record<EntityKind, { label: string; icon: Icon | null }> = {
   task: { label: "task", icon: null },
-  note: { label: "note", icon: NoteIcon },
-  comment: { label: "comment", icon: ChatCircleIcon },
+  note: { label: "memory", icon: BrainIcon },
+  comment: { label: "worklog", icon: ClockCounterClockwiseIcon },
   feedback: { label: "feedback", icon: MegaphoneIcon }
 };
 
@@ -62,7 +62,7 @@ export function SearchModal() {
       itemToStringValue={(h) => displayTitle(h.entity)}
     >
       <CommandPalette.Input
-        placeholder="Search tasks, notes, comments…"
+        placeholder="Search tasks, memory, worklogs…"
         aria-label="Search"
         trailing={isFetching ? <Loader size={14} /> : <kbd>esc</kbd>}
       />

@@ -1,4 +1,5 @@
 import type {
+  CreateCommentInput,
   CreateNoteInput,
   CreateProjectInput,
   CreateTaskInput,
@@ -140,7 +141,15 @@ export const api = {
     request<Entity>(`/v1/entities/${id}/restore`, { method: "POST" }),
   listTrash: (limit = 100) => request<Entity[]>(`/v1/trash?limit=${limit}`),
 
-  relatedEntities: (id: string) => request<Entity[]>(`/v1/entities/${id}/related`),
+  childEntities: (id: string) => request<Entity[]>(`/v1/entities/${id}/children`),
+
+  listComments: (id: string, limit = 500) =>
+    request<Entity[]>(`/v1/entities/${id}/comments?limit=${limit}`),
+  addComment: (id: string, input: CreateCommentInput) =>
+    request<Entity>(`/v1/entities/${id}/comments`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    }),
 
   recent: (input: RecentInput = {}) =>
     request<Entity[]>("/v1/recent", { method: "POST", body: JSON.stringify(input) }),

@@ -1,7 +1,7 @@
 import { Badge } from "@cloudflare/kumo/components/badge";
 import { Button, LinkButton } from "@cloudflare/kumo/components/button";
 import { Tabs } from "@cloudflare/kumo/components/tabs";
-import { FileTextIcon, KanbanIcon, RobotIcon, SlidersHorizontalIcon } from "@phosphor-icons/react";
+import { BrainIcon, KanbanIcon, RobotIcon, SlidersHorizontalIcon } from "@phosphor-icons/react";
 import { useMemo } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useEntityList, useProjectByKey } from "../api/hooks";
@@ -88,8 +88,8 @@ export function ProjectPage() {
                 value: "notes",
                 label: (
                   <span className="inline-flex items-center gap-1">
-                    <FileTextIcon size={12} />
-                    Notes
+                    <BrainIcon size={12} />
+                    Memory
                   </span>
                 )
               }

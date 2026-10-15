@@ -1,35 +1,46 @@
 import { markdown } from "@codemirror/lang-markdown";
 import { Button } from "@cloudflare/kumo/components/button";
-import { Input } from "@cloudflare/kumo/components/input";
+import { Input, InputArea } from "@cloudflare/kumo/components/input";
 import { Loader } from "@cloudflare/kumo/components/loader";
 import { Select } from "@cloudflare/kumo/components/select";
 import { TagInput } from "@cloudflare/kumo/components/tag-input";
 import { cn } from "@cloudflare/kumo/utils";
 import {
+  ArrowBendLeftUpIcon,
+  BrainIcon,
   CaretRightIcon,
   CheckIcon,
+  ClockCounterClockwiseIcon,
   CloudArrowUpIcon,
   CloudCheckIcon,
-  LinkSimpleIcon,
+  GearSixIcon,
   PencilSimpleIcon,
+  PencilSimpleLineIcon,
   PlusIcon,
   PushPinIcon,
+  RobotIcon,
   TrashIcon,
-  XIcon
+  TreeStructureIcon,
+  UserIcon,
+  XIcon,
+  type Icon
 } from "@phosphor-icons/react";
 import CodeMirror from "@uiw/react-codemirror";
+import { format, formatDistanceToNowStrict } from "date-fns";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { lineDiff, withContext } from "../lib/lineDiff";
 import {
+  useAddComment,
+  useChildEntities,
+  useComments,
   useConfigureRecurrence,
   useEntity,
   useEntityRevisions,
   useProjects,
   useRecurrence,
-  useRelatedEntities,
   useSkipOccurrence,
   useSplitRecurrence,
   useStopRecurrence,
@@ -40,6 +51,7 @@ import {
   type Entity,
   type EntityKind,
   type Priority,
+  type Project,
   type RecurrenceAnchor,
   type RecurrenceDetails,
   type RecurrenceInput,
@@ -129,8 +141,13 @@ function toDatetimeLocalValue(iso: string | null): string {
 function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: entity, isLoading } = useEntity(id);
   const { data: projects } = useProjects();
-  const { data: related } = useRelatedEntities(id);
+  const { data: children } = useChildEntities(entity?.kind === "task" ? id : undefined);
   const { data: parentEntity } = useEntity(entity?.parentId ?? undefined);
+  const { data: siblings } = useChildEntities(
+    entity?.kind === "task" && parentEntity?.kind === "task" ? parentEntity.id : undefined
+  );
+  const subtasks = (children ?? []).filter((c) => c.kind === "task");
+  const memories = (children ?? []).filter((c) => c.kind === "note");
   const { data: recurrence } = useRecurrence(entity?.kind === "task" ? id : undefined);
   const update = useUpdateEntity();
   const deleteWithUndo = useUndoableDelete();
@@ -267,6 +284,16 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   const linkPrefix = project ? `/p/${project.key}` : "";
   const isNote = loadedEntity.kind === "note";
   const isDirty = diff ? Object.keys(diff).length > 0 : false;
+  const addChild = (kind: "task" | "note") =>
+    project
+      ? () =>
+          openModal({
+            kind: "quick-create",
+            projectId: project.id,
+            initialKind: kind,
+            parentId: loadedEntity.id
+          })
+      : undefined;
 
   function startEditing() {
     setTitle(loadedEntity.title ?? "");
@@ -407,6 +434,16 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <div className="px-6 py-5 space-y-4">
+          <div className="space-y-1">
+          {parentEntity && (
+            <ParentCrumb
+              entity={entity}
+              parent={parentEntity}
+              project={projects?.find((p) => p.id === parentEntity.projectId)}
+              siblings={siblings}
+              onOpen={openDrawer}
+            />
+          )}
           {isEditing ? (
             <input
               className={cn(
@@ -429,6 +466,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
               {displayTitle(entity)}
             </h2>
           )}
+          </div>
 
           <MetaRow
             isEditing={isEditing}
@@ -468,24 +506,6 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
             setOccurrenceScope={setOccurrenceScope}
           />
 
-          {isNote && parentEntity && (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-lg border border-kumo-line bg-kumo-recessed px-3 py-2 text-left text-xs transition-colors hover:border-kumo-brand hover:bg-kumo-brand-tint/40"
-              onClick={() => openDrawer(parentEntity.id)}
-              title="Open linked task"
-            >
-              <LinkSimpleIcon size={12} className="text-kumo-subtle" />
-              <span className="text-kumo-subtle">Linked to task:</span>
-              {parentEntity.sequenceId && project && (
-                <span className="font-mono tabular-nums text-kumo-subtle">
-                  {project.key}-{parentEntity.sequenceId}
-                </span>
-              )}
-              <span className="truncate text-kumo-default">{displayTitle(parentEntity)}</span>
-            </button>
-          )}
-
           <div className="overflow-hidden rounded-lg border border-kumo-line bg-kumo-base">
             {isEditing ? (
               <CodeMirror
@@ -520,24 +540,40 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
             </details>
           )}
 
-          {entity.kind === "task" && (
-            <RelatedNotesSection
-              related={related ?? []}
+          {entity.kind === "task" && subtasks.length > 0 && (
+            <SubtasksSection
+              items={subtasks}
+              projects={projects ?? []}
               onOpen={openDrawer}
-              onAdd={() => {
-                if (!project) return;
-                openModal({
-                  kind: "quick-create",
-                  projectId: project.id,
-                  initialKind: "note",
-                  parentId: entity.id
-                });
-              }}
-              project={project}
+              onAdd={addChild("task")}
             />
           )}
 
-          {entity.kind !== "comment" && <HistorySection entity={entity} />}
+          {entity.kind === "task" && memories.length > 0 && (
+            <MemorySection items={memories} onOpen={openDrawer} onAdd={addChild("note")} />
+          )}
+
+          {entity.kind === "task" &&
+            project &&
+            children &&
+            (subtasks.length === 0 || memories.length === 0) && (
+              <div className="border-t border-kumo-hairline pt-3">
+                <div className="-ml-1.5 flex items-center gap-1">
+                  {subtasks.length === 0 && (
+                    <AddChildButton onClick={addChild("task")}>Add sub-task</AddChildButton>
+                  )}
+                  {memories.length === 0 && (
+                    <AddChildButton onClick={addChild("note")}>Add memory</AddChildButton>
+                  )}
+                </div>
+              </div>
+            )}
+
+          {entity.kind !== "comment" && (
+            <WorklogSection entity={entity} canWrite={entity.kind === "task"} />
+          )}
+
+          {entity.kind !== "comment" && <EditsSection entity={entity} />}
         </div>
       </div>
     </>
@@ -548,29 +584,32 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
  * Edit history. Revision N is the content BEFORE update N, so the change made
  * by update N is diff(revision N → revision N+1 | current entity).
  */
-function HistorySection({ entity }: { entity: import("../api/types").Entity }) {
+function EditsSection({ entity }: { entity: Entity }) {
   const [open, setOpen] = useState(false);
   const revisions = useEntityRevisions(entity.id, { enabled: open });
   const rows = revisions.data ?? [];
 
   return (
-    <div>
+    <section className="border-t border-kumo-hairline pt-4">
       <button
         type="button"
         aria-expanded={open}
-        className="flex items-center gap-1.5 text-xxs font-semibold uppercase tracking-wider text-kumo-subtle hover:text-kumo-default"
+        className="group flex h-6 w-full items-center gap-2 text-left"
         onClick={() => setOpen((v) => !v)}
       >
-        <CaretRightIcon size={12} className={cn("transition-transform", open && "rotate-90")} />
-        History
-        {open && revisions.data && (
-          <span className="font-normal normal-case tracking-normal text-kumo-placeholder">
-            {rows.length} edit{rows.length === 1 ? "" : "s"}
-          </span>
-        )}
+        <PencilSimpleLineIcon size={14} className="shrink-0 text-kumo-subtle" />
+        <span className="text-xs font-semibold text-kumo-default">Edits</span>
+        {open && revisions.data && <SectionCount n={rows.length} />}
+        <CaretRightIcon
+          size={12}
+          className={cn(
+            "ml-auto text-kumo-subtle transition-transform group-hover:text-kumo-default",
+            open && "rotate-90"
+          )}
+        />
       </button>
       {open && (
-        <div className="mt-1.5">
+        <div className="mt-2">
           {revisions.isLoading ? (
             <div className="flex justify-center p-3 text-kumo-subtle">
               <Loader size={14} />
@@ -589,7 +628,7 @@ function HistorySection({ entity }: { entity: import("../api/types").Entity }) {
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -1306,45 +1345,295 @@ function SaveIndicator({ state, dirty }: { state: SaveState; dirty: boolean }) {
   return null;
 }
 
-function RelatedNotesSection({
-  related,
-  onOpen,
-  onAdd,
-  project
+function SectionHeader({
+  icon: SectionIcon,
+  title,
+  meta,
+  action
 }: {
-  related: import("../api/types").Entity[];
-  onOpen: (id: string) => void;
-  onAdd: () => void;
-  project?: import("../api/types").Project;
+  icon: Icon;
+  title: string;
+  meta?: ReactNode;
+  action?: ReactNode;
 }) {
-  const notes = related.filter((r) => r.kind === "note");
   return (
-    <div>
-      <div className="mb-1.5 flex items-center justify-between">
-        <h3 className="text-xxs font-semibold uppercase tracking-wider text-kumo-subtle">
-          Related notes <span className="text-kumo-placeholder">{notes.length}</span>
-        </h3>
-        <Button
-          variant="ghost"
-          size="xs"
-          icon={<PlusIcon size={12} />}
-          className="text-kumo-link"
-          onClick={onAdd}
-        >
-          Add note
-        </Button>
-      </div>
-      {notes.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-kumo-line p-3 text-center text-xs text-kumo-placeholder">
-          No linked notes yet.
+    <div className="mb-2 flex h-6 items-center gap-2">
+      <SectionIcon size={14} className="shrink-0 text-kumo-subtle" />
+      <h3 className="text-xs font-semibold text-kumo-default">{title}</h3>
+      {meta}
+      {action && <div className="ml-auto flex items-center">{action}</div>}
+    </div>
+  );
+}
+
+function AddChildButton({ onClick, children }: { onClick?: () => void; children: ReactNode }) {
+  return (
+    <Button
+      variant="ghost"
+      size="xs"
+      className="text-kumo-subtle hover:text-kumo-default"
+      icon={<PlusIcon size={12} />}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}
+
+function SectionCount({ n }: { n: number }) {
+  return <span className="text-xs tabular-nums text-kumo-placeholder">{n}</span>;
+}
+
+function entityKey(entity: Entity, projects: Project[]): string | null {
+  if (!entity.sequenceId) return null;
+  const project = projects.find((p) => p.id === entity.projectId);
+  return project ? `${project.key}-${entity.sequenceId}` : null;
+}
+
+const PARENT_RELATION: Record<EntityKind, string> = {
+  task: "Sub-task of",
+  note: "Memory for",
+  comment: "Worklog on",
+  feedback: "Linked to"
+};
+
+function ParentCrumb({
+  entity,
+  parent,
+  project,
+  siblings,
+  onOpen
+}: {
+  entity: Entity;
+  parent: Entity;
+  project?: Project;
+  siblings?: Entity[];
+  onOpen: (id: string) => void;
+}) {
+  const key = parent.sequenceId && project ? `${project.key}-${parent.sequenceId}` : null;
+  const siblingTasks = (siblings ?? []).filter((s) => s.kind === "task");
+  const closed = siblingTasks.filter((s) => CLOSED_STATUSES.has(s.status)).length;
+  return (
+    <button
+      type="button"
+      className="group -mx-1.5 flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle transition-colors hover:bg-kumo-tint"
+      title={`Open ${key ?? "parent"}`}
+      onClick={() => onOpen(parent.id)}
+    >
+      <ArrowBendLeftUpIcon size={12} className="shrink-0 text-kumo-placeholder" />
+      <span className="shrink-0">{PARENT_RELATION[entity.kind as EntityKind]}</span>
+      {parent.kind === "task" && <StatusCircle status={parent.status} size={12} />}
+      {key && <span className="shrink-0 font-mono tabular-nums">{key}</span>}
+      <span className="truncate font-medium text-kumo-default group-hover:text-kumo-link">
+        {displayTitle(parent)}
+      </span>
+      {siblingTasks.length > 1 && (
+        <span className="shrink-0 tabular-nums text-kumo-placeholder">
+          · {closed}/{siblingTasks.length}
+        </span>
+      )}
+    </button>
+  );
+}
+
+const CLOSED_STATUSES = new Set(["done", "rejected"]);
+const STATUS_ORDER: Record<string, number> = { in_progress: 0, open: 1, done: 2, rejected: 3 };
+const CLOSED_INLINE_MAX = 3;
+
+function byStatus(a: Entity, b: Entity): number {
+  return (STATUS_ORDER[a.status] ?? 1) - (STATUS_ORDER[b.status] ?? 1);
+}
+
+function SubtasksSection({
+  items,
+  projects,
+  onOpen,
+  onAdd
+}: {
+  items: Entity[];
+  projects: Project[];
+  onOpen: (id: string) => void;
+  onAdd?: () => void;
+}) {
+  const [showClosed, setShowClosed] = useState(false);
+  const tasks = items.filter((e) => e.kind === "task");
+  const active = tasks.filter((t) => !CLOSED_STATUSES.has(t.status)).sort(byStatus);
+  const closed = tasks.filter((t) => CLOSED_STATUSES.has(t.status)).sort(byStatus);
+  const collapseClosed = closed.length > CLOSED_INLINE_MAX;
+  const visible = collapseClosed && !showClosed ? active : [...active, ...closed];
+
+  return (
+    <section className="border-t border-kumo-hairline pt-4">
+      <SectionHeader
+        icon={TreeStructureIcon}
+        title="Sub-tasks"
+        meta={tasks.length > 0 ? <ProgressMeter tasks={tasks} /> : null}
+        action={
+          onAdd && (
+            <Button
+              variant="ghost"
+              size="xs"
+              icon={<PlusIcon size={12} />}
+              className="text-kumo-link"
+              onClick={onAdd}
+            >
+              Add sub-task
+            </Button>
+          )
+        }
+      />
+      {tasks.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-kumo-line">
+          {visible.length > 0 && (
+            <ul className="divide-y divide-kumo-hairline">
+              {visible.map((t) => (
+                <SubtaskRow
+                  key={t.id}
+                  task={t}
+                  idLabel={entityKey(t, projects)}
+                  onOpen={onOpen}
+                />
+              ))}
+            </ul>
+          )}
+          {collapseClosed && (
+            <button
+              type="button"
+              aria-expanded={showClosed}
+              // Plain string: tailwind-merge reads text-xxs as a color and drops it.
+              className={`flex w-full items-center gap-1.5 bg-kumo-recessed/60 px-3 py-1.5 text-xxs text-kumo-subtle transition-colors hover:text-kumo-default ${
+                visible.length > 0 ? "border-t border-kumo-hairline" : ""
+              }`}
+              onClick={() => setShowClosed((v) => !v)}
+            >
+              <CaretRightIcon
+                size={10}
+                className={cn("transition-transform", showClosed && "rotate-90")}
+              />
+              {showClosed ? "Hide" : "Show"} {closed.length} closed
+            </button>
+          )}
         </div>
-      ) : (
+      )}
+    </section>
+  );
+}
+
+function ProgressMeter({ tasks }: { tasks: Entity[] }) {
+  const count = (status: string) => tasks.filter((t) => t.status === status).length;
+  const done = count("done");
+  const rejected = count("rejected");
+  const inProgress = count("in_progress");
+  const closed = done + rejected;
+  const pct = (n: number) => `${(n / tasks.length) * 100}%`;
+  const summary = [
+    `${done} done`,
+    rejected && `${rejected} rejected`,
+    inProgress && `${inProgress} in progress`,
+    `${tasks.length - closed - inProgress} open`
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <span className="flex items-center gap-2" title={summary}>
+      <span className="flex h-1.5 w-20 overflow-hidden rounded-full bg-kumo-fill">
+        <span className="h-full bg-(--color-kumo-success)" style={{ width: pct(closed) }} />
+        <span className="h-full bg-(--color-kumo-warning)" style={{ width: pct(inProgress) }} />
+      </span>
+      <span className="text-xs tabular-nums text-kumo-subtle">
+        {closed}/{tasks.length}
+      </span>
+    </span>
+  );
+}
+
+function SubtaskRow({
+  task,
+  idLabel,
+  onOpen
+}: {
+  task: Entity;
+  idLabel: string | null;
+  onOpen: (id: string) => void;
+}) {
+  const closed = CLOSED_STATUSES.has(task.status);
+  const due = task.dueAt ? new Date(task.dueAt) : null;
+  const overdue = due !== null && !closed && due.getTime() < new Date().setHours(0, 0, 0, 0);
+  return (
+    <li
+      role="button"
+      tabIndex={0}
+      className="group flex cursor-pointer items-center gap-2.5 px-3 py-2 transition-colors hover:bg-kumo-tint focus-visible:bg-kumo-tint focus-visible:outline-hidden"
+      onClick={() => onOpen(task.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onOpen(task.id);
+      }}
+    >
+      <StatusPickerButton task={task} size={14} />
+      {idLabel && (
+        <span className="shrink-0 font-mono text-xxs tabular-nums text-kumo-subtle">{idLabel}</span>
+      )}
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate text-sm",
+          closed ? "text-kumo-subtle" : "text-kumo-default group-hover:text-kumo-link"
+        )}
+      >
+        {displayTitle(task)}
+      </span>
+      {due && !closed && (
+        <span
+          className={`shrink-0 text-xxs tabular-nums ${overdue ? "text-kumo-danger" : "text-kumo-subtle"}`}
+        >
+          {format(due, "MMM d")}
+        </span>
+      )}
+      {task.priority !== "none" && !closed && (
+        <span title={`${PRIORITY_LABEL[task.priority]} priority`} className="flex">
+          <PriorityIcon priority={task.priority} size={12} />
+        </span>
+      )}
+    </li>
+  );
+}
+
+function MemorySection({
+  items,
+  onOpen,
+  onAdd
+}: {
+  items: Entity[];
+  onOpen: (id: string) => void;
+  onAdd?: () => void;
+}) {
+  const notes = items.filter((e) => e.kind === "note");
+  return (
+    <section className="border-t border-kumo-hairline pt-4">
+      <SectionHeader
+        icon={BrainIcon}
+        title="Memory"
+        meta={notes.length > 0 ? <SectionCount n={notes.length} /> : null}
+        action={
+          onAdd && (
+            <Button
+              variant="ghost"
+              size="xs"
+              icon={<PlusIcon size={12} />}
+              className="text-kumo-link"
+              onClick={onAdd}
+            >
+              Add memory
+            </Button>
+          )
+        }
+      />
+      {notes.length > 0 && (
         <div className="divide-y divide-kumo-hairline overflow-hidden rounded-lg border border-kumo-line">
           {notes.map((n) => (
             <button
               key={n.id}
               type="button"
-              className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-kumo-tint"
+              className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-kumo-tint"
               onClick={() => onOpen(n.id)}
             >
               <div className="min-w-0 flex-1">
@@ -1369,12 +1658,216 @@ function RelatedNotesSection({
           ))}
         </div>
       )}
-      {!project && (
-        <div className="mt-1 text-xxs text-kumo-placeholder">
-          No project context — link picker unavailable.
+    </section>
+  );
+}
+
+const WORKLOG_TAIL = 5;
+
+function WorklogSection({ entity, canWrite }: { entity: Entity; canWrite: boolean }) {
+  const { data, isLoading } = useComments(entity.id);
+  const [showAll, setShowAll] = useState(false);
+  const entries = data ?? [];
+  if (!canWrite && entries.length === 0) return null;
+
+  const hidden = showAll || entries.length <= WORKLOG_TAIL + 1 ? 0 : entries.length - WORKLOG_TAIL;
+  const visible = entries.slice(hidden);
+  const latest = entries.at(-1);
+
+  return (
+    <section className="border-t border-kumo-hairline pt-4">
+      <SectionHeader
+        icon={ClockCounterClockwiseIcon}
+        title="Worklog"
+        meta={entries.length > 0 ? <SectionCount n={entries.length} /> : null}
+        action={
+          latest && (
+            <span className="text-xxs text-kumo-placeholder">
+              Last entry {relativeTime(latest.createdAt)}
+            </span>
+          )
+        }
+      />
+      {isLoading ? (
+        <div className="flex justify-center p-3 text-kumo-subtle">
+          <Loader size={14} />
         </div>
+      ) : (
+        <ol className="mt-3">
+          {hidden > 0 && (
+            <li className="relative flex gap-3 pb-5">
+              <TimelineRail />
+              <span className="relative z-10 flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed border-kumo-line bg-kumo-base text-[10px] tabular-nums text-kumo-subtle">
+                {hidden}
+              </span>
+              <button
+                type="button"
+                className="h-6 text-xs text-kumo-link hover:underline"
+                onClick={() => setShowAll(true)}
+              >
+                Show {hidden} earlier {hidden === 1 ? "entry" : "entries"}
+              </button>
+            </li>
+          )}
+          {visible.map((c, i) => (
+            <WorklogEntry key={c.id} entry={c} isLast={!canWrite && i === visible.length - 1} />
+          ))}
+          {canWrite && <WorklogComposer entityId={entity.id} isFirst={entries.length === 0} />}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function TimelineRail() {
+  return (
+    <span
+      aria-hidden
+      className="absolute bottom-0 left-3 top-6 w-px -translate-x-1/2 bg-kumo-line"
+    />
+  );
+}
+
+const ACTOR_AVATAR: Record<string, { icon: Icon; className: string }> = {
+  agent: { icon: RobotIcon, className: "bg-kumo-brand-tint text-kumo-brand" },
+  human: { icon: UserIcon, className: "bg-kumo-fill text-kumo-default" },
+  system: { icon: GearSixIcon, className: "bg-kumo-fill text-kumo-subtle" }
+};
+
+function ActorAvatar({ kind }: { kind: string }) {
+  const { icon: AvatarIcon, className } = ACTOR_AVATAR[kind] ?? ACTOR_AVATAR.system!;
+  return (
+    <span
+      className={cn(
+        "relative z-10 flex size-6 shrink-0 items-center justify-center rounded-full ring-4 ring-kumo-base",
+        className
+      )}
+    >
+      <AvatarIcon size={13} weight="bold" />
+    </span>
+  );
+}
+
+function actorName(entity: Entity): string {
+  const label = entity.actor?.label ?? entity.actorKind;
+  return label === entity.actorKind ? label.charAt(0).toUpperCase() + label.slice(1) : label;
+}
+
+function relativeTime(iso: string): string {
+  const date = new Date(iso);
+  const age = Date.now() - date.getTime();
+  if (age < 60_000) return "just now";
+  if (age < 7 * 86_400_000) return formatDistanceToNowStrict(date, { addSuffix: true });
+  return format(date, date.getFullYear() === new Date().getFullYear() ? "MMM d" : "MMM d, yyyy");
+}
+
+function WorklogEntry({ entry, isLast }: { entry: Entity; isLast: boolean }) {
+  return (
+    <li className="relative flex gap-3 pb-5">
+      {!isLast && <TimelineRail />}
+      <ActorAvatar kind={entry.actorKind} />
+      <div className="min-w-0 flex-1">
+        <div className="flex h-6 items-center gap-2 text-xs">
+          <span className="truncate font-medium text-kumo-default">{actorName(entry)}</span>
+          <time
+            dateTime={entry.createdAt}
+            title={new Date(entry.createdAt).toLocaleString()}
+            className="ml-auto shrink-0 tabular-nums text-kumo-placeholder"
+          >
+            {relativeTime(entry.createdAt)}
+          </time>
+        </div>
+        <WorklogBody body={entry.body} />
+      </div>
+    </li>
+  );
+}
+
+const LONG_ENTRY_CHARS = 600;
+const LONG_ENTRY_LINES = 12;
+
+function WorklogBody({ body }: { body: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const long = body.length > LONG_ENTRY_CHARS || body.split("\n").length > LONG_ENTRY_LINES;
+  return (
+    <div className="mt-0.5">
+      <div
+        className={cn(
+          long &&
+            !expanded &&
+            "max-h-44 overflow-hidden [mask-image:linear-gradient(to_bottom,black_65%,transparent)]"
+        )}
+      >
+        <MarkdownView body={body} />
+      </div>
+      {long && (
+        <button
+          type="button"
+          className="mt-1 text-xxs font-medium text-kumo-link hover:underline"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
       )}
     </div>
+  );
+}
+
+function WorklogComposer({ entityId, isFirst }: { entityId: string; isFirst: boolean }) {
+  const [draft, setDraft] = useState("");
+  const add = useAddComment();
+  const canSubmit = draft.trim().length > 0 && !add.isPending;
+
+  async function submit() {
+    if (!canSubmit) return;
+    try {
+      await add.mutateAsync({
+        parentId: entityId,
+        input: { body: draft.trim(), actorKind: "human" }
+      });
+      setDraft("");
+    } catch {
+      // add.error renders below
+    }
+  }
+
+  return (
+    <li className="relative flex gap-3">
+      <ActorAvatar kind="human" />
+      <div className="min-w-0 flex-1">
+        <InputArea
+          aria-label="New worklog entry"
+          rows={2}
+          className="w-full resize-y py-1.5 text-sm leading-snug"
+          placeholder={
+            isFirst
+              ? "No entries yet. Log progress, a decision, or a blocker…"
+              : "Log progress, a decision, or a blocker…"
+          }
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              void submit();
+            }
+          }}
+        />
+        {draft.trim() && (
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <span className="text-xxs text-kumo-placeholder">
+              Markdown · <kbd>⌘</kbd>+<kbd>Enter</kbd> to log
+            </span>
+            <Button size="sm" variant="primary" disabled={!canSubmit} onClick={submit}>
+              {add.isPending ? "Logging…" : "Log entry"}
+            </Button>
+          </div>
+        )}
+        {add.error && (
+          <div className="mt-1 text-xs text-kumo-danger">{(add.error as Error).message}</div>
+        )}
+      </div>
+    </li>
   );
 }
 

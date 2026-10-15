@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
+  CreateCommentInput,
   CreateProjectInput,
   EntityKind,
   ListFeedbackInput,
@@ -76,11 +77,34 @@ export function useEntityRevisions(id: string | undefined, opts: { enabled?: boo
   });
 }
 
-export function useRelatedEntities(id: string | undefined) {
+/** Sub-tasks and linked memory of an entity (parentId or parent_of edges). */
+export function useChildEntities(id: string | undefined) {
   return useQuery({
-    queryKey: ["related", id],
-    queryFn: () => api.relatedEntities(id!),
+    queryKey: ["children", id],
+    queryFn: () => api.childEntities(id!),
     enabled: Boolean(id)
+  });
+}
+
+/** Worklog entries (comments) on an entity, oldest first. */
+export function useComments(id: string | undefined, opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["comments", id],
+    queryFn: () => api.listComments(id!),
+    enabled: Boolean(id) && (opts.enabled ?? true)
+  });
+}
+
+export function useAddComment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ parentId, input }: { parentId: string; input: CreateCommentInput }) =>
+      api.addComment(parentId, input),
+    onSuccess: (comment, { parentId }) => {
+      qc.invalidateQueries({ queryKey: ["comments", parentId] });
+      qc.invalidateQueries({ queryKey: ["opening-brief", comment.projectId ?? undefined] });
+      qc.invalidateQueries({ queryKey: ["recent"] });
+    }
   });
 }
 
@@ -318,7 +342,7 @@ export function useWriteEntity() {
       qc.invalidateQueries({ queryKey: ["recent"] });
       qc.invalidateQueries({ queryKey: ["tasks-range"] });
       if (entity.parentId) {
-        qc.invalidateQueries({ queryKey: ["related", entity.parentId] });
+        qc.invalidateQueries({ queryKey: ["children", entity.parentId] });
       }
     }
   });
@@ -334,7 +358,7 @@ export function useUpdateEntity() {
       qc.invalidateQueries({ queryKey: ["entity-list", entity.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["opening-brief", entity.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["tasks-range"] });
-      qc.invalidateQueries({ queryKey: ["related"] });
+      qc.invalidateQueries({ queryKey: ["children"] });
       qc.invalidateQueries({ queryKey: ["revisions", entity.id] });
       if (entity.kind === "feedback") qc.invalidateQueries({ queryKey: ["feedback"] });
     }
@@ -350,7 +374,7 @@ export function useDeleteEntity() {
       qc.invalidateQueries({ queryKey: ["recent"] });
       qc.invalidateQueries({ queryKey: ["entity-list"] });
       qc.invalidateQueries({ queryKey: ["opening-brief"] });
-      qc.invalidateQueries({ queryKey: ["related"] });
+      qc.invalidateQueries({ queryKey: ["children"] });
     }
   });
 }
