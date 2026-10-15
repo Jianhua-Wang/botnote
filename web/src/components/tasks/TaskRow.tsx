@@ -35,7 +35,7 @@ export function TaskRow({
 
   return (
     <div
-      className={`task-row group ${compact ? "!h-7 text-xs" : ""}`}
+      className={`task-row group ${compact ? "h-7! text-xs" : ""}`}
       onClick={() => drawer.open(task.id)}
     >
       <StatusPickerButton task={task} />

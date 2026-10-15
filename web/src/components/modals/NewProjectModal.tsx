@@ -87,7 +87,7 @@ export function NewProjectModal() {
             AGENTS.md (optional)
           </label>
           <textarea
-            className="input !h-24 py-1.5 font-mono text-xs leading-snug resize-y"
+            className="input h-24! py-1.5 font-mono text-xs leading-snug resize-y"
             value={agentsMd}
             onChange={(e) => setAgentsMd(e.target.value)}
             placeholder="## Critical&#10;- ALWAYS run pnpm typecheck before commit."

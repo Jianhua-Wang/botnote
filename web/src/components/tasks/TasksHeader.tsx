@@ -49,21 +49,21 @@ export function TasksHeader({
           <div className="flex items-center gap-1 ml-1">
             <button
               onClick={() => setAnchor(moveAnchor(view, anchor, -1))}
-              className="btn btn-ghost !h-6 !w-6 !p-0"
+              className="btn btn-ghost h-6! w-6! p-0!"
               title="Previous"
             >
               <ChevronLeft size={12} />
             </button>
             <button
               onClick={() => setAnchor(moveAnchor(view, anchor, 0))}
-              className="btn !h-6 px-2 text-xxs"
+              className="btn h-6! px-2 text-xxs"
               title="Today"
             >
               Today
             </button>
             <button
               onClick={() => setAnchor(moveAnchor(view, anchor, 1))}
-              className="btn btn-ghost !h-6 !w-6 !p-0"
+              className="btn btn-ghost h-6! w-6! p-0!"
               title="Next"
             >
               <ChevronRight size={12} />
@@ -88,7 +88,7 @@ export function TasksHeader({
           >
             <Plus size={11} />
             <span className="text-xs hidden sm:inline">Task</span>
-            <kbd className="!bg-white/15 !border-white/25 !text-white hidden md:inline-block">c</kbd>
+            <kbd className="bg-white/15! border-white/25! text-white! hidden md:inline-block">c</kbd>
           </button>
         </div>
       </div>

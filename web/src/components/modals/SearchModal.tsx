@@ -44,7 +44,7 @@ export function SearchModal() {
           <input
             autoFocus
             placeholder="Hybrid search (BM25 + vector + time decay)"
-            className="flex-1 bg-transparent border-none outline-none text-sm"
+            className="flex-1 bg-transparent border-none outline-hidden text-sm"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />

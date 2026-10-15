@@ -197,7 +197,7 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
           </span>
         )}
         {task.tags.slice(0, 2).map((t) => (
-          <TagChip key={t} tag={t} className="!h-4 !text-[10px]" />
+          <TagChip key={t} tag={t} className="h-4! text-[10px]!" />
         ))}
       </div>
     </div>

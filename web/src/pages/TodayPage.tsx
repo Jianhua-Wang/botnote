@@ -105,7 +105,7 @@ function QuickAdd() {
           if (e.key === "Enter") submit();
         }}
         placeholder="Add a task for today…"
-        className="flex-1 bg-transparent text-xs outline-none placeholder:text-faint"
+        className="flex-1 bg-transparent text-xs outline-hidden placeholder:text-faint"
         disabled={write.isPending}
       />
       {write.isPending && <span className="text-xxs text-faint">Adding…</span>}

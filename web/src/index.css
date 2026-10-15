@@ -1,26 +1,144 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@import "@cloudflare/kumo/styles/tailwind";
+@import "tailwindcss";
+
+@theme {
+  --color-kumo-brand: light-dark(#0a7e83, #0a7e83);
+  --color-kumo-brand-hover: light-dark(#00686c, #00686c);
+  --color-kumo-brand-tint: light-dark(#e3f6f7, #10302f);
+  --text-color-kumo-brand: light-dark(#0a7e83, #3ebfc6);
+  --text-color-kumo-link: light-dark(#00686c, #3ebfc6);
+}
+
+/*
+  Legacy app tokens, kept as aliases onto Kumo so existing markup picks up
+  the Kumo look before each view is migrated to Kumo classes directly.
+*/
+@theme {
+  --color-bg: var(--color-kumo-canvas);
+  --color-surface: var(--color-kumo-base);
+  --color-sidebar: var(--color-kumo-tint);
+  --color-sidebarHover: light-dark(oklch(92.2% 0 0), oklch(37.1% 0 0));
+  --color-line: var(--color-kumo-line);
+  --color-lineSoft: var(--color-kumo-hairline);
+  --color-ink: var(--text-color-kumo-default);
+  --color-ink2: var(--text-color-kumo-default);
+  --color-muted: var(--text-color-kumo-subtle);
+  --color-faint: var(--text-color-kumo-placeholder);
+  --color-accent: var(--color-kumo-brand);
+  --color-accentHover: var(--color-kumo-brand-hover);
+  --color-accentSoft: var(--color-kumo-brand-tint);
+  --color-accentText: var(--text-color-kumo-link);
+  --color-success: var(--text-color-kumo-success);
+  --color-warn: var(--text-color-kumo-warning);
+  --color-danger: var(--text-color-kumo-danger);
+  --color-prioUrgent: #eb5757;
+  --color-prioHigh: #f2994a;
+  --color-prioMedium: #5e6ad2;
+  --color-prioLow: #a8a8af;
+  --color-statusOpen: #a8a8af;
+  --color-statusInProgress: #f2994a;
+  --color-statusDone: #4cb782;
+  --color-statusRejected: #eb5757;
+
+  --text-xxs: 11px;
+  --text-xxs--line-height: 15px;
+
+  --shadow-modal:
+    0 12px 32px rgba(15, 15, 20, 0.08), 0 0 0 1px rgba(15, 15, 20, 0.06);
+}
 
 @layer base {
-  :root {
-    color-scheme: light;
-    --shadow-soft: 0 1px 2px rgba(15, 15, 20, 0.04), 0 0 0 1px rgba(15, 15, 20, 0.04);
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-kumo-line, currentcolor);
   }
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-1.5 px-2.5 h-8 text-xs font-medium rounded-md border border-kumo-line bg-kumo-base text-kumo-default shadow-xs select-none transition-colors hover:bg-kumo-tint focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-kumo-brand disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+@utility btn-primary {
+  @apply text-white border-[color-mix(in_oklch,var(--color-kumo-brand),black_10%)] bg-kumo-brand bg-linear-to-b from-[color-mix(in_oklch,var(--color-kumo-brand),white_15%)] to-kumo-brand shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--color-kumo-brand),white_30%)] hover:bg-kumo-brand hover:from-[color-mix(in_oklch,var(--color-kumo-brand),white_30%)];
+}
+
+@utility btn-ghost {
+  @apply border-transparent bg-transparent shadow-none text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default;
+}
+
+@utility chip {
+  @apply inline-flex items-center gap-1 px-1.5 h-5 text-xxs font-medium rounded-md bg-kumo-tint text-kumo-subtle border border-kumo-hairline;
+}
+
+@utility input {
+  @apply w-full h-8 px-2 text-sm bg-kumo-control text-kumo-default border border-kumo-line rounded-md transition-shadow focus:outline-hidden focus:border-kumo-focus/50 focus:ring-[0.5px] focus:ring-kumo-focus/50 disabled:bg-kumo-overlay disabled:text-kumo-inactive;
+}
+
+@utility row-hover {
+  @apply hover:bg-kumo-tint transition-colors;
+}
+
+@utility task-row {
+  @apply flex items-center gap-2 px-3 h-9 border-b border-kumo-hairline text-sm hover:bg-kumo-tint cursor-pointer transition-colors;
+}
+
+@utility seg {
+  @apply inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-kumo-recessed text-kumo-subtle;
+  & button {
+    @apply px-2.5 h-7 text-xs rounded-md hover:text-kumo-default transition-colors;
+  }
+  & button[data-active='true'] {
+    @apply bg-kumo-base text-kumo-default shadow-sm ring ring-kumo-line;
+  }
+}
+
+@utility divider {
+  @apply border-t border-kumo-hairline;
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-kumo-line) transparent;
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-kumo-line);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--text-color-kumo-subtle);
+    background-clip: padding-box;
+  }
+}
+
+@utility popover {
+  @apply absolute z-40 bg-kumo-control text-kumo-default rounded-lg shadow-lg ring ring-kumo-line p-1 min-w-[160px];
+}
+
+@utility popover-item {
+  @apply flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-kumo-default hover:bg-kumo-tint cursor-pointer w-full text-left;
+}
+
+@layer base {
   html,
   body,
   #root {
     height: 100%;
   }
   body {
-    @apply bg-bg text-ink font-sans antialiased text-base;
-    font-feature-settings: "cv11", "ss01", "ss03", "tnum";
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    @apply bg-kumo-canvas text-kumo-default font-sans antialiased text-base;
   }
   ::selection {
-    background: theme("colors.accentSoft");
-    color: theme("colors.accentText");
+    background: var(--color-kumo-brand-tint);
+    color: var(--text-color-kumo-link);
   }
   code,
   pre,
@@ -28,7 +146,7 @@
     @apply font-mono;
   }
   kbd {
-    @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xxs text-muted border border-line bg-surface rounded-sm;
+    @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xxs text-kumo-subtle border border-kumo-line bg-kumo-base rounded-sm;
     font-size: 11px;
     line-height: 1;
   }
@@ -38,90 +156,12 @@
   select {
     font-family: inherit;
   }
-}
-
-@layer components {
-  /* primary actions */
-  .btn {
-    @apply inline-flex items-center justify-center gap-1.5 px-2.5 h-8 text-xs rounded-md border border-line bg-surface text-ink hover:bg-sidebar disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
   }
-  .btn-primary {
-    @apply bg-accent text-white border-accent hover:bg-accentHover;
-  }
-  .btn-ghost {
-    @apply border-transparent hover:bg-sidebarHover text-muted hover:text-ink;
-  }
-  .btn-danger {
-    @apply border-transparent text-danger hover:bg-danger/10;
-  }
-  .btn-sm {
-    @apply h-7 px-2 text-xxs;
-  }
-
-  /* chips */
-  .chip {
-    @apply inline-flex items-center gap-1 px-1.5 h-[20px] text-xxs rounded bg-sidebar text-muted border border-lineSoft;
-  }
-
-  /* inputs */
-  .input {
-    @apply w-full h-8 px-2 text-sm bg-surface border border-line rounded-md focus:outline-none focus:border-accent focus:ring-2 focus:ring-accentSoft transition-colors;
-  }
-  .input-sm {
-    @apply h-7 text-xs px-1.5;
-  }
-
-  /* row hover */
-  .row-hover {
-    @apply hover:bg-sidebarHover/60 transition-colors;
-  }
-
-  /* task row */
-  .task-row {
-    @apply flex items-center gap-2 px-3 h-9 border-b border-lineSoft text-sm hover:bg-sidebarHover/50 cursor-pointer transition-colors;
-  }
-
-  /* segmented control */
-  .seg {
-    @apply inline-flex border border-line rounded-md overflow-hidden bg-surface text-muted;
-  }
-  .seg button {
-    @apply px-2.5 h-8 text-xs hover:text-ink hover:bg-sidebar transition-colors;
-  }
-  .seg button[data-active="true"] {
-    @apply bg-ink text-white hover:bg-ink2 hover:text-white;
-  }
-
-  /* divider */
-  .divider {
-    @apply border-t border-lineSoft;
-  }
-
-  /* scrollbar */
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: theme("colors.line") transparent;
-  }
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: theme("colors.line");
-    border-radius: 4px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: theme("colors.muted");
-    background-clip: padding-box;
-  }
-
-  /* popover */
-  .popover {
-    @apply absolute z-40 bg-surface border border-line rounded-md shadow-pop py-1 min-w-[160px];
-  }
-  .popover-item {
-    @apply flex items-center gap-2 px-2 py-1 text-xs text-ink hover:bg-sidebarHover cursor-pointer w-full text-left;
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--text-color-kumo-placeholder);
   }
 }
