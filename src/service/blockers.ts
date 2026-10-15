@@ -2,13 +2,39 @@ import { sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import type { Scope } from "./scope.js";
 
-/** An unfinished task that `blocks` another one, as a resuming agent should see it. */
-export interface Blocker {
+/** A compact pointer to another entity, as a list row or a resuming agent should see it. */
+export interface EntityRef {
   id: string;
-  /** KEY-SEQ when the blocker belongs to a project, else kind/uuid-prefix. */
+  /** KEY-SEQ when the entity belongs to a project, else kind/uuid-prefix. */
   ref: string;
   title: string;
   status: string | null;
+}
+
+/** An unfinished task that `blocks` another one. */
+export type Blocker = EntityRef;
+
+/** The raw columns `toEntityRef` needs; select them with these aliases. */
+export type RefRow = {
+  id: string;
+  kind: string;
+  title: string | null;
+  body: string;
+  status: string | null;
+  sequence_id: number | null;
+  project_key: string | null;
+};
+
+export function toEntityRef(r: RefRow): EntityRef {
+  const ref =
+    r.project_key && r.sequence_id != null
+      ? `${r.project_key}-${r.sequence_id}`
+      : `${r.kind}/${r.id.slice(0, 8)}`;
+  const title =
+    (r.title && r.title.trim()) ||
+    r.body.split("\n").find((l) => l.trim())?.trim().slice(0, 60) ||
+    "(untitled)";
+  return { id: r.id, ref, title, status: r.status };
 }
 
 export type WithBlockers<T> = T & { blockedBy: Blocker[] };
@@ -31,16 +57,7 @@ export async function blockersFor(
     taskIds.map((id) => sql`${id}::uuid`),
     sql`, `
   );
-  const rows = await db.execute<{
-    blocked_id: string;
-    id: string;
-    kind: string;
-    title: string | null;
-    body: string;
-    status: string | null;
-    sequence_id: number | null;
-    project_key: string | null;
-  }>(sql`
+  const rows = await db.execute<RefRow & { blocked_id: string }>(sql`
     SELECT e.to_id AS blocked_id, b.id, b.kind, b.title, b.body, b.status, b.sequence_id, p.key AS project_key
     FROM edges e
     JOIN entities b ON b.id = e.from_id
@@ -54,16 +71,8 @@ export async function blockersFor(
   `);
 
   for (const r of rows.rows) {
-    const ref =
-      r.project_key && r.sequence_id != null
-        ? `${r.project_key}-${r.sequence_id}`
-        : `${r.kind}/${r.id.slice(0, 8)}`;
-    const title =
-      (r.title && r.title.trim()) ||
-      r.body.split("\n").find((l) => l.trim())?.trim().slice(0, 60) ||
-      "(untitled)";
     const list = out.get(r.blocked_id) ?? [];
-    list.push({ id: r.id, ref, title, status: r.status });
+    list.push(toEntityRef(r));
     out.set(r.blocked_id, list);
   }
   return out;

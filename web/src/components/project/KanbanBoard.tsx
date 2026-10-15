@@ -7,6 +7,7 @@ import type { Entity, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { TagChip } from "../TagChip";
+import { ParentChip, SubtaskProgress } from "../tasks/hierarchy";
 import { PriorityIcon, RecurrenceIcon, StatusCircle } from "../tasks/icons";
 import { isRecurring, isTaskOverdue } from "../tasks/utils";
 import { StatusPickerButton } from "../tasks/StatusPickerButton";
@@ -170,6 +171,7 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
       onClick={() => drawer.open(task.id)}
       className="group bg-kumo-base border border-kumo-line rounded-lg p-2.5 shadow-xs cursor-grab active:cursor-grabbing hover:border-kumo-brand transition-colors"
     >
+      {task.parent && <ParentChip parent={task.parent} variant="line" className="mb-1" />}
       <div className="flex items-start gap-1.5">
         <StatusPickerButton task={task} size={13} className="mt-0.5" />
         <span
@@ -205,6 +207,7 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
             {format(new Date(visibleDate), "MMM d")}
           </span>
         )}
+        {task.subtasks && <SubtaskProgress counts={task.subtasks} />}
         {task.tags.slice(0, 2).map((t) => (
           <TagChip key={t} tag={t} className="py-0 text-[10px]" />
         ))}

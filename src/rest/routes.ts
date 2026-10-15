@@ -24,6 +24,7 @@ import {
   update,
   write
 } from "../service/entities.js";
+import { attachHierarchy } from "../service/hierarchy.js";
 import { formatOpeningBrief, openingBrief } from "../service/opening_brief.js";
 import {
   createProject,
@@ -519,7 +520,10 @@ export async function registerRoutes(
         body: RecentInput.optional()
       }
     },
-    async (req) => serializeEntities(await recent(req.scope, ctx.db, RecentInput.parse(req.body ?? {})))
+    async (req) => {
+      const rows = await recent(req.scope, ctx.db, RecentInput.parse(req.body ?? {}));
+      return serializeEntities(await attachHierarchy(req.scope, ctx.db, rows));
+    }
   );
 
   app.post(
