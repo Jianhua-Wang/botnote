@@ -1,17 +1,25 @@
-import { ArrowRight, Search } from "lucide-react";
+import { CommandPalette } from "@cloudflare/kumo/components/command-palette";
+import { Loader } from "@cloudflare/kumo/components/loader";
+import {
+  ArrowRightIcon,
+  ChatCircleIcon,
+  MegaphoneIcon,
+  NoteIcon,
+  type Icon
+} from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { useProjects, useSearch } from "../../api/hooks";
-import type { EntityKind } from "../../api/types";
+import type { EntityKind, SearchHit } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle } from "../../lib/entityTitle";
 import { useModals } from "../../state/modals";
-import { ModalShell } from "../ModalShell";
+import { StatusCircle } from "../tasks/icons";
 
-const KIND_LABELS: Record<EntityKind, string> = {
-  task: "task",
-  note: "note",
-  comment: "comment",
-  feedback: "feedback"
+const KIND_META: Record<EntityKind, { label: string; icon: Icon | null }> = {
+  task: { label: "task", icon: null },
+  note: { label: "note", icon: NoteIcon },
+  comment: { label: "comment", icon: ChatCircleIcon },
+  feedback: { label: "feedback", icon: MegaphoneIcon }
 };
 
 export function SearchModal() {
@@ -29,6 +37,7 @@ export function SearchModal() {
   const { data, isFetching } = useSearch(
     debounced ? { query: debounced, limit: 20 } : null
   );
+  const hits = debounced ? (data?.hits ?? []) : [];
 
   const projectKeyById = useMemo(() => {
     const m = new Map<string, string>();
@@ -36,59 +45,91 @@ export function SearchModal() {
     return m;
   }, [projects]);
 
+  const select = (hit: SearchHit) => {
+    close();
+    openDrawer(hit.entity.id);
+  };
+
   return (
-    <ModalShell title="Search">
-      <div className="p-3 pb-1">
-        <div className="flex items-center gap-2 px-2 h-9 border border-line rounded bg-surface focus-within:border-accent focus-within:ring-1 focus-within:ring-accentSoft">
-          <Search size={14} className="text-muted" />
-          <input
-            autoFocus
-            placeholder="Hybrid search (BM25 + vector + time decay)"
-            className="flex-1 bg-transparent border-none outline-hidden text-sm"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          {isFetching && <span className="text-xxs text-muted">searching…</span>}
-        </div>
-      </div>
-      <div className="max-h-[60vh] overflow-y-auto scrollbar-thin">
-        {debounced && !isFetching && (!data || data.hits.length === 0) && (
-          <div className="px-4 py-6 text-center text-sm text-muted">No matches.</div>
-        )}
-        {data?.hits.map((h) => {
-          const projectKey = h.entity.projectId ? projectKeyById.get(h.entity.projectId) : null;
-          return (
-            <button
-              key={h.entity.id}
-              onClick={() => {
-                close();
-                openDrawer(h.entity.id);
-              }}
-              className="w-full px-3 py-2 row-hover text-left flex items-start gap-3 border-t border-line/60"
-            >
-              <span className="chip mt-0.5">{KIND_LABELS[h.entity.kind]}</span>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-ink truncate">{displayTitle(h.entity)}</div>
-                <div className="text-xs text-muted truncate mt-0.5">
-                  {h.entity.body.replace(/\n/g, " ").slice(0, 140) || "—"}
+    <CommandPalette.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+      items={hits}
+      value={q}
+      onValueChange={setQ}
+      itemToStringValue={(h) => displayTitle(h.entity)}
+    >
+      <CommandPalette.Input
+        placeholder="Search tasks, notes, comments…"
+        aria-label="Search"
+        trailing={isFetching ? <Loader size={14} /> : <kbd>esc</kbd>}
+      />
+      <CommandPalette.List className="scrollbar-thin">
+        <CommandPalette.Results className="space-y-0.5">
+          {(h: SearchHit) => {
+            const kind = KIND_META[h.entity.kind];
+            const KindIcon = kind.icon;
+            const projectKey = h.entity.projectId ? projectKeyById.get(h.entity.projectId) : null;
+            const snippet = h.entity.body.replace(/\n/g, " ").slice(0, 140);
+            return (
+              <CommandPalette.Item
+                key={h.entity.id}
+                value={h}
+                onClick={() => select(h)}
+                className="items-start"
+              >
+                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-kumo-subtle">
+                  {KindIcon ? <KindIcon size={16} /> : <StatusCircle status={h.entity.status} />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm text-kumo-default">{displayTitle(h.entity)}</div>
+                  {snippet && (
+                    <div className="mt-0.5 truncate text-xs text-kumo-subtle">{snippet}</div>
+                  )}
+                  <div className="mt-0.5 flex gap-1.5 text-xxs text-kumo-placeholder tabular-nums">
+                    <span>{kind.label}</span>
+                    {projectKey && <span>· {projectKey}</span>}
+                    <span>· score {h.score.toFixed(3)}</span>
+                    {h.components.bm25 && <span>· bm25</span>}
+                    {h.components.cosine && <span>· vec</span>}
+                  </div>
                 </div>
-                <div className="text-xxs text-faint mt-0.5 flex gap-2">
-                  {projectKey && <span>· {projectKey}</span>}
-                  <span>· score {h.score.toFixed(3)}</span>
-                  {h.components.bm25 && <span>· bm25</span>}
-                  {h.components.cosine && <span>· vec</span>}
-                </div>
-              </div>
-              <ArrowRight size={13} className="text-faint mt-1" />
-            </button>
-          );
-        })}
-        {data && (
-          <div className="px-3 py-2 text-xxs text-muted border-t border-line/60">
-            {data.hits.length} result(s) · embedding {data.embeddingUsed ? "ON" : "OFF (BM25-only)"}
-          </div>
-        )}
-      </div>
-    </ModalShell>
+                <ArrowRightIcon
+                  size={14}
+                  className="mt-0.5 shrink-0 text-kumo-subtle opacity-0 transition-opacity group-data-[highlighted]:opacity-100"
+                />
+              </CommandPalette.Item>
+            );
+          }}
+        </CommandPalette.Results>
+        <CommandPalette.Empty>
+          {!debounced
+            ? "Hybrid search over BM25, vectors and recency."
+            : isFetching
+              ? "Searching…"
+              : "No matches."}
+        </CommandPalette.Empty>
+      </CommandPalette.List>
+      <CommandPalette.Footer>
+        <span>
+          {data && debounced
+            ? `${data.hits.length} result(s) · embedding ${data.embeddingUsed ? "on" : "off (BM25-only)"}`
+            : null}
+        </span>
+        <span className="flex items-center gap-3">
+          <span className="flex items-center gap-1">
+            <kbd>↑</kbd>
+            <kbd>↓</kbd>
+            navigate
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd>↵</kbd>
+            open
+          </span>
+        </span>
+      </CommandPalette.Footer>
+    </CommandPalette.Root>
   );
 }
