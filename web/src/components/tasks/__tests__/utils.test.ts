@@ -12,7 +12,6 @@ import {
   moveAnchor,
   projectLookup,
   rangeLabel,
-  taskStyle,
   viewRange
 } from "../utils";
 
@@ -384,22 +383,8 @@ describe("projectLookup", () => {
 });
 
 // ---------------------------------------------------------------------------
-// taskStyle / compareByStatus
+// compareByStatus
 // ---------------------------------------------------------------------------
-
-describe("taskStyle", () => {
-  it("returns correct class for 'open'", () => {
-    expect(taskStyle("open")).toContain("blue");
-  });
-
-  it("returns correct class for 'done'", () => {
-    expect(taskStyle("done")).toContain("emerald");
-  });
-
-  it("falls back to 'open' style for unknown status", () => {
-    expect(taskStyle("unknown_status")).toBe(taskStyle("open"));
-  });
-});
 
 describe("compareByStatus", () => {
   it("in_progress sorts before open", () => {

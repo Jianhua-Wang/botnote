@@ -1,5 +1,5 @@
 import { format, isToday } from "date-fns";
-import { Plus, Sunrise } from "lucide-react";
+import { PlusIcon, SunHorizonIcon } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 import { useProjects, useTasksRange, useWriteEntity } from "../api/hooks";
 import type { Entity, Project } from "../api/types";
@@ -36,31 +36,31 @@ export function TodayPage() {
     <div className="h-full overflow-y-auto scrollbar-thin">
       <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
         <header className="flex items-baseline gap-3">
-          <Sunrise size={18} className="text-accent" />
+          <SunHorizonIcon size={18} className="text-kumo-brand" />
           <h1 className="text-lg font-semibold">Today</h1>
-          <span className="text-xs text-muted">{format(today, "EEEE, MMM d")}</span>
+          <span className="text-xs text-kumo-subtle">{format(today, "EEEE, MMM d")}</span>
         </header>
 
-        {isLoading && <div className="text-sm text-muted">Loading…</div>}
+        {isLoading && <div className="text-sm text-kumo-subtle">Loading…</div>}
 
         {!isLoading && (
           <>
             <Section
               title="Overdue"
               count={overdue.length}
-              accent="text-danger"
+              accent="text-kumo-danger"
               tasks={overdue}
               projectMap={projectMap}
             />
             <Section
               title={isToday(today) ? "Today" : format(today, "EEEE")}
               count={scheduled.length}
-              accent="text-ink"
+              accent="text-kumo-default"
               tasks={scheduled}
               projectMap={projectMap}
               emptyAction={
                 <button
-                  className="text-accent text-xs hover:underline"
+                  className="text-kumo-brand text-xs hover:underline"
                   onClick={() => open({ kind: "quick-create" })}
                 >
                   + add a task
@@ -96,8 +96,8 @@ function QuickAdd() {
   }
 
   return (
-    <div className="flex items-center gap-2 border border-dashed border-line rounded-md px-3 py-1.5 focus-within:border-accent transition-colors">
-      <Plus size={12} className="text-faint shrink-0" />
+    <div className="flex items-center gap-2 border border-dashed border-kumo-line rounded-md px-3 py-1.5 focus-within:border-kumo-brand transition-colors">
+      <PlusIcon size={12} className="text-kumo-placeholder shrink-0" />
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
@@ -105,10 +105,11 @@ function QuickAdd() {
           if (e.key === "Enter") submit();
         }}
         placeholder="Add a task for today…"
-        className="flex-1 bg-transparent text-xs outline-hidden placeholder:text-faint"
+        aria-label="Add a task for today"
+        className="flex-1 bg-transparent text-xs outline-hidden placeholder:text-kumo-placeholder"
         disabled={write.isPending}
       />
-      {write.isPending && <span className="text-xxs text-faint">Adding…</span>}
+      {write.isPending && <span className="text-xxs text-kumo-placeholder">Adding…</span>}
     </div>
   );
 }
@@ -141,29 +142,29 @@ function Section({
     <section className="space-y-1.5">
       <div className="flex items-baseline gap-2">
         <h2 className={`text-xs font-semibold ${accent}`}>{title}</h2>
-        <span className="text-xxs text-faint tabular-nums">{count}</span>
+        <span className="text-xxs text-kumo-placeholder tabular-nums">{count}</span>
       </div>
       {tasks.length === 0 ? (
-        <div className="text-xs text-muted py-1">{emptyAction ?? "Nothing here."}</div>
+        <div className="text-xs text-kumo-subtle py-1">{emptyAction ?? "Nothing here."}</div>
       ) : (
-        <div className="border border-line rounded-md overflow-hidden bg-surface">
+        <div className="border border-kumo-line rounded-md overflow-hidden bg-kumo-base">
           {Array.from(groups.entries()).map(([projectId, items]) => {
             const project = projectId ? projectMap.get(projectId) : undefined;
             return (
               <div key={projectId ?? "_none"}>
-                <div className="px-3 py-1 border-b border-lineSoft bg-sidebar/40 flex items-center gap-1.5 text-xxs">
+                <div className="px-3 py-1 border-b border-kumo-hairline bg-kumo-tint/40 flex items-center gap-1.5 text-xxs">
                   {project ? (
                     <>
                       <ProjectIcon color={project.color} icon={project.icon} size={10} />
                       <span className="font-mono tabular-nums" style={{ color: project.color }}>
                         {project.key}
                       </span>
-                      <span className="text-muted truncate">{project.name}</span>
+                      <span className="text-kumo-subtle truncate">{project.name}</span>
                     </>
                   ) : (
-                    <span className="text-faint">no project</span>
+                    <span className="text-kumo-placeholder">no project</span>
                   )}
-                  <span className="text-faint ml-auto tabular-nums">{items.length}</span>
+                  <span className="text-kumo-placeholder ml-auto tabular-nums">{items.length}</span>
                 </div>
                 {items.map((t) => (
                   <TaskRow key={t.id} task={t} project={project} />

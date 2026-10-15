@@ -1,3 +1,5 @@
+import { Button } from "@cloudflare/kumo/components/button";
+import { Input, InputArea } from "@cloudflare/kumo/components/input";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCreateProject } from "../../api/hooks";
@@ -7,6 +9,7 @@ import { PROJECT_STATUS_HELP, PROJECT_STATUS_LABEL } from "../../lib/projectStat
 import { useModals } from "../../state/modals";
 import { IconColorPicker } from "../IconColorPicker";
 import { ModalShell } from "../ModalShell";
+import { NativeSelect } from "../NativeSelect";
 
 export function NewProjectModal() {
   const [key, setKey] = useState("");
@@ -38,71 +41,59 @@ export function NewProjectModal() {
           close();
           navigate(`/p/${p.key}`);
         }}
-        className="p-3 space-y-3"
+        className="p-4 space-y-4"
       >
-        <div>
-          <label className="block text-xxs text-muted uppercase tracking-wider mb-1">
-            Key (uppercase, e.g. BOT)
-          </label>
-          <input
-            autoFocus
-            className="input font-mono uppercase"
-            value={key}
-            onChange={(e) => setKey(e.target.value.toUpperCase())}
-            placeholder="BOT"
-            maxLength={20}
-          />
-        </div>
-        <div>
-          <label className="block text-xxs text-muted uppercase tracking-wider mb-1">Name</label>
-          <input
-            className="input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="botnote"
-          />
-        </div>
+        <Input
+          autoFocus
+          label="Key (uppercase, e.g. BOT)"
+          className="w-full font-mono uppercase"
+          value={key}
+          onChange={(e) => setKey(e.target.value.toUpperCase())}
+          placeholder="BOT"
+          maxLength={20}
+        />
+        <Input
+          label="Name"
+          className="w-full"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="botnote"
+        />
         <IconColorPicker
           icon={icon}
           color={color}
           onIconChange={setIcon}
           onColorChange={setColor}
         />
-        <div>
-          <label className="block text-xxs text-muted uppercase tracking-wider mb-1">Status</label>
-          <select
-            className="input"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as ProjectStatus)}
-          >
-            {PROJECT_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {PROJECT_STATUS_LABEL[s]} · {PROJECT_STATUS_HELP[s]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xxs text-muted uppercase tracking-wider mb-1">
-            AGENTS.md (optional)
-          </label>
-          <textarea
-            className="input h-24! py-1.5 font-mono text-xs leading-snug resize-y"
-            value={agentsMd}
-            onChange={(e) => setAgentsMd(e.target.value)}
-            placeholder="## Critical&#10;- ALWAYS run pnpm typecheck before commit."
-          />
-        </div>
+        <NativeSelect
+          label="Status"
+          className="w-full"
+          value={status}
+          onChange={(e) => setStatus(e.target.value as ProjectStatus)}
+        >
+          {PROJECT_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {PROJECT_STATUS_LABEL[s]} · {PROJECT_STATUS_HELP[s]}
+            </option>
+          ))}
+        </NativeSelect>
+        <InputArea
+          label="AGENTS.md (optional)"
+          className="h-24 w-full resize-y py-1.5 font-mono text-xs leading-snug"
+          value={agentsMd}
+          onChange={(e) => setAgentsMd(e.target.value)}
+          placeholder="## Critical&#10;- ALWAYS run pnpm typecheck before commit."
+        />
         <div className="flex justify-end gap-2 pt-1">
-          <button type="button" className="btn" onClick={close}>
+          <Button type="button" onClick={close}>
             Cancel
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={!valid || create.isPending}>
+          </Button>
+          <Button type="submit" variant="primary" disabled={!valid || create.isPending}>
             {create.isPending ? "Creating…" : "Create project"}
-          </button>
+          </Button>
         </div>
         {create.error && (
-          <div className="text-xs text-danger">{(create.error as Error).message}</div>
+          <div className="text-xs text-kumo-danger">{(create.error as Error).message}</div>
         )}
       </form>
     </ModalShell>

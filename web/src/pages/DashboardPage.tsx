@@ -1,5 +1,16 @@
-import { Activity, Check, ChevronDown, ChevronRight, FolderKanban, Megaphone, X } from "lucide-react";
-import { useState } from "react";
+import { Badge } from "@cloudflare/kumo/components/badge";
+import { Button } from "@cloudflare/kumo/components/button";
+import { Tabs } from "@cloudflare/kumo/components/tabs";
+import {
+  CaretDownIcon,
+  CaretRightIcon,
+  CheckIcon,
+  KanbanIcon,
+  MegaphoneIcon,
+  PulseIcon,
+  XIcon
+} from "@phosphor-icons/react";
+import { useState, type ComponentProps } from "react";
 import { Link } from "react-router-dom";
 import { useFeedback, useProjects, useRecent, useTasksRange, useUpdateEntity } from "../api/hooks";
 import type { FeedbackCategory, FeedbackStatus, Project, ProjectStatus } from "../api/types";
@@ -53,21 +64,21 @@ export function DashboardPage() {
     <div className="h-full overflow-y-auto scrollbar-thin">
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
         <header>
-          <h1 className="text-xl font-semibold text-ink">Workspace</h1>
-          <p className="text-sm text-muted mt-1">
+          <h1 className="text-xl font-semibold text-kumo-default">Workspace</h1>
+          <p className="text-sm text-kumo-subtle mt-1">
             Projects, tasks, notes, and memory — written by you or by your agents.
           </p>
         </header>
 
         <section className="space-y-5">
-          <div className="flex items-center gap-2 mb-3 text-muted">
-            <FolderKanban size={14} />
+          <div className="flex items-center gap-2 mb-3 text-kumo-subtle">
+            <KanbanIcon size={14} />
             <h2 className="text-xs uppercase tracking-wider font-medium">
               Projects ({projects?.length ?? 0})
             </h2>
           </div>
           {projects && projects.length === 0 ? (
-            <div className="border border-dashed border-line rounded-lg p-6 text-center text-sm text-muted">
+            <div className="border border-dashed border-kumo-line rounded-lg p-6 text-center text-sm text-kumo-subtle">
               No projects yet. Press <kbd>n</kbd> to create one.
             </div>
           ) : (
@@ -87,14 +98,14 @@ export function DashboardPage() {
         <FeedbackSection />
 
         <section>
-          <div className="flex items-center gap-2 mb-3 text-muted">
-            <Activity size={14} />
+          <div className="flex items-center gap-2 mb-3 text-kumo-subtle">
+            <PulseIcon size={14} />
             <h2 className="text-xs uppercase tracking-wider font-medium">Recent activity</h2>
           </div>
           {recent && recent.length === 0 ? (
-            <div className="text-sm text-muted">Nothing yet.</div>
+            <div className="text-sm text-kumo-subtle">Nothing yet.</div>
           ) : (
-            <div className="bg-surface border border-line rounded-md divide-y divide-line/60">
+            <div className="bg-kumo-base border border-kumo-line rounded-lg overflow-hidden divide-y divide-kumo-hairline">
               {recent?.map((e) => {
                 const project = projects?.find((p) => p.id === e.projectId);
                 return (
@@ -102,18 +113,18 @@ export function DashboardPage() {
                     key={e.id}
                     type="button"
                     onClick={() => drawer.open(e.id)}
-                    className="w-full text-left flex items-center gap-3 px-3 py-2 row-hover"
+                    className="w-full text-left flex items-center gap-3 px-3 py-2 hover:bg-kumo-tint transition-colors"
                   >
                     <KindBadge kind={e.kind} />
                     <div className="flex-1 min-w-0">
                       <div
                         className={`text-sm truncate ${
-                          isUntitled(e) ? "text-muted italic" : "text-ink"
+                          isUntitled(e) ? "text-kumo-subtle italic" : "text-kumo-default"
                         }`}
                       >
                         {displayTitle(e)}
                       </div>
-                      <div className="text-xxs text-muted mt-0.5">
+                      <div className="text-xxs text-kumo-subtle mt-0.5">
                         {project ? project.key : "—"} · {timeAgo(e.createdAt)} ·{" "}
                         <span className="opacity-70">{e.actorKind}</span>
                       </div>
@@ -129,11 +140,14 @@ export function DashboardPage() {
   );
 }
 
-const CATEGORY_STYLE: Record<FeedbackCategory, string> = {
-  bug: "text-red-700 bg-red-50 border-red-100",
-  feature: "text-blue-700 bg-blue-50 border-blue-100",
-  friction: "text-amber-700 bg-amber-50 border-amber-100",
-  idea: "text-purple-700 bg-purple-50 border-purple-100"
+const CATEGORY_STYLE: Record<
+  FeedbackCategory,
+  { badge: ComponentProps<typeof Badge>["variant"]; chip: string }
+> = {
+  bug: { badge: "error", chip: "bg-kumo-danger-tint text-kumo-danger border-kumo-danger/30" },
+  feature: { badge: "info", chip: "bg-kumo-info-tint text-kumo-info border-kumo-info/30" },
+  friction: { badge: "warning", chip: "bg-kumo-warning-tint text-kumo-warning border-kumo-warning/30" },
+  idea: { badge: "success", chip: "bg-kumo-success-tint text-kumo-success border-kumo-success/30" }
 };
 
 const FEEDBACK_STATUSES: { value: FeedbackStatus; label: string }[] = [
@@ -152,29 +166,27 @@ function FeedbackSection() {
 
   return (
     <section>
-      <div className="flex items-center gap-2 mb-3 text-muted">
-        <Megaphone size={14} />
+      <div className="flex items-center gap-2 mb-3 text-kumo-subtle">
+        <MegaphoneIcon size={14} />
         <h2 className="text-xs uppercase tracking-wider font-medium">Product feedback</h2>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 mb-2">
-        <div className="seg">
-          {FEEDBACK_STATUSES.map((s) => (
-            <button
-              key={s.value}
-              onClick={() => setStatus(s.value)}
-              data-active={status === s.value}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-        <div className="w-px h-4 bg-line mx-1" />
+        <Tabs
+          variant="segmented"
+          size="sm"
+          tabs={FEEDBACK_STATUSES}
+          value={status}
+          onValueChange={(v) => setStatus(v as FeedbackStatus)}
+        />
+        <div className="w-px h-4 bg-kumo-line mx-1" />
         <button
+          type="button"
+          aria-pressed={!category}
           className={`h-6 px-2.5 text-xxs rounded-full border transition-colors ${
             !category
-              ? "bg-accentSoft text-accentText border-accent/30"
-              : "bg-surface text-muted border-line hover:text-ink"
+              ? "bg-kumo-brand-tint text-kumo-link border-kumo-brand/30"
+              : "bg-kumo-base text-kumo-subtle border-kumo-line hover:text-kumo-default"
           }`}
           onClick={() => setCategory(null)}
         >
@@ -183,8 +195,10 @@ function FeedbackSection() {
         {FEEDBACK_CATEGORIES.map((c) => (
           <button
             key={c}
+            type="button"
+            aria-pressed={category === c}
             className={`h-6 px-2.5 text-xxs rounded-full border capitalize transition-colors ${
-              category === c ? CATEGORY_STYLE[c] : "bg-surface text-muted border-line hover:text-ink"
+              category === c ? CATEGORY_STYLE[c].chip : "bg-kumo-base text-kumo-subtle border-kumo-line hover:text-kumo-default"
             }`}
             onClick={() => setCategory(category === c ? null : c)}
           >
@@ -194,11 +208,11 @@ function FeedbackSection() {
       </div>
 
       {feedback && feedback.length === 0 ? (
-        <div className="border border-dashed border-line rounded-md p-4 text-center text-xs text-muted">
+        <div className="border border-dashed border-kumo-line rounded-md p-4 text-center text-xs text-kumo-subtle">
           No {status.replace("_", " ")} feedback{category ? ` in “${category}”` : ""}.
         </div>
       ) : (
-        <div className="bg-surface border border-line rounded-md divide-y divide-line/60">
+        <div className="bg-kumo-base border border-kumo-line rounded-lg overflow-hidden divide-y divide-kumo-hairline">
           {feedback?.map((f) => {
             const cat = (f.metadata.category as FeedbackCategory | undefined) ?? "idea";
             const tool = f.metadata.tool as string | undefined;
@@ -206,44 +220,49 @@ function FeedbackSection() {
             return (
               <div
                 key={f.id}
-                className="flex items-start gap-3 px-3 py-2 row-hover cursor-pointer group"
+                className="flex items-start gap-3 px-3 py-2 hover:bg-kumo-tint transition-colors cursor-pointer group"
                 onClick={() => drawer.open(f.id)}
               >
-                <span
-                  className={`inline-flex items-center px-1.5 h-5 mt-0.5 text-xxs rounded border capitalize shrink-0 ${CATEGORY_STYLE[cat]}`}
+                <Badge
+                  variant={CATEGORY_STYLE[cat].badge}
+                  className="mt-0.5 h-5 shrink-0 px-1.5 py-0 text-[11px] capitalize"
                 >
                   {cat}
-                </span>
+                </Badge>
                 <div className="flex-1 min-w-0">
                   <div
-                    className={`text-sm truncate ${isUntitled(f) ? "text-muted italic" : "text-ink"}`}
+                    className={`text-sm truncate ${isUntitled(f) ? "text-kumo-subtle italic" : "text-kumo-default"}`}
                   >
                     {displayTitle(f)}
                   </div>
-                  <div className="text-xxs text-muted mt-0.5">
+                  <div className="text-xxs text-kumo-subtle mt-0.5">
                     {tool && <span className="font-mono">{tool} · </span>}
                     {f.actorKind} · {timeAgo(f.createdAt)}
                   </div>
                 </div>
                 {resolvable && (
                   <div
-                    className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <button
-                      className="btn btn-ghost h-6! px-2! text-xxs gap-1"
-                      title="Mark done"
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      icon={<CheckIcon size={11} />}
+                      className="text-kumo-subtle"
                       onClick={() => update.mutate({ id: f.id, fields: { status: "done" } })}
                     >
-                      <Check size={11} /> Done
-                    </button>
-                    <button
-                      className="btn btn-ghost h-6! px-2! text-xxs gap-1 hover:text-red-600!"
-                      title="Reject"
+                      Done
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      icon={<XIcon size={11} />}
+                      className="text-kumo-subtle hover:text-kumo-danger"
                       onClick={() => update.mutate({ id: f.id, fields: { status: "rejected" } })}
                     >
-                      <X size={11} /> Reject
-                    </button>
+                      Reject
+                    </Button>
                   </div>
                 )}
               </div>
@@ -272,11 +291,12 @@ function ProjectGroup({
     <div>
       <button
         type="button"
-        className="flex items-center gap-1.5 mb-2 text-muted hover:text-ink"
+        className="flex items-center gap-1.5 mb-2 text-kumo-subtle hover:text-kumo-default"
         onClick={onToggle}
+        aria-expanded={!collapsed}
         title={`${collapsed ? "Expand" : "Collapse"} ${PROJECT_STATUS_LABEL[status]}`}
       >
-        {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+        {collapsed ? <CaretRightIcon size={12} /> : <CaretDownIcon size={12} />}
         <span className="text-xxs uppercase tracking-wider font-medium">
           {PROJECT_STATUS_LABEL[status]} ({projects.length})
         </span>
@@ -302,7 +322,7 @@ function ProjectCard({
   return (
     <Link
       to={`/p/${project.key}`}
-      className={`border border-line rounded-md p-3 bg-surface hover:border-accent/50 transition-colors block ${
+      className={`border border-kumo-line rounded-lg p-3 bg-kumo-base hover:border-kumo-brand/50 transition-colors block ${
         project.status === "archived" ? "opacity-70" : ""
       }`}
     >
@@ -313,17 +333,17 @@ function ProjectCard({
             {project.key}
           </span>
         </div>
-        <span className="text-xxs text-faint shrink-0">
+        <span className="text-xxs text-kumo-placeholder shrink-0">
           Updated {new Date(project.updatedAt).toLocaleDateString()}
         </span>
       </div>
-      <div className="text-sm font-medium text-ink mt-1 truncate">{project.name}</div>
-      <div className="text-xxs text-muted mt-1 flex items-center gap-2">
+      <div className="text-sm font-medium text-kumo-default mt-1 truncate">{project.name}</div>
+      <div className="text-xxs text-kumo-subtle mt-1 flex items-center gap-2">
         <span>{counts?.open ?? 0} open</span>
         {counts && counts.overdue > 0 && (
-          <span className="text-danger font-medium">{counts.overdue} overdue</span>
+          <span className="text-kumo-danger font-medium">{counts.overdue} overdue</span>
         )}
-        {project.agentsMd && <span className="text-faint">· AGENTS.md</span>}
+        {project.agentsMd && <span className="text-kumo-placeholder">· AGENTS.md</span>}
       </div>
     </Link>
   );

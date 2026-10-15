@@ -1,3 +1,7 @@
+import { Button } from "@cloudflare/kumo/components/button";
+import { Checkbox } from "@cloudflare/kumo/components/checkbox";
+import { Input, InputArea } from "@cloudflare/kumo/components/input";
+import { Tabs } from "@cloudflare/kumo/components/tabs";
 import { useState } from "react";
 import {
   useConfigureRecurrence,
@@ -17,6 +21,7 @@ import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle } from "../../lib/entityTitle";
 import { useModals } from "../../state/modals";
 import { ModalShell } from "../ModalShell";
+import { NativeSelect } from "../NativeSelect";
 import { PriorityIcon, PRIORITY_LABEL } from "../tasks/icons";
 
 export function QuickCreateModal({
@@ -104,24 +109,22 @@ export function QuickCreateModal({
           close();
           openDrawer(entity.id);
         }}
-        className="p-3 space-y-3"
+        className="p-4 space-y-3"
       >
         <div className="flex gap-2">
-          <div className="seg w-32">
-            {CREATABLE_KINDS.map((k) => (
-              <button
-                key={k}
-                type="button"
-                data-active={kind === k}
-                onClick={() => setKind(k)}
-                className="flex-1 justify-center capitalize"
-              >
-                {k}
-              </button>
-            ))}
-          </div>
-          <select
-            className="input flex-1"
+          <Tabs
+            variant="segmented"
+            tabs={CREATABLE_KINDS.map((k) => ({
+              value: k,
+              label: <span className="capitalize">{k}</span>
+            }))}
+            value={kind}
+            onValueChange={(v) => setKind(v as EntityKind)}
+            className="shrink-0"
+          />
+          <NativeSelect
+            aria-label="Project"
+            className="flex-1"
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
           >
@@ -131,39 +134,44 @@ export function QuickCreateModal({
                 {p.key} · {p.name}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
-        <input
+        <Input
           autoFocus
-          className="input"
+          aria-label="Title"
+          className="w-full"
           placeholder={isNote ? "Title (optional)" : "Title"}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
-        <textarea
-          className="input h-32! py-1.5 font-mono text-xs leading-snug resize-y"
+        <InputArea
+          aria-label="Body"
+          className="h-32 w-full resize-y py-1.5 font-mono text-xs leading-snug"
           placeholder="Body (Markdown, optional)"
           value={body}
           onChange={(e) => setBody(e.target.value)}
         />
-        <div className="flex gap-2">
-          <input
-            className="input flex-1"
+        <div className="flex flex-wrap gap-2">
+          <Input
+            aria-label="Tags"
+            className="min-w-48 flex-1"
             placeholder="Tags (comma-separated, optional)"
             value={tagsStr}
             onChange={(e) => setTagsStr(e.target.value)}
           />
           {kind === "task" && (
             <>
-              <input
+              <Input
                 type="date"
-                className="input w-36"
+                aria-label="Due date"
+                className="flex-1 sm:w-36 sm:flex-none"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 title="Due date"
               />
-              <select
-                className="input w-36"
+              <NativeSelect
+                aria-label="Priority"
+                className="flex-1 sm:w-36 sm:flex-none"
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as Priority)}
                 title="Priority"
@@ -173,14 +181,14 @@ export function QuickCreateModal({
                     {PRIORITY_LABEL[p]}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </>
           )}
         </div>
         {kind === "task" && (
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_84px_132px] gap-2">
-            <select
-              className="input"
+            <NativeSelect
+              aria-label="Repeat"
               value={repeat}
               onChange={(e) => setRepeat(e.target.value as RecurrencePreset | "none")}
               title="Repeat"
@@ -191,19 +199,20 @@ export function QuickCreateModal({
               <option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option>
               <option value="yearly">Yearly</option>
-            </select>
-            <input
+            </NativeSelect>
+            <Input
               type="number"
               min={1}
               max={999}
-              className="input"
+              aria-label="Repeat interval"
+              className="w-full"
               value={repeatInterval}
               disabled={repeat === "none"}
               onChange={(e) => setRepeatInterval(Math.max(1, Number(e.target.value) || 1))}
               title="Repeat interval"
             />
-            <select
-              className="input"
+            <NativeSelect
+              aria-label="Repeat anchor"
               value={repeatAnchor}
               disabled={repeat === "none"}
               onChange={(e) => setRepeatAnchor(e.target.value as RecurrenceAnchor)}
@@ -211,30 +220,29 @@ export function QuickCreateModal({
             >
               <option value="scheduled">Scheduled</option>
               <option value="completion">Completion</option>
-            </select>
+            </NativeSelect>
           </div>
         )}
         {kind === "task" && priority !== "none" && (
-          <div className="flex items-center gap-1.5 text-xxs text-muted">
+          <div className="flex items-center gap-1.5 text-xxs text-kumo-subtle">
             <PriorityIcon priority={priority} size={11} />
             <span>{PRIORITY_LABEL[priority]} priority</span>
           </div>
         )}
         {isNote && (
           <>
-            <label className="flex items-center gap-2 text-xs text-muted cursor-pointer">
-              <input
-                type="checkbox"
-                checked={pinned}
-                onChange={(e) => setPinned(e.target.checked)}
-              />
-              <span>📌 Pin to project — auto-include in agent opening brief</span>
-            </label>
+            <Checkbox
+              label="📌 Pin to project — auto-include in agent opening brief"
+              checked={pinned}
+              onCheckedChange={setPinned}
+            />
             {projectTasks && projectTasks.length > 0 && (
-              <div className="flex items-center gap-2 text-xs text-muted">
+              <div className="flex items-center gap-2 text-sm text-kumo-subtle">
                 <span className="shrink-0">Link to task:</span>
-                <select
-                  className="input flex-1 h-7! text-xs"
+                <NativeSelect
+                  size="sm"
+                  aria-label="Link to task"
+                  className="flex-1"
                   value={parentId}
                   onChange={(e) => setParentId(e.target.value)}
                 >
@@ -245,26 +253,26 @@ export function QuickCreateModal({
                       {displayTitle(t)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
             )}
           </>
         )}
-        <div className="flex justify-between items-center pt-1">
-          <div className="text-xxs text-muted">
+        <div className="flex justify-end sm:justify-between items-center pt-1">
+          <div className="hidden sm:block text-xxs text-kumo-subtle">
             <kbd>⌘</kbd>+<kbd>Enter</kbd> to submit · <kbd>Esc</kbd> to close
           </div>
           <div className="flex gap-2">
-            <button type="button" className="btn" onClick={close}>
+            <Button type="button" onClick={close}>
               Cancel
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={!valid || write.isPending}>
+            </Button>
+            <Button type="submit" variant="primary" disabled={!valid || write.isPending}>
               {write.isPending ? "Creating…" : `Create ${kind}`}
-            </button>
+            </Button>
           </div>
         </div>
         {write.error && (
-          <div className="text-xs text-danger">{(write.error as Error).message}</div>
+          <div className="text-xs text-kumo-danger">{(write.error as Error).message}</div>
         )}
       </form>
     </ModalShell>

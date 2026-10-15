@@ -15,8 +15,7 @@ export function ProjectIcon({ color, icon, size = 12, className = "" }: ProjectI
       size={size}
       className={`shrink-0 ${className}`}
       color={color}
-      fill={filled ? color : "none"}
-      strokeWidth={filled ? 1.2 : 1.8}
+      weight={filled ? "fill" : "bold"}
     />
   );
 }

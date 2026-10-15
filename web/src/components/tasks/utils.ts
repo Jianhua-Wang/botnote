@@ -149,17 +149,6 @@ export function projectLookup(projects?: Project[]): Map<string, Project> {
   return m;
 }
 
-export const TASK_COLORS: Record<string, string> = {
-  open: "bg-blue-50 border-blue-200 text-blue-900",
-  in_progress: "bg-amber-50 border-amber-200 text-amber-900",
-  done: "bg-emerald-50 border-emerald-200 text-emerald-900 opacity-70",
-  rejected: "bg-rose-50 border-rose-200 text-rose-900 opacity-70"
-};
-
-export function taskStyle(status: string): string {
-  return TASK_COLORS[status] ?? TASK_COLORS.open!;
-}
-
 // Default sort order inside a calendar day cell: active work first
 // (in_progress), then unstarted (open / "todo"), then completed (done),
 // then everything else. Stable so any secondary order the backend chose

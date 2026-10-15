@@ -1,4 +1,6 @@
-import { Loader2, LogIn } from "lucide-react";
+import { Button } from "@cloudflare/kumo/components/button";
+import { Input } from "@cloudflare/kumo/components/input";
+import { SignInIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -36,50 +38,53 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-bg px-4">
+    <div className="min-h-screen w-full flex items-center justify-center bg-kumo-canvas px-4">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm bg-surface border border-line rounded-lg shadow-xs p-6 space-y-5"
+        className="w-full max-w-sm bg-kumo-base border border-kumo-line rounded-lg shadow-xs p-6 space-y-5"
       >
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-md bg-accent flex items-center justify-center text-white text-sm font-bold">
+          <div className="w-8 h-8 rounded-md bg-kumo-brand flex items-center justify-center text-white text-sm font-bold">
             b
           </div>
           <div>
-            <div className="text-sm font-semibold text-ink leading-tight">botnote</div>
-            <div className="text-xxs text-muted">Sign in to continue</div>
+            <div className="text-sm font-semibold text-kumo-default leading-tight">botnote</div>
+            <div className="text-xxs text-kumo-subtle">Sign in to continue</div>
           </div>
         </div>
 
-        <label className="block space-y-1.5">
-          <span className="text-xs font-medium text-ink2">Password</span>
-          <input
-            type="password"
-            autoFocus
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-3 py-2 text-sm rounded-md border border-line bg-bg focus:outline-hidden focus:ring-2 focus:ring-accent/40 focus:border-accent"
-            disabled={busy}
-          />
-        </label>
+        <Input
+          label="Password"
+          type="password"
+          autoFocus
+          autoComplete="current-password"
+          className="w-full"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          disabled={busy}
+        />
 
         {error && (
-          <div className="text-xs text-red-500 bg-red-500/10 border border-red-500/30 rounded px-2.5 py-1.5">
+          <div
+            role="alert"
+            className="text-xs text-kumo-danger bg-kumo-danger-tint border border-kumo-danger/30 rounded-md px-2.5 py-1.5"
+          >
             {error}
           </div>
         )}
 
-        <button
+        <Button
           type="submit"
+          variant="primary"
+          className="w-full"
+          loading={busy}
+          icon={<SignInIcon size={14} />}
           disabled={!password || busy}
-          className="w-full btn btn-primary justify-center gap-2 py-2"
         >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
-          <span>{busy ? "Signing in…" : "Sign in"}</span>
-        </button>
+          {busy ? "Signing in…" : "Sign in"}
+        </Button>
 
-        <p className="text-xxs text-muted text-center pt-1">
+        <p className="text-xxs text-kumo-subtle text-center pt-1">
           Session cookie expires in 30 days. CLI / MCP unaffected.
         </p>
       </form>

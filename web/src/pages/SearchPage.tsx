@@ -1,5 +1,6 @@
 import { format } from "date-fns";
-import { Search } from "lucide-react";
+import { Input } from "@cloudflare/kumo/components/input";
+import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useProjects, useSearch } from "../api/hooks";
@@ -50,7 +51,7 @@ function Snippet({ body, query }: { body: string; query: string }) {
     slice.split(pattern).forEach((part, i) => {
       if (i % 2 === 1) {
         nodes.push(
-          <mark key={i} className="bg-amber-100 text-inherit rounded-[2px] px-px">
+          <mark key={i} className="bg-kumo-warning-tint text-inherit rounded-[2px] px-px">
             {part}
           </mark>
         );
@@ -61,7 +62,7 @@ function Snippet({ body, query }: { body: string; query: string }) {
   }
 
   return (
-    <div className="text-xs text-muted mt-1 wrap-break-word">
+    <div className="text-xs text-kumo-subtle mt-1 wrap-break-word">
       {start > 0 && "… "}
       {nodes}
       {end < text.length && " …"}
@@ -90,9 +91,13 @@ export function SearchPage() {
     <div className="h-full overflow-y-auto scrollbar-thin">
       <div className="max-w-4xl mx-auto px-6 py-6">
         <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
+          <MagnifyingGlassIcon
+            size={14}
+            className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-kumo-subtle"
+          />
+          <Input
             type="search"
+            aria-label="Search"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -100,7 +105,7 @@ export function SearchPage() {
             }}
             placeholder="Search tasks, notes, comments…"
             autoFocus
-            className="w-full h-9 pl-9 pr-3 text-sm bg-surface border border-line rounded focus:outline-hidden focus:ring-2 focus:ring-accent/30 focus:border-accent"
+            className="w-full pl-9"
           />
         </div>
 
@@ -115,29 +120,29 @@ export function SearchPage() {
             />
           ))}
           {q && (
-            <span className="ml-auto text-xxs text-muted tabular-nums">
+            <span className="ml-auto text-xxs text-kumo-subtle tabular-nums">
               {data?.hits.length ?? 0} results
             </span>
           )}
         </div>
 
         {!q ? (
-          <div className="mt-16 text-center text-muted">
-            <Search size={24} className="mx-auto mb-3 text-faint" />
+          <div className="mt-16 text-center text-kumo-subtle">
+            <MagnifyingGlassIcon size={24} className="mx-auto mb-3 text-kumo-placeholder" />
             <div className="text-sm">Search your workspace</div>
-            <div className="text-xs text-faint mt-1">
+            <div className="text-xs text-kumo-placeholder mt-1">
               Tasks, notes, comments and feedback — by keyword or meaning.
             </div>
           </div>
         ) : data && data.hits.length === 0 ? (
-          <div className="mt-16 text-center text-muted">
+          <div className="mt-16 text-center text-kumo-subtle">
             <div className="text-sm">No results for “{q}”</div>
-            <div className="text-xs text-faint mt-1">
+            <div className="text-xs text-kumo-placeholder mt-1">
               Try fewer or different keywords{kind ? ", or clear the kind filter" : ""}.
             </div>
           </div>
         ) : (
-          <div className="mt-3 bg-surface border border-line rounded divide-y divide-line/60">
+          <div className="mt-3 bg-kumo-base border border-kumo-line rounded-lg overflow-hidden divide-y divide-kumo-hairline">
             {data?.hits.map((h) => {
               const project = h.entity.projectId ? projectMap.get(h.entity.projectId) : undefined;
               const idLabel =
@@ -149,24 +154,24 @@ export function SearchPage() {
                   key={h.entity.id}
                   type="button"
                   onClick={() => drawer.open(h.entity.id)}
-                  className="w-full text-left p-3 flex items-start gap-3 row-hover"
+                  className="w-full text-left p-3 flex items-start gap-3 hover:bg-kumo-tint transition-colors"
                 >
                   <KindBadge kind={h.entity.kind} compact />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2 min-w-0">
                       {idLabel && (
-                        <span className="font-mono text-xxs text-faint tabular-nums shrink-0">
+                        <span className="font-mono text-xxs text-kumo-placeholder tabular-nums shrink-0">
                           {idLabel}
                         </span>
                       )}
                       <span
-                        className={`text-sm truncate ${isUntitled(h.entity) ? "italic text-muted" : "text-ink"}`}
+                        className={`text-sm truncate ${isUntitled(h.entity) ? "italic text-kumo-subtle" : "text-kumo-default"}`}
                       >
                         {displayTitle(h.entity)}
                       </span>
                     </div>
                     <Snippet body={h.entity.body} query={q} />
-                    <div className="text-xxs text-faint mt-1 flex items-center gap-2">
+                    <div className="text-xxs text-kumo-placeholder mt-1 flex items-center gap-2">
                       {project && <span>{project.name}</span>}
                       <span>{format(new Date(h.entity.updatedAt), "MMM d, yyyy")}</span>
                     </div>
@@ -193,11 +198,12 @@ function FilterChip({
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={`h-6 px-2.5 text-xxs rounded-full border capitalize transition-colors ${
         active
-          ? "bg-accentSoft text-accentText border-accent/30"
-          : "bg-surface text-muted border-line hover:text-ink"
+          ? "bg-kumo-brand-tint text-kumo-link border-kumo-brand/30"
+          : "bg-kumo-base text-kumo-subtle border-kumo-line hover:text-kumo-default"
       }`}
     >
       {label}

@@ -10,12 +10,12 @@ export function StatusCircle({
   const stroke = "currentColor";
   if (status === "done") {
     return (
-      <svg width={size} height={size} viewBox="0 0 14 14" className="text-statusDone shrink-0">
+      <svg width={size} height={size} viewBox="0 0 14 14" className="text-(--color-kumo-success) shrink-0">
         <circle cx="7" cy="7" r="6" fill="currentColor" />
         <path
           d="M4 7.4L6.2 9.5L10 5.5"
-          stroke="white"
           strokeWidth="1.6"
+          className="stroke-kumo-base"
           strokeLinecap="round"
           strokeLinejoin="round"
           fill="none"
@@ -25,7 +25,7 @@ export function StatusCircle({
   }
   if (status === "in_progress") {
     return (
-      <svg width={size} height={size} viewBox="0 0 14 14" className="text-statusInProgress shrink-0">
+      <svg width={size} height={size} viewBox="0 0 14 14" className="text-(--color-kumo-warning) shrink-0">
         <circle cx="7" cy="7" r="6" stroke={stroke} strokeWidth="1.4" fill="none" />
         <path d="M7 1 a6 6 0 0 1 0 12 z" fill="currentColor" />
       </svg>
@@ -33,14 +33,14 @@ export function StatusCircle({
   }
   if (status === "rejected") {
     return (
-      <svg width={size} height={size} viewBox="0 0 14 14" className="text-statusRejected shrink-0">
+      <svg width={size} height={size} viewBox="0 0 14 14" className="text-(--color-kumo-danger) shrink-0">
         <circle cx="7" cy="7" r="6" stroke={stroke} strokeWidth="1.4" fill="none" />
         <path d="M4 4l6 6M10 4l-6 6" stroke={stroke} strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     );
   }
   return (
-    <svg width={size} height={size} viewBox="0 0 14 14" className="text-statusOpen shrink-0">
+    <svg width={size} height={size} viewBox="0 0 14 14" className="text-kumo-placeholder shrink-0">
       <circle cx="7" cy="7" r="6" stroke={stroke} strokeWidth="1.4" fill="none" />
     </svg>
   );
@@ -49,15 +49,15 @@ export function StatusCircle({
 export function PriorityIcon({ priority, size = 14 }: { priority: Priority; size?: number }) {
   if (priority === "urgent") {
     return (
-      <svg width={size} height={size} viewBox="0 0 14 14" className="text-prioUrgent shrink-0">
+      <svg width={size} height={size} viewBox="0 0 14 14" className="text-(--color-kumo-danger) shrink-0">
         <rect x="2" y="2" width="10" height="10" rx="2" fill="currentColor" />
-        <path d="M7 4v3.5M7 9.5h.01" stroke="white" strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M7 4v3.5M7 9.5h.01" strokeWidth="1.6" strokeLinecap="round" className="stroke-kumo-base" />
       </svg>
     );
   }
   if (priority === "high") {
     return (
-      <svg width={size} height={size} viewBox="0 0 14 14" className="text-prioHigh shrink-0">
+      <svg width={size} height={size} viewBox="0 0 14 14" className="text-(--color-kumo-warning) shrink-0">
         <rect x="2" y="8" width="2.5" height="4" rx="0.5" fill="currentColor" />
         <rect x="5.75" y="5" width="2.5" height="7" rx="0.5" fill="currentColor" />
         <rect x="9.5" y="2" width="2.5" height="10" rx="0.5" fill="currentColor" />
@@ -66,7 +66,7 @@ export function PriorityIcon({ priority, size = 14 }: { priority: Priority; size
   }
   if (priority === "medium") {
     return (
-      <svg width={size} height={size} viewBox="0 0 14 14" className="text-prioMedium shrink-0">
+      <svg width={size} height={size} viewBox="0 0 14 14" className="text-(--color-kumo-info) shrink-0">
         <rect x="2" y="8" width="2.5" height="4" rx="0.5" fill="currentColor" />
         <rect x="5.75" y="5" width="2.5" height="7" rx="0.5" fill="currentColor" />
         <rect x="9.5" y="2" width="2.5" height="10" rx="0.5" opacity="0.3" fill="currentColor" />
@@ -75,7 +75,7 @@ export function PriorityIcon({ priority, size = 14 }: { priority: Priority; size
   }
   if (priority === "low") {
     return (
-      <svg width={size} height={size} viewBox="0 0 14 14" className="text-prioLow shrink-0">
+      <svg width={size} height={size} viewBox="0 0 14 14" className="text-kumo-placeholder shrink-0">
         <rect x="2" y="8" width="2.5" height="4" rx="0.5" fill="currentColor" />
         <rect x="5.75" y="5" width="2.5" height="7" rx="0.5" opacity="0.3" fill="currentColor" />
         <rect x="9.5" y="2" width="2.5" height="10" rx="0.5" opacity="0.3" fill="currentColor" />
@@ -83,7 +83,7 @@ export function PriorityIcon({ priority, size = 14 }: { priority: Priority; size
     );
   }
   return (
-    <svg width={size} height={size} viewBox="0 0 14 14" className="text-faint shrink-0">
+    <svg width={size} height={size} viewBox="0 0 14 14" className="text-kumo-placeholder shrink-0">
       <line x1="3" y1="7" x2="11" y2="7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeDasharray="1.5 1.5" />
     </svg>
   );
