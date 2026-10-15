@@ -1,27 +1,46 @@
-import { formatDistanceToNow } from "date-fns";
+import { Badge } from "@cloudflare/kumo/components/badge";
+import { Banner } from "@cloudflare/kumo/components/banner";
+import { Button } from "@cloudflare/kumo/components/button";
+import { Checkbox } from "@cloudflare/kumo/components/checkbox";
+import { ClipboardText } from "@cloudflare/kumo/components/clipboard-text";
+import { Collapsible } from "@cloudflare/kumo/components/collapsible";
+import { Combobox } from "@cloudflare/kumo/components/combobox";
+import { Input } from "@cloudflare/kumo/components/input";
+import { Link } from "@cloudflare/kumo/components/link";
+import { Loader } from "@cloudflare/kumo/components/loader";
+import { Meter } from "@cloudflare/kumo/components/meter";
+import { Select } from "@cloudflare/kumo/components/select";
+import { SensitiveInput } from "@cloudflare/kumo/components/sensitive-input";
+import { Switch } from "@cloudflare/kumo/components/switch";
+import { Tabs } from "@cloudflare/kumo/components/tabs";
+import { cn } from "@cloudflare/kumo/utils";
 import {
-  AlertTriangle,
-  BrainCircuit,
-  Check,
-  ChevronRight,
-  Cog,
-  Command,
-  Copy,
-  ExternalLink,
-  Info,
-  KeyRound,
-  LogOut,
-  Package,
-  Plug,
-  Plus,
-  Puzzle,
-  RefreshCw,
-  Terminal,
-  Trash2,
-  UserRound,
-  Zap
-} from "lucide-react";
-import { useEffect, useState } from "react";
+  ArrowSquareOutIcon,
+  ArrowsClockwiseIcon,
+  BrainIcon,
+  CaretRightIcon,
+  CheckCircleIcon,
+  CheckIcon,
+  CommandIcon,
+  CopyIcon,
+  GearSixIcon,
+  InfoIcon,
+  KeyIcon,
+  LightningIcon,
+  PackageIcon,
+  PlugIcon,
+  PlusIcon,
+  PuzzlePieceIcon,
+  SignOutIcon,
+  TerminalWindowIcon,
+  TrashIcon,
+  UserIcon,
+  WarningCircleIcon,
+  WarningIcon,
+  type Icon
+} from "@phosphor-icons/react";
+import { formatDistanceToNow } from "date-fns";
+import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import {
@@ -41,58 +60,76 @@ const BOTNOTE_HOST =
   typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:4280";
 const MAX_EMBEDDING_BACKFILL = 100000;
 
+const CARD = "rounded-lg border border-kumo-line bg-kumo-base";
+
 type TabId = "account" | "tokens" | "cli" | "plugin" | "embedding" | "mcp" | "about";
 
 interface TabDef {
   id: TabId;
   label: string;
-  icon: typeof Cog;
+  icon: Icon;
 }
 
 const TABS: TabDef[] = [
-  { id: "account", label: "Account", icon: UserRound },
-  { id: "tokens", label: "API tokens", icon: KeyRound },
-  { id: "cli", label: "CLI", icon: Terminal },
-  { id: "plugin", label: "Plugin", icon: Puzzle },
-  { id: "embedding", label: "Embeddings", icon: BrainCircuit },
-  { id: "mcp", label: "MCP", icon: Plug },
-  { id: "about", label: "About", icon: Info }
+  { id: "account", label: "Account", icon: UserIcon },
+  { id: "tokens", label: "API tokens", icon: KeyIcon },
+  { id: "cli", label: "CLI", icon: TerminalWindowIcon },
+  { id: "plugin", label: "Plugin", icon: PuzzlePieceIcon },
+  { id: "embedding", label: "Embeddings", icon: BrainIcon },
+  { id: "mcp", label: "MCP", icon: PlugIcon },
+  { id: "about", label: "About", icon: InfoIcon }
 ];
 
 export function SettingsPage() {
   const [tab, setTab] = useState<TabId>("account");
 
   return (
-    <div className="h-full flex bg-bg overflow-hidden">
-      <nav className="w-52 shrink-0 border-r border-line bg-sidebar/60 overflow-y-auto scrollbar-thin">
-        <div className="px-4 pt-4 pb-2 flex items-center gap-2">
-          <Cog size={14} className="text-accent" />
-          <span className="text-sm font-semibold">Settings</span>
+    <div className="flex h-full flex-col overflow-hidden bg-kumo-canvas md:flex-row">
+      <nav
+        aria-label="Settings"
+        className="hidden w-52 shrink-0 overflow-y-auto border-r border-kumo-line bg-kumo-base scrollbar-thin md:block"
+      >
+        <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+          <GearSixIcon size={16} className="text-kumo-brand" />
+          <span className="text-sm font-semibold text-kumo-default">Settings</span>
         </div>
-        <ul className="px-2 pb-4 space-y-0.5">
-          {TABS.map((t) => (
-            <li key={t.id}>
-              <button
-                onClick={() => setTab(t.id)}
-                className={`w-full text-left px-2.5 py-1.5 text-sm rounded-md flex items-center gap-2.5 transition-colors ${
-                  tab === t.id
-                    ? "bg-accentSoft/70 text-accentText font-medium"
-                    : "text-muted hover:bg-sidebarHover hover:text-ink"
-                }`}
-              >
-                <t.icon
-                  size={13}
-                  className={tab === t.id ? "text-accent" : "text-faint"}
-                />
-                {t.label}
-              </button>
-            </li>
-          ))}
+        <ul className="space-y-0.5 px-2 pb-4">
+          {TABS.map((t) => {
+            const active = tab === t.id;
+            return (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  onClick={() => setTab(t.id)}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none",
+                    active
+                      ? "bg-kumo-tint font-medium text-kumo-default"
+                      : "text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
+                  )}
+                >
+                  <t.icon size={15} className={active ? "text-kumo-brand" : "text-kumo-placeholder"} />
+                  {t.label}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </nav>
 
-      <main className="flex-1 min-w-0 overflow-y-auto scrollbar-thin">
-        <div className="mx-auto max-w-3xl px-8 py-8 space-y-6">
+      <div className="shrink-0 border-b border-kumo-line bg-kumo-base px-2 md:hidden">
+        <Tabs
+          variant="underline"
+          size="sm"
+          tabs={TABS.map((t) => ({ value: t.id, label: t.label }))}
+          value={tab}
+          onValueChange={(v) => setTab(v as TabId)}
+        />
+      </div>
+
+      <main className="min-w-0 flex-1 overflow-y-auto scrollbar-thin">
+        <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 md:px-8 md:py-8">
           {tab === "account" && <AccountSection />}
           {tab === "tokens" && <TokensSection />}
           {tab === "cli" && <CliSection />}
@@ -110,9 +147,9 @@ export function SettingsPage() {
 
 function SectionHeader({ title, blurb }: { title: string; blurb?: string }) {
   return (
-    <header className="pb-4 border-b border-lineSoft space-y-1.5">
-      <h1 className="text-lg font-semibold text-ink">{title}</h1>
-      {blurb && <p className="text-xs text-muted leading-relaxed max-w-xl">{blurb}</p>}
+    <header className="space-y-1.5 border-b border-kumo-hairline pb-4">
+      <h1 className="text-lg font-semibold text-kumo-default">{title}</h1>
+      {blurb && <p className="max-w-xl text-xs leading-relaxed text-kumo-subtle">{blurb}</p>}
     </header>
   );
 }
@@ -120,10 +157,90 @@ function SectionHeader({ title, blurb }: { title: string; blurb?: string }) {
 function SubHeader({ title, blurb }: { title: string; blurb?: string }) {
   return (
     <div className="pt-2">
-      <h2 className="text-sm font-semibold text-ink">{title}</h2>
-      {blurb && <p className="text-xs text-muted leading-relaxed mt-0.5">{blurb}</p>}
+      <h2 className="text-sm font-semibold text-kumo-default">{title}</h2>
+      {blurb && <p className="mt-0.5 text-xs leading-relaxed text-kumo-subtle">{blurb}</p>}
     </div>
   );
+}
+
+function CardHeader({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <div className="flex h-8 items-center justify-between gap-2 border-b border-kumo-hairline bg-kumo-recessed px-3">
+      <span className="text-xxs font-medium tracking-wider text-kumo-subtle uppercase">{title}</span>
+      {children}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  htmlFor,
+  className,
+  children
+}: {
+  label: string;
+  htmlFor?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const labelClass = "block text-xs font-medium text-kumo-default";
+  return (
+    <div className={cn("space-y-1", className)}>
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className={labelClass}>
+          {label}
+        </label>
+      ) : (
+        <div className={labelClass}>{label}</div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+type NoticeTone = "info" | "success" | "warning" | "error" | "neutral";
+
+const NOTICE_STYLE: Record<
+  NoticeTone,
+  { variant: "default" | "alert" | "error" | "secondary"; icon: Icon; className?: string }
+> = {
+  info: { variant: "default", icon: InfoIcon },
+  success: {
+    variant: "default",
+    icon: CheckCircleIcon,
+    className: "bg-kumo-success-tint text-kumo-success"
+  },
+  warning: { variant: "alert", icon: WarningIcon },
+  error: { variant: "error", icon: WarningCircleIcon },
+  neutral: { variant: "secondary", icon: InfoIcon }
+};
+
+function Notice({ tone, children }: { tone: NoticeTone; children: ReactNode }) {
+  const { variant, icon: NoticeIcon, className } = NOTICE_STYLE[tone];
+  return (
+    <Banner
+      size="sm"
+      variant={variant}
+      icon={<NoticeIcon size={14} weight="fill" />}
+      description={<span className="text-xs leading-relaxed">{children}</span>}
+      className={cn("items-start", className)}
+    />
+  );
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function useCopied(): [boolean, (text: string) => void] {
+  const [copied, setCopied] = useState(false);
+  function copy(text: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    });
+  }
+  return [copied, copy];
 }
 
 // ----------------------------------------------------------------------------
@@ -151,18 +268,21 @@ function AccountSection() {
         blurb="Browser session uses a master-password login. Agents (CLI / MCP) authenticate with bearer tokens, generated under API tokens."
       />
       <WorkspaceTimezoneCard />
-      <div className="border border-line rounded-md bg-surface px-4 py-3 flex items-center justify-between">
-        <div className="text-xs text-muted">
+      <div className={cn(CARD, "flex items-center justify-between gap-3 px-4 py-3")}>
+        <div className="text-xs text-kumo-subtle">
           Sign out of this browser. Other devices and any active bearer tokens
           are unaffected.
         </div>
-        <button
-          onClick={onLogout}
+        <Button
+          variant="secondary-destructive"
+          size="sm"
+          icon={<SignOutIcon size={13} />}
           disabled={busy}
-          className="btn text-red-500! border-red-500/30! hover:bg-red-500/10! gap-1.5"
+          onClick={onLogout}
+          className="shrink-0"
         >
-          <LogOut size={12} /> Log out
-        </button>
+          Log out
+        </Button>
       </div>
     </>
   );
@@ -173,21 +293,27 @@ function WorkspaceTimezoneCard() {
   const update = useUpdateWorkspaceSettings();
   const [timezone, setTimezone] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const timezoneId = useId();
 
   // Populate from IANA list, guard if unavailable (old browsers).
-  const tzOptions: string[] = (() => {
+  const tzOptions = useMemo<string[]>(() => {
     try {
       return (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
     } catch {
       return [];
     }
-  })();
+  }, []);
 
   useEffect(() => {
     if (data) setTimezone(data.timezone);
   }, [data]);
 
-  async function onSave(e: React.FormEvent) {
+  function onPick(value: string) {
+    setTimezone(value);
+    setMessage(null);
+  }
+
+  async function onSave(e: FormEvent) {
     e.preventDefault();
     setMessage(null);
     await update.mutateAsync({ timezone });
@@ -195,53 +321,59 @@ function WorkspaceTimezoneCard() {
   }
 
   return (
-    <div className="border border-line rounded-md bg-surface px-4 py-4 space-y-3">
+    <div className={cn(CARD, "space-y-3 px-4 py-4")}>
       <div>
-        <div className="text-sm font-semibold text-ink">Workspace timezone</div>
-        <p className="text-xs text-muted mt-0.5 leading-relaxed">
+        <div className="text-sm font-semibold text-kumo-default">Workspace timezone</div>
+        <p className="mt-0.5 text-xs leading-relaxed text-kumo-subtle">
           Used to compute all-day recurring task occurrence dates on the correct local calendar day.
         </p>
       </div>
       <form onSubmit={onSave} className="flex items-end gap-3">
-        <label className="flex-1 space-y-1">
-          <span className="block text-xxs uppercase tracking-wider text-muted">Timezone</span>
+        <Field label="Timezone" htmlFor={timezoneId} className="min-w-0 flex-1">
           {tzOptions.length > 0 ? (
-            <select
-              className="input"
-              value={timezone}
-              onChange={(e) => { setTimezone(e.target.value); setMessage(null); }}
+            <Combobox<string>
+              size="sm"
+              items={tzOptions}
+              value={timezone || null}
+              onValueChange={(v) => {
+                if (v) onPick(v);
+              }}
             >
-              {tzOptions.map((tz) => (
-                <option key={tz} value={tz}>{tz}</option>
-              ))}
-            </select>
+              <Combobox.TriggerInput id={timezoneId} placeholder="Search timezones…" className="w-full" />
+              <Combobox.Content>
+                <Combobox.List>
+                  {(tz: string) => (
+                    <Combobox.Item key={tz} value={tz} className="py-1 text-xs">
+                      {tz}
+                    </Combobox.Item>
+                  )}
+                </Combobox.List>
+                <Combobox.Empty>No matching timezone</Combobox.Empty>
+              </Combobox.Content>
+            </Combobox>
           ) : (
-            <input
-              className="input font-mono"
+            <Input
+              id={timezoneId}
+              size="sm"
+              className="w-full font-mono"
               value={timezone}
-              onChange={(e) => { setTimezone(e.target.value); setMessage(null); }}
+              onChange={(e) => onPick(e.target.value)}
               placeholder="UTC"
             />
           )}
-        </label>
-        <button
+        </Field>
+        <Button
           type="submit"
-          className="btn btn-primary"
+          variant="primary"
+          size="sm"
+          icon={<CheckIcon size={12} weight="bold" />}
           disabled={update.isPending || !timezone}
         >
-          <Check size={11} /> {update.isPending ? "Saving..." : "Save"}
-        </button>
+          {update.isPending ? "Saving..." : "Save"}
+        </Button>
       </form>
-      {message && (
-        <div className="text-xs text-accentText bg-accentSoft/50 border border-accent/20 rounded-md px-3 py-2">
-          {message}
-        </div>
-      )}
-      {update.error && (
-        <div className="text-xs text-danger">
-          {update.error instanceof Error ? update.error.message : String(update.error)}
-        </div>
-      )}
+      {message && <Notice tone="success">{message}</Notice>}
+      {update.error && <Notice tone="error">{errorText(update.error)}</Notice>}
     </div>
   );
 }
@@ -258,8 +390,8 @@ function CliSection() {
       note: (
         <>
           One-time login. The default URL is the daemon on the same machine,{" "}
-          <code className="text-ink">http://127.0.0.1:4280</code> (no token needed, loopback is
-          trusted). From another machine enter <code className="text-ink">{BOTNOTE_HOST}</code> and
+          <code className="text-kumo-default">http://127.0.0.1:4280</code> (no token needed, loopback is
+          trusted). From another machine enter <code className="text-kumo-default">{BOTNOTE_HOST}</code> and
           paste a bearer token from Settings → API tokens.
         </>
       ),
@@ -284,7 +416,7 @@ function CliSection() {
       note: (
         <>
           Per-shell override — skips{" "}
-          <code className="text-ink">~/.config/botnote/config.json</code>:
+          <code className="text-kumo-default">~/.config/botnote/config.json</code>:
         </>
       ),
       code: "BOTNOTE_URL=http://127.0.0.1:4280 botnote today"
@@ -293,7 +425,7 @@ function CliSection() {
       note: (
         <>
           Config file, preferred for the daemon host —{" "}
-          <code className="text-ink">~/.config/botnote/config.json</code>:
+          <code className="text-kumo-default">~/.config/botnote/config.json</code>:
         </>
       ),
       code: '{ "baseUrl": "http://127.0.0.1:4280" }'
@@ -337,14 +469,14 @@ function PluginSection() {
   const clients: {
     id: PluginClientId;
     label: string;
-    icon: typeof Cog;
+    icon: Icon;
     subtitle: string;
     cards: { title: string; steps: Step[] }[];
   }[] = [
     {
       id: "claude",
       label: "Claude Code",
-      icon: Command,
+      icon: CommandIcon,
       subtitle:
         "Recommended for day-to-day work. Update through /plugin, then reload plugins in-session with /reload-plugins.",
       cards: [
@@ -358,11 +490,11 @@ function PluginSection() {
             {
               note: (
                 <>
-                  Claude Code prompts for <code className="text-ink">botnote_url</code> — leave it
+                  Claude Code prompts for <code className="text-kumo-default">botnote_url</code> — leave it
                   empty on the daemon host (defaults to{" "}
-                  <code className="text-ink">http://127.0.0.1:4280</code>), enter{" "}
-                  <code className="text-ink">{BOTNOTE_HOST}</code> elsewhere — and{" "}
-                  <code className="text-ink">botnote_token</code>, a bearer from Settings → API
+                  <code className="text-kumo-default">http://127.0.0.1:4280</code>), enter{" "}
+                  <code className="text-kumo-default">{BOTNOTE_HOST}</code> elsewhere — and{" "}
+                  <code className="text-kumo-default">botnote_token</code>, a bearer from Settings → API
                   tokens (skip on loopback).
                 </>
               )
@@ -376,7 +508,7 @@ function PluginSection() {
               note: (
                 <>
                   Not every build exposes auto-update. Try the marketplace update first: open{" "}
-                  <code className="text-ink">/plugin</code>, then Marketplaces → botnote → Update,
+                  <code className="text-kumo-default">/plugin</code>, then Marketplaces → botnote → Update,
                   if your build shows it.
                 </>
               ),
@@ -397,7 +529,7 @@ function PluginSection() {
     {
       id: "codex",
       label: "Codex",
-      icon: Terminal,
+      icon: TerminalWindowIcon,
       subtitle:
         "Git marketplace flow with sparse checkout — no full botnote source checkout. Restart Codex after install or update.",
       cards: [
@@ -416,8 +548,8 @@ function PluginSection() {
               note: (
                 <>
                   Restart Codex — exit this session, then run{" "}
-                  <code className="text-ink">codex</code> again. In the new session, check{" "}
-                  <code className="text-ink">/mcp</code>.
+                  <code className="text-kumo-default">codex</code> again. In the new session, check{" "}
+                  <code className="text-kumo-default">/mcp</code>.
                 </>
               )
             }
@@ -438,7 +570,7 @@ function PluginSection() {
     {
       id: "cursor",
       label: "Cursor",
-      icon: Puzzle,
+      icon: PuzzlePieceIcon,
       subtitle:
         "Uses the same plugin bundle. Keep the CLI installed only if you want terminal commands or offline fallback.",
       cards: [
@@ -449,7 +581,7 @@ function PluginSection() {
               note: (
                 <>
                   Add the repository marketplace in Cursor's plugin UI — metadata lives at{" "}
-                  <code className="text-ink">.cursor-plugin/marketplace.json</code>:
+                  <code className="text-kumo-default">.cursor-plugin/marketplace.json</code>:
                 </>
               ),
               code: "https://github.com/botnote-dev/botnote"
@@ -477,7 +609,7 @@ function PluginSection() {
     {
       id: "skills",
       label: "Skills CLI",
-      icon: Zap,
+      icon: LightningIcon,
       subtitle:
         "Skills-only alternative: installs the workflow skills into 70+ agents, but NOT the MCP server or hooks. Prefer the plugin install above; use this when your agent has no plugin system.",
       cards: [
@@ -500,7 +632,7 @@ function PluginSection() {
             {
               note: (
                 <>
-                  On the daemon host use <code className="text-ink">http://127.0.0.1:4280</code> and
+                  On the daemon host use <code className="text-kumo-default">http://127.0.0.1:4280</code> and
                   skip the token. Want the bundled MCP prompts and the session-close feedback hook?
                   Use the Claude Code plugin tab instead.
                 </>
@@ -526,7 +658,7 @@ function PluginSection() {
     {
       id: "cli",
       label: "CLI runtime",
-      icon: Package,
+      icon: PackageIcon,
       subtitle:
         "Optional helper for login, manual CLI commands, and offline fallback. Plugin MCP can run through npx without a global CLI.",
       cards: [
@@ -541,9 +673,9 @@ function PluginSection() {
               note: (
                 <>
                   One-time login. Remote clients: save{" "}
-                  <code className="text-ink">{BOTNOTE_HOST}</code> plus a bearer token from
+                  <code className="text-kumo-default">{BOTNOTE_HOST}</code> plus a bearer token from
                   Settings → API tokens. On the daemon host, keep the default{" "}
-                  <code className="text-ink">http://127.0.0.1:4280</code> and skip the token.
+                  <code className="text-kumo-default">http://127.0.0.1:4280</code> and skip the token.
                 </>
               ),
               code: "botnote login"
@@ -582,7 +714,7 @@ function PluginSection() {
         blurb="Add botnote as the plugin-backed MCP + workflow layer for each agent client. Letheia / Plane MCP setup should stay retired."
       />
 
-      <ol className="grid grid-cols-1 md:grid-cols-3 gap-2">
+      <ol className="grid grid-cols-1 gap-2 md:grid-cols-3">
         <PluginStep
           n={1}
           title="Optional CLI"
@@ -600,30 +732,29 @@ function PluginSection() {
         />
       </ol>
 
-      <div className="border border-accent/20 bg-accentSoft/50 rounded-md px-4 py-3 text-xs text-accentText leading-relaxed">
-        Use <code className="text-ink">{BOTNOTE_HOST}</code> with an API token from this
+      <Notice tone="info">
+        Use <code className="text-kumo-default">{BOTNOTE_HOST}</code> with an API token from this
         settings page on remote devices. On the daemon host, leave the URL empty (defaults to{" "}
-        <code className="text-ink">http://127.0.0.1:4280</code>) and skip the token.
-      </div>
+        <code className="text-kumo-default">http://127.0.0.1:4280</code>) and skip the token.
+      </Notice>
 
       <section className="space-y-3">
-        <div className="flex items-center border-b border-line">
-          {clients.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setClient(c.id)}
-              className={`flex items-center gap-1.5 px-3 py-2 -mb-px text-xs font-medium border-b-2 transition-colors ${
-                client === c.id
-                  ? "border-accent text-ink"
-                  : "border-transparent text-muted hover:text-ink"
-              }`}
-            >
-              <c.icon size={12} className={client === c.id ? "text-accent" : ""} />
-              {c.label}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-muted leading-relaxed">{active.subtitle}</p>
+        <Tabs
+          variant="underline"
+          size="sm"
+          tabs={clients.map((c) => ({
+            value: c.id,
+            label: (
+              <span className="flex items-center gap-1.5">
+                <c.icon size={13} />
+                {c.label}
+              </span>
+            )
+          }))}
+          value={client}
+          onValueChange={(v) => setClient(v as PluginClientId)}
+        />
+        <p className="text-xs leading-relaxed text-kumo-subtle">{active.subtitle}</p>
         {active.cards.map((c) => (
           <StepsCard key={`${active.id}-${c.title}`} title={c.title} steps={c.steps} />
         ))}
@@ -635,44 +766,40 @@ function PluginSection() {
       />
       <CommandList title="Commands" items={slashCommands} />
 
-      <details className="border border-line rounded-md bg-surface group open:pb-4">
-        <summary className="px-4 py-3 text-sm text-ink cursor-pointer select-none flex items-center gap-2 list-none [&::-webkit-details-marker]:hidden">
-          <ChevronRight
-            size={13}
-            className="text-faint transition-transform group-open:rotate-90"
+      <Collapsible className={CARD}>
+        <Collapsible.Trigger className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-4 py-3 text-left text-sm text-kumo-default select-none focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none">
+          <CaretRightIcon
+            size={12}
+            weight="bold"
+            className="shrink-0 text-kumo-placeholder transition-transform [[data-panel-open]_&]:rotate-90"
           />
           <span className="font-medium">Advanced: repo-local marketplace entry</span>
-          <span className="text-xxs text-faint ml-1">
+          <span className="ml-1 text-xxs text-kumo-placeholder">
             only when a repo vendors the plugin files
           </span>
-        </summary>
-        <div className="px-4 space-y-2">
-          <p className="text-xs text-muted leading-relaxed">
-            Marketplace entry for <code className="text-ink">.agents/plugins/marketplace.json</code>.
+        </Collapsible.Trigger>
+        <Collapsible.Panel className="space-y-2 px-4 pb-4">
+          <p className="text-xs leading-relaxed text-kumo-subtle">
+            Marketplace entry for <code className="text-kumo-default">.agents/plugins/marketplace.json</code>.
             Use this only when the repo already vendors{" "}
-            <code className="text-ink">./plugins/botnote</code>.
+            <code className="text-kumo-default">./plugins/botnote</code>.
           </p>
           <Snippet code={REPO_MARKETPLACE_JSON} />
-        </div>
-      </details>
+        </Collapsible.Panel>
+      </Collapsible>
 
-      <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted leading-relaxed flex items-start gap-3">
-        <ExternalLink size={13} className="mt-0.5 shrink-0 text-accent" />
+      <div className={cn(CARD, "flex items-start gap-3 px-4 py-3 text-xs leading-relaxed text-kumo-subtle")}>
+        <ArrowSquareOutIcon size={14} className="mt-0.5 shrink-0 text-kumo-brand" />
         <div>
           Plugin distribution lives at{" "}
-          <a
-            href="https://github.com/botnote-dev/botnote"
-            target="_blank"
-            className="text-accent hover:underline"
-            rel="noreferrer"
-          >
+          <Link href="https://github.com/botnote-dev/botnote" target="_blank" rel="noreferrer">
             botnote-dev/botnote
-          </a>
+          </Link>
           {". "}
-          Claude Code updates through <code className="text-ink">/plugin</code>; after updating or
-          reinstalling, run <code className="text-ink">/reload-plugins</code>. Codex has no reload
+          Claude Code updates through <code className="text-kumo-default">/plugin</code>; after updating or
+          reinstalling, run <code className="text-kumo-default">/reload-plugins</code>. Codex has no reload
           command: refresh Git marketplace snapshots with{" "}
-          <code className="text-ink">codex plugin marketplace upgrade</code>, reinstall the plugin,
+          <code className="text-kumo-default">codex plugin marketplace upgrade</code>, reinstall the plugin,
           then start a new Codex session.
         </div>
       </div>
@@ -682,14 +809,14 @@ function PluginSection() {
 
 function PluginStep({ n, title, body }: { n: number; title: string; body: string }) {
   return (
-    <li className="border border-line rounded-md bg-surface px-4 py-3">
+    <li className={cn(CARD, "px-4 py-3")}>
       <div className="flex items-center gap-2">
-        <span className="w-5 h-5 rounded-full bg-accentSoft text-accent text-xxs font-semibold flex items-center justify-center shrink-0">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-kumo-brand-tint text-xxs font-semibold text-kumo-brand">
           {n}
         </span>
-        <span className="text-sm font-medium text-ink">{title}</span>
+        <span className="text-sm font-medium text-kumo-default">{title}</span>
       </div>
-      <p className="mt-1.5 text-xs text-muted leading-relaxed">{body}</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-kumo-subtle">{body}</p>
     </li>
   );
 }
@@ -707,6 +834,9 @@ function EmbeddingSection() {
   const [apiKey, setApiKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const modelId = useId();
+  const baseUrlId = useId();
+  const apiKeyId = useId();
 
   useEffect(() => {
     if (!data) return;
@@ -718,7 +848,7 @@ function EmbeddingSection() {
     setClearKey(false);
   }, [data]);
 
-  async function onSave(e: React.FormEvent) {
+  async function onSave(e: FormEvent) {
     e.preventDefault();
     setMessage(null);
     const trimmedKey = apiKey.trim();
@@ -758,13 +888,7 @@ function EmbeddingSection() {
         blurb="Configure semantic search for botnote. The database vector column is fixed at 384 dimensions, so provider models must return 384-dimensional embeddings."
       />
 
-      <div
-        className={`border rounded-md px-4 py-3 text-xs leading-relaxed ${
-          data?.effectiveEnabled
-            ? "border-success/30 bg-success/10 text-ink"
-            : "border-warn/30 bg-warn/10 text-ink"
-        }`}
-      >
+      <Notice tone={isLoading ? "neutral" : data?.effectiveEnabled ? "success" : "warning"}>
         {isLoading ? (
           "Loading embedding settings..."
         ) : data?.effectiveEnabled ? (
@@ -778,26 +902,21 @@ function EmbeddingSection() {
             Text search still works through BM25.
           </>
         )}
-      </div>
+      </Notice>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <MetricCard label="Status" value={data?.effectiveEnabled ? "On" : "Off"} />
         <MetricCard label="Embedded" value={`${data?.embeddedCount ?? 0}/${data?.totalCount ?? 0}`} />
         <MetricCard label="Missing" value={`${data?.missingCount ?? 0}`} />
         <MetricCard label="Queue" value={`${data?.pendingCount ?? 0}`} />
       </div>
 
-      <div className="border border-line rounded-md bg-surface px-4 py-3 space-y-2">
+      <div className={cn(CARD, "space-y-3 px-4 py-3")}>
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-xs font-semibold text-ink">Vector coverage</div>
-            <div className="text-xxs text-muted">
-              {embeddedPercent}% of task/note records have embeddings.
-            </div>
-          </div>
-          <button
-            type="button"
-            className="btn"
+          <div className="text-xs font-semibold text-kumo-default">Vector coverage</div>
+          <Button
+            size="sm"
+            icon={<ArrowsClockwiseIcon size={12} />}
             disabled={!canBackfill || backfill.isPending}
             onClick={onBackfill}
             title={
@@ -806,44 +925,55 @@ function EmbeddingSection() {
                 : "Enable embeddings before backfilling"
             }
           >
-            <RefreshCw size={11} /> {backfill.isPending ? "Queueing..." : "Backfill all missing"}
-          </button>
+            {backfill.isPending ? "Queueing..." : "Backfill all missing"}
+          </Button>
         </div>
-        <div className="h-2 rounded bg-sidebar overflow-hidden border border-lineSoft">
-          <div
-            className="h-full bg-accent"
-            style={{ width: `${embeddedPercent}%` }}
-          />
-        </div>
+        <Meter
+          label={`${embeddedPercent}% of task/note records have embeddings.`}
+          value={embeddedPercent}
+          showValue={false}
+        />
       </div>
 
-      <form onSubmit={onSave} className="border border-line rounded-md bg-surface px-4 py-4 space-y-4">
-        <label className="flex items-center gap-2 text-sm text-ink">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-          />
-          Enable semantic search
-        </label>
+      <form onSubmit={onSave} className={cn(CARD, "space-y-4 px-4 py-4")}>
+        <Switch
+          size="sm"
+          label="Enable semantic search"
+          checked={enabled}
+          onCheckedChange={setEnabled}
+          // Kumo's default Switch hard-codes a blue checked track; repaint it in the brand color.
+          className={cn(
+            enabled &&
+              "bg-kumo-brand ring-kumo-brand-hover dark:bg-kumo-brand dark:ring-kumo-brand dark:[&>div]:bg-neutral-100"
+          )}
+        />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="space-y-1">
-            <span className="block text-xxs uppercase tracking-wider text-muted">Provider</span>
-            <select
-              className="input"
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Field label="Provider">
+            <Select<EmbeddingProvider>
+              size="sm"
+              aria-label="Provider"
               value={provider}
-              onChange={(e) => setProvider(e.target.value as EmbeddingProvider)}
+              onValueChange={(v) => {
+                if (v !== null) setProvider(v);
+              }}
+              renderValue={(v) => providerLabel(v)}
+              className="w-full"
             >
-              <option value="openai">OpenAI</option>
-              <option value="openai_compatible">OpenAI-compatible</option>
-            </select>
-          </label>
+              <Select.Option value="openai" className="py-1 text-sm">
+                OpenAI
+              </Select.Option>
+              <Select.Option value="openai_compatible" className="py-1 text-sm">
+                OpenAI-compatible
+              </Select.Option>
+            </Select>
+          </Field>
 
-          <label className="space-y-1">
-            <span className="block text-xxs uppercase tracking-wider text-muted">Model</span>
-            <input
-              className="input font-mono"
+          <Field label="Model" htmlFor={modelId}>
+            <Input
+              id={modelId}
+              size="sm"
+              className="w-full font-mono"
               list="embedding-models"
               value={model}
               onChange={(e) => setModel(e.target.value)}
@@ -853,30 +983,31 @@ function EmbeddingSection() {
               <option value="text-embedding-3-small" />
               <option value="text-embedding-3-large" />
             </datalist>
-          </label>
+          </Field>
         </div>
 
         {provider === "openai_compatible" && (
-          <label className="space-y-1 block">
-            <span className="block text-xxs uppercase tracking-wider text-muted">Base URL</span>
-            <input
-              className="input font-mono"
+          <Field label="Base URL" htmlFor={baseUrlId}>
+            <Input
+              id={baseUrlId}
+              size="sm"
+              className="w-full font-mono"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="https://api.example.com/v1"
             />
-          </label>
+          </Field>
         )}
 
-        <label className="space-y-1 block">
-          <span className="block text-xxs uppercase tracking-wider text-muted">API key</span>
-          <input
-            className="input font-mono"
-            type="password"
+        <Field label="API key" htmlFor={apiKeyId}>
+          <SensitiveInput
+            id={apiKeyId}
+            size="sm"
+            className="font-mono"
             value={apiKey}
-            onChange={(e) => {
-              setApiKey(e.target.value);
-              if (e.target.value) setClearKey(false);
+            onValueChange={(v) => {
+              setApiKey(v);
+              if (v) setClearKey(false);
             }}
             placeholder={
               data?.apiKeyConfigured
@@ -884,57 +1015,46 @@ function EmbeddingSection() {
                 : "sk-..."
             }
           />
-          <div className="flex items-center justify-between gap-3 text-xxs text-muted">
+          <div className="flex items-center justify-between gap-3 text-xxs text-kumo-subtle">
             <span>
               Full keys are stored server-side and are not returned to the browser after save.
             </span>
             {data?.settingsApiKeyConfigured && (
-              <label className="inline-flex items-center gap-1.5">
-                <input
-                  type="checkbox"
+              <label className="inline-flex shrink-0 cursor-pointer items-center gap-1.5">
+                <Checkbox
                   checked={clearKey}
-                  onChange={(e) => {
-                    setClearKey(e.target.checked);
-                    if (e.target.checked) setApiKey("");
+                  onCheckedChange={(checked) => {
+                    setClearKey(checked);
+                    if (checked) setApiKey("");
                   }}
                 />
                 Clear stored key
               </label>
             )}
           </div>
-        </label>
+        </Field>
 
-        <div className="border border-lineSoft rounded-md bg-sidebar/30 px-3 py-2 text-xs text-muted leading-relaxed">
+        <Notice tone="neutral">
           OpenAI-compatible providers must accept the OpenAI embeddings API and return{" "}
-          <code className="text-ink">384</code> dimensions for the selected model. Existing
+          <code className="text-kumo-default">384</code> dimensions for the selected model. Existing
           vectors are not automatically regenerated when provider or model changes; use Backfill
           all missing to queue every record that does not have a vector yet.
-        </div>
+        </Notice>
 
-        {message && (
-          <div className="text-xs text-accentText bg-accentSoft/50 border border-accent/20 rounded-md px-3 py-2">
-            {message}
-          </div>
-        )}
-        {update.error && (
-          <div className="text-xs text-danger">
-            {update.error instanceof Error ? update.error.message : String(update.error)}
-          </div>
-        )}
-        {backfill.error && (
-          <div className="text-xs text-danger">
-            {backfill.error instanceof Error ? backfill.error.message : String(backfill.error)}
-          </div>
-        )}
+        {message && <Notice tone="info">{message}</Notice>}
+        {update.error && <Notice tone="error">{errorText(update.error)}</Notice>}
+        {backfill.error && <Notice tone="error">{errorText(backfill.error)}</Notice>}
 
         <div className="flex justify-end">
-          <button
+          <Button
             type="submit"
-            className="btn btn-primary"
+            variant="primary"
+            size="sm"
+            icon={<CheckIcon size={12} weight="bold" />}
             disabled={update.isPending || model.trim().length === 0}
           >
-            <Check size={11} /> {update.isPending ? "Saving..." : "Save embedding settings"}
-          </button>
+            {update.isPending ? "Saving..." : "Save embedding settings"}
+          </Button>
         </div>
       </form>
     </>
@@ -943,9 +1063,9 @@ function EmbeddingSection() {
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border border-line rounded-md bg-surface px-3 py-2">
-      <div className="text-xxs uppercase tracking-wider text-muted">{label}</div>
-      <div className="text-lg font-semibold text-ink mt-0.5">{value}</div>
+    <div className={cn(CARD, "px-3 py-2")}>
+      <div className="text-xxs tracking-wider text-kumo-subtle uppercase">{label}</div>
+      <div className="mt-0.5 text-lg font-semibold text-kumo-default tabular-nums">{value}</div>
     </div>
   );
 }
@@ -999,9 +1119,9 @@ BOTNOTE_TOKEN = "bn_..."`;
     {
       note: (
         <>
-          Add to <code className="text-ink">~/.codex/config.toml</code>. On the daemon host, drop{" "}
-          <code className="text-ink">BOTNOTE_TOKEN</code> and set{" "}
-          <code className="text-ink">BOTNOTE_URL = "http://127.0.0.1:4280"</code> (loopback is
+          Add to <code className="text-kumo-default">~/.codex/config.toml</code>. On the daemon host, drop{" "}
+          <code className="text-kumo-default">BOTNOTE_TOKEN</code> and set{" "}
+          <code className="text-kumo-default">BOTNOTE_URL = "http://127.0.0.1:4280"</code> (loopback is
           trusted).
         </>
       ),
@@ -1048,13 +1168,13 @@ BOTNOTE_TOKEN = "bn_..."`;
       <StepsCard title="Codex (~/.codex/config.toml)" steps={codexSteps} />
       <StepsCard title="REST · curl" steps={curlSteps} />
 
-      <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted leading-relaxed">
-        Raw MCP configuration requires the <code className="text-ink">botnote</code> binary in
-        <code className="text-ink"> PATH</code>{" "}
-        (<code className="text-ink">npm i -g botnote</code>). The Claude Code and Codex plugins do not
+      <div className={cn(CARD, "px-4 py-3 text-xs leading-relaxed text-kumo-subtle")}>
+        Raw MCP configuration requires the <code className="text-kumo-default">botnote</code> binary in
+        <code className="text-kumo-default"> PATH</code>{" "}
+        (<code className="text-kumo-default">npm i -g botnote</code>). The Claude Code and Codex plugins do not
         require a global CLI install; they run the matching npm package version automatically. The
         MCP server has no DB connection of its own; it speaks HTTP to whichever{" "}
-        <code className="text-ink">BOTNOTE_URL</code> you set.
+        <code className="text-kumo-default">BOTNOTE_URL</code> you set.
       </div>
     </>
   );
@@ -1069,19 +1189,19 @@ function AboutSection() {
   return (
     <>
       <SectionHeader title="About" blurb="Build + runtime info for this daemon." />
-      <div className="border border-line rounded-md bg-surface px-4 py-3 text-xs text-muted space-y-2">
+      <div className={cn(CARD, "space-y-2 px-4 py-3 text-xs text-kumo-subtle")}>
         <div>
-          <span className="text-ink">botnote {versionLabel}</span> — Postgres 16 + pgvector + Fastify 5 +
+          <span className="text-kumo-default">botnote {versionLabel}</span> — Postgres 16 + pgvector + Fastify 5 +
           MCP SDK
         </div>
         <div>
-          REST: <code className="text-ink">{BOTNOTE_HOST}</code> · docs:{" "}
-          <a className="text-accent hover:underline" href="/docs" target="_blank" rel="noreferrer">
+          REST: <code className="text-kumo-default">{BOTNOTE_HOST}</code> · docs:{" "}
+          <Link href="/docs" target="_blank" rel="noreferrer">
             /docs
-          </a>
+          </Link>
         </div>
-        <div className="pt-1 border-t border-lineSoft">
-          Auth is enforced when <code className="text-ink">BOTNOTE_REQUIRE_AUTH=1</code> (or a{" "}
+        <div className="border-t border-kumo-hairline pt-1">
+          Auth is enforced when <code className="text-kumo-default">BOTNOTE_REQUIRE_AUTH=1</code> (or a{" "}
           <code>BOTNOTE_PASSWORD</code> is set) on the daemon. Every request then needs a bearer
           token or a browser session cookie, except direct connections from the daemon host itself
           (<code>BOTNOTE_TRUST_LOCALHOST=0</code> closes that too). Forwarded headers are honoured
@@ -1095,7 +1215,7 @@ function AboutSection() {
 // ----------------------------------------------------------------------------
 
 interface Step {
-  note?: React.ReactNode;
+  note?: ReactNode;
   code?: string;
 }
 
@@ -1103,14 +1223,12 @@ interface Step {
  *  live on the snippets only, so copying never picks up explanatory text. */
 function StepsCard({ title, steps }: { title: string; steps: Step[] }) {
   return (
-    <div className="border border-line rounded-md bg-surface overflow-hidden">
-      <div className="px-3 py-1.5 border-b border-lineSoft bg-sidebar/40">
-        <span className="text-xxs uppercase tracking-wider text-muted font-medium">{title}</span>
-      </div>
-      <div className="px-3 py-3 space-y-3">
+    <div className={cn(CARD, "overflow-hidden")}>
+      <CardHeader title={title} />
+      <div className="space-y-3 px-3 py-3">
         {steps.map((s, i) => (
           <div key={i} className="space-y-1.5">
-            {s.note && <p className="text-xs text-muted leading-relaxed">{s.note}</p>}
+            {s.note && <p className="text-xs leading-relaxed text-kumo-subtle">{s.note}</p>}
             {s.code && <Snippet code={s.code} />}
           </div>
         ))}
@@ -1119,28 +1237,37 @@ function StepsCard({ title, steps }: { title: string; steps: Step[] }) {
   );
 }
 
-function Snippet({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
+function CopyButton({
+  copied,
+  onClick,
+  className
+}: {
+  copied: boolean;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      shape="square"
+      title={copied ? "Copied" : "Copy command"}
+      icon={copied ? <CheckIcon size={13} weight="bold" /> : <CopyIcon size={13} />}
+      className={cn(copied ? "text-kumo-success" : "text-kumo-subtle hover:text-kumo-default", className)}
+      onClick={onClick}
+    />
+  );
+}
 
-  function copy() {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
-    });
-  }
+function Snippet({ code }: { code: string }) {
+  const [copied, copy] = useCopied();
 
   return (
-    <div className="relative border border-lineSoft rounded-md bg-sidebar/30">
-      <pre className="px-3 py-2 pr-9 text-xs font-mono leading-relaxed overflow-x-auto whitespace-pre text-ink2">
+    <div className="relative rounded-md border border-kumo-hairline bg-kumo-recessed">
+      <pre className="overflow-x-auto px-3 py-2 pr-10 font-mono text-xs leading-relaxed whitespace-pre text-kumo-default scrollbar-thin">
         {code}
       </pre>
-      <button
-        onClick={copy}
-        className="absolute top-1.5 right-1.5 p-1 rounded text-faint hover:text-ink hover:bg-sidebarHover transition-colors"
-        title="Copy command"
-      >
-        {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
-      </button>
+      <CopyButton copied={copied} onClick={() => copy(code)} className="absolute top-1 right-1" />
     </div>
   );
 }
@@ -1155,11 +1282,9 @@ function CommandList({
   items: { code: string; desc: string }[];
 }) {
   return (
-    <div className="border border-line rounded-md bg-surface overflow-hidden">
-      <div className="px-3 py-1.5 border-b border-lineSoft bg-sidebar/40">
-        <span className="text-xxs uppercase tracking-wider text-muted font-medium">{title}</span>
-      </div>
-      <ul className="divide-y divide-lineSoft">
+    <div className={cn(CARD, "overflow-hidden")}>
+      <CardHeader title={title} />
+      <ul className="divide-y divide-kumo-hairline">
         {items.map((it) => (
           <CommandRow key={it.code} code={it.code} desc={it.desc} />
         ))}
@@ -1169,59 +1294,43 @@ function CommandList({
 }
 
 function CommandRow({ code, desc }: { code: string; desc: string }) {
-  const [copied, setCopied] = useState(false);
-
-  function copy() {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
-    });
-  }
+  const [copied, copy] = useCopied();
 
   return (
-    <li className="group flex items-center gap-3 px-3 py-1.5">
-      <code className="font-mono text-xs text-ink whitespace-nowrap overflow-x-auto scrollbar-thin">
+    <li className="group flex items-center gap-3 py-1 pr-1.5 pl-3">
+      <code className="overflow-x-auto font-mono text-xs whitespace-nowrap text-kumo-default scrollbar-thin">
         {code}
       </code>
-      <span className="flex-1 text-xs text-muted text-right truncate">{desc}</span>
-      <button
-        onClick={copy}
-        className={`p-1 rounded transition-colors ${
-          copied
-            ? "text-success"
-            : "text-faint hover:text-ink opacity-0 group-hover:opacity-100 focus:opacity-100"
-        }`}
-        title="Copy command"
-      >
-        {copied ? <Check size={12} /> : <Copy size={12} />}
-      </button>
+      <span className="flex-1 truncate text-right text-xs text-kumo-subtle">{desc}</span>
+      <CopyButton
+        copied={copied}
+        onClick={() => copy(code)}
+        className={cn(
+          !copied &&
+            "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+        )}
+      />
     </li>
   );
 }
 
 function CodeBlock({ title, code }: { title: string; code: string }) {
-  const [copied, setCopied] = useState(false);
-
-  function copy() {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
-    });
-  }
+  const [copied, copy] = useCopied();
 
   return (
-    <div className="border border-line rounded-md bg-surface overflow-hidden">
-      <div className="px-3 py-1.5 border-b border-lineSoft flex items-center justify-between bg-sidebar/40">
-        <span className="text-xxs uppercase tracking-wider text-muted font-medium">{title}</span>
-        <button
-          onClick={copy}
-          className="text-xxs text-muted hover:text-ink flex items-center gap-1"
+    <div className={cn(CARD, "overflow-hidden")}>
+      <CardHeader title={title}>
+        <Button
+          variant="ghost"
+          size="xs"
+          icon={copied ? <CheckIcon size={11} weight="bold" /> : <CopyIcon size={11} />}
+          className={cn("text-[11px]", copied ? "text-kumo-success" : "text-kumo-subtle")}
+          onClick={() => copy(code)}
         >
-          {copied ? <Check size={11} /> : <Copy size={11} />}
           {copied ? "Copied" : "Copy"}
-        </button>
-      </div>
-      <pre className="px-3 py-2 text-xs font-mono leading-relaxed overflow-x-auto whitespace-pre bg-sidebar/20 text-ink2">
+        </Button>
+      </CardHeader>
+      <pre className="overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre text-kumo-default scrollbar-thin">
         {code}
       </pre>
     </div>
@@ -1249,7 +1358,7 @@ function TokensSection() {
     });
   }
 
-  async function onCreate(e: React.FormEvent) {
+  async function onCreate(e: FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
     const t = await create.mutateAsync(name.trim());
@@ -1266,8 +1375,7 @@ function TokensSection() {
       await revoke.mutateAsync(id);
       if (fresh?.id === id) setFresh(null);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setDeleteError(`Could not revoke "${tokenName}": ${msg}`);
+      setDeleteError(`Could not revoke "${tokenName}": ${errorText(err)}`);
     } finally {
       setDeletingId((cur) => (cur === id ? null : cur));
     }
@@ -1281,67 +1389,66 @@ function TokensSection() {
       />
 
       {fresh && (
-        <div className="border border-warn rounded-md bg-warn/10 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-xs font-medium text-warn">
-            <AlertTriangle size={13} />
-            Copy this token now, or later from the token list.
-          </div>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 text-xs font-mono bg-surface border border-line rounded px-2 py-1 overflow-x-auto whitespace-nowrap">
-              {fresh.plaintext}
-            </code>
-            <button
-              className="btn"
-              onClick={() => navigator.clipboard.writeText(fresh.plaintext)}
-            >
-              <Copy size={11} /> Copy
-            </button>
-            <button className="btn" onClick={() => setFresh(null)}>
-              Done
-            </button>
-          </div>
-        </div>
-      )}
-
-      {deleteError && (
-        <div className="border border-danger/30 rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">
-          {deleteError}
-        </div>
-      )}
-
-      <form onSubmit={onCreate} className="flex gap-2">
-        <input
-          className="input flex-1"
-          placeholder="Who will use it? e.g. Claude Code @ MacBook"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+        <Banner
+          variant="alert"
+          icon={<WarningIcon size={16} weight="fill" />}
+          title="Copy this token now, or later from the token list."
+          description={
+            <div className="mt-1.5 flex items-center gap-2">
+              <ClipboardText size="sm" text={fresh.plaintext} className="min-w-0 flex-1" />
+              <Button size="sm" onClick={() => setFresh(null)}>
+                Done
+              </Button>
+            </div>
+          }
         />
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={!name.trim() || create.isPending}
-        >
-          <Plus size={11} /> {create.isPending ? "Generating…" : "Generate"}
-        </button>
-      </form>
-      <p className="text-[11px] text-faint -mt-1">
-        The name is shown as the author of everything written with this token, so name it after
-        the agent and machine.
-      </p>
+      )}
 
-      <div className="border border-line rounded-md bg-surface divide-y divide-lineSoft overflow-hidden">
-        {isLoading && <div className="p-3 text-xs text-muted">Loading…</div>}
+      {deleteError && <Notice tone="error">{deleteError}</Notice>}
+
+      <div className="space-y-1.5">
+        <form onSubmit={onCreate} className="flex gap-2">
+          <Input
+            size="sm"
+            aria-label="Token name"
+            className="min-w-0 flex-1"
+            placeholder="Who will use it? e.g. Claude Code @ MacBook"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            icon={<PlusIcon size={12} weight="bold" />}
+            disabled={!name.trim() || create.isPending}
+          >
+            {create.isPending ? "Generating…" : "Generate"}
+          </Button>
+        </form>
+        <p className="text-xxs text-kumo-placeholder">
+          The name is shown as the author of everything written with this token, so name it after
+          the agent and machine.
+        </p>
+      </div>
+
+      <div className={cn(CARD, "divide-y divide-kumo-hairline overflow-hidden")}>
+        {isLoading && (
+          <div className="flex items-center gap-2 p-3 text-xs text-kumo-subtle">
+            <Loader size={12} /> Loading…
+          </div>
+        )}
         {!isLoading && (!tokens || tokens.length === 0) && (
-          <div className="p-4 text-xs text-faint text-center">No tokens yet.</div>
+          <div className="p-4 text-center text-xs text-kumo-placeholder">No tokens yet.</div>
         )}
         {tokens?.map((t) => {
           const justCopied = copiedId === t.id;
           return (
             <div key={t.id} className="flex items-center gap-3 px-3 py-2">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-ink truncate">{t.name}</div>
-                <div className="text-xxs text-muted flex items-center gap-3 mt-0.5">
-                  <code className="font-mono text-faint">{t.prefix}…</code>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm text-kumo-default">{t.name}</div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xxs text-kumo-subtle">
+                  <code className="font-mono text-kumo-placeholder">{t.prefix}…</code>
                   <span>
                     created {formatDistanceToNow(new Date(t.createdAt), { addSuffix: true })}
                   </span>
@@ -1353,38 +1460,35 @@ function TokensSection() {
                 </div>
               </div>
               {t.plaintext ? (
-                <button
-                  type="button"
+                <Button
+                  size="sm"
+                  icon={justCopied ? <CheckIcon size={12} weight="bold" /> : <CopyIcon size={12} />}
+                  className={cn("shrink-0", justCopied && "text-kumo-success!")}
                   onClick={() => copyToken({ id: t.id, plaintext: t.plaintext! })}
-                  className={`btn gap-1.5 ${
-                    justCopied ? "border-emerald-500/30! text-emerald-600!" : ""
-                  }`}
-                  title="Copy full token"
                 >
-                  {justCopied ? <Check size={11} /> : <Copy size={11} />}
                   {justCopied ? "Copied" : "Copy token"}
-                </button>
+                </Button>
               ) : (
                 <span
-                  className="text-xxs text-faint border border-line rounded px-2 py-1"
+                  className="shrink-0"
                   title="Full token is unavailable for tokens created before recoverable storage was enabled."
                 >
-                  Unavailable
+                  <Badge variant="secondary" className="text-[11px]">
+                    Unavailable
+                  </Badge>
                 </span>
               )}
-              <button
-                type="button"
-                className="text-faint hover:text-danger p-1 -m-1"
-                disabled={deletingId !== null}
-                onClick={() => onRevoke(t.id, t.name)}
+              <Button
+                variant="ghost"
+                size="sm"
+                shape="square"
+                icon={<TrashIcon size={14} />}
                 title={deletingId === t.id ? "Revoking" : "Revoke"}
-              >
-                {deletingId === t.id ? (
-                  <span className="text-xxs text-muted">Revoking…</span>
-                ) : (
-                  <Trash2 size={12} />
-                )}
-              </button>
+                loading={deletingId === t.id}
+                disabled={deletingId !== null}
+                className="shrink-0 text-kumo-subtle hover:text-kumo-danger"
+                onClick={() => onRevoke(t.id, t.name)}
+              />
             </div>
           );
         })}
