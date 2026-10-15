@@ -26,6 +26,7 @@ import {
   update,
   write
 } from "../src/service/entities.js";
+import { attachHierarchy, hierarchyFor } from "../src/service/hierarchy.js";
 import { listRevisions, REVISION_RETENTION } from "../src/service/revisions.js";
 import { createSession, pruneExpiredSessions } from "../src/service/sessions.js";
 import { sessions } from "../src/db/schema.js";
@@ -1815,6 +1816,110 @@ describe("botnote service", () => {
     const after = await openingBrief(S, db, { projectId: p.id, recentLimit: 5 });
     expect(after.blockedBy[blocked.id]).toBeUndefined();
     expect(after.blockedBy[blockedInProgress.id]?.map((b) => b.ref)).toEqual(["BLK-4"]);
+  });
+
+  it("hierarchyFor returns parent refs and sub-task counts across both linkage styles", async () => {
+    const p = await createProject(S, db, { key: "HIE", name: "Hierarchy" });
+    const mk = (title: string, status: string, parentId: string | null = null) =>
+      write(S, db, {
+        kind: "task",
+        projectId: p.id,
+        title,
+        body: "",
+        tags: [],
+        status,
+        parentId,
+        actorKind: "human",
+        metadata: {}
+      });
+    const parent = await mk("Ship hierarchy", "in_progress");
+    const done = await mk("Write the query", "done", parent.id);
+    const rejected = await mk("Cache counts", "rejected", parent.id);
+    const active = await mk("Render chips", "in_progress", parent.id);
+    const viaEdge = await mk("Linked later", "open");
+    await link(S, db, { fromId: parent.id, toId: viaEdge.id, kind: "parent_of" });
+    const gone = await mk("Dropped idea", "open", parent.id);
+    await remove(S, db, gone.id);
+    await addComment(S, db, parent.id, { body: "worklog, not a sub-task", actorKind: "agent", metadata: {} });
+    await write(S, db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Design memory",
+      body: "a memory, not a sub-task",
+      tags: [],
+      parentId: parent.id,
+      actorKind: "human",
+      metadata: {}
+    });
+    const loner = await mk("Standalone", "open");
+
+    const h = await hierarchyFor(S, db, [parent.id, done.id, viaEdge.id, loner.id]);
+    expect(h.get(parent.id)).toEqual({
+      parent: null,
+      subtasks: { total: 4, closed: 2, inProgress: 1 }
+    });
+    expect(h.get(done.id)).toEqual({
+      parent: { id: parent.id, ref: "HIE-1", title: "Ship hierarchy", status: "in_progress" },
+      subtasks: null
+    });
+    expect(h.get(viaEdge.id)?.parent?.ref).toBe("HIE-1");
+    expect(h.get(loner.id)).toEqual({ parent: null, subtasks: null });
+
+    // The parentId column wins over an older parent_of edge.
+    const other = await mk("Other parent", "open");
+    await link(S, db, { fromId: other.id, toId: active.id, kind: "parent_of" });
+    expect((await hierarchyFor(S, db, [active.id])).get(active.id)?.parent?.id).toBe(parent.id);
+
+    // A deleted parent no longer shows as a chip.
+    await remove(S, db, parent.id);
+    expect((await hierarchyFor(S, db, [done.id])).get(done.id)?.parent).toBeNull();
+    expect((await hierarchyFor(S, db, [])).size).toBe(0);
+  });
+
+  it("tasksRange and attachHierarchy decorate task rows only", async () => {
+    const p = await createProject(S, db, { key: "HRC", name: "Hierarchy recent" });
+    const parent = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Parent",
+      body: "",
+      tags: [],
+      actorKind: "human",
+      metadata: {}
+    });
+    const child = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Child",
+      body: "",
+      tags: [],
+      status: "done",
+      parentId: parent.id,
+      actorKind: "human",
+      metadata: {}
+    });
+    const note = await write(S, db, {
+      kind: "note",
+      projectId: p.id,
+      title: "Note",
+      body: "plain memory",
+      tags: [],
+      actorKind: "human",
+      metadata: {}
+    });
+
+    const range = await tasksRange(S, db, { projectIds: [p.id], includeBacklog: true, includeDone: true });
+    const byId = new Map([...range.scheduled, ...range.backlog].map((t) => [t.id, t]));
+    expect(byId.get(parent.id)?.subtasks).toEqual({ total: 1, closed: 1, inProgress: 0 });
+    expect(byId.get(parent.id)?.parent).toBeNull();
+    expect(byId.get(child.id)?.parent?.ref).toBe("HRC-1");
+    expect(byId.get(child.id)?.subtasks).toBeNull();
+
+    const rows = await attachHierarchy(S, db, await recent(S, db, { projectId: p.id, limit: 10 }));
+    const decorated = new Map(rows.map((r) => [r.id, r as Record<string, unknown>]));
+    expect(decorated.get(child.id)?.parent).toMatchObject({ ref: "HRC-1", title: "Parent" });
+    expect(decorated.get(note.id)).not.toHaveProperty("parent");
+    expect(decorated.get(note.id)).not.toHaveProperty("subtasks");
   });
 
   it("openingBrief surfaces the latest worklog comment for in_progress tasks", async () => {

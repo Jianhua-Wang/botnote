@@ -8,6 +8,7 @@ import { useDrawer } from "../../hooks/useDrawer";
 import { useUndoableDelete } from "../../hooks/useUndoableDelete";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { TagChip } from "../TagChip";
+import { ParentChip, SubtaskProgress } from "./hierarchy";
 import { PriorityIcon, PRIORITY_LABEL, RecurrenceIcon } from "./icons";
 import { StatusPickerButton } from "./StatusPickerButton";
 import { isRecurring, isTaskOverdue } from "./utils";
@@ -48,21 +49,26 @@ export function TaskRow({
         <span className="font-mono text-xxs text-kumo-subtle tabular-nums shrink-0">{idLabel}</span>
       )}
 
-      <span
-        className={`flex-1 min-w-0 truncate ${
-          task.status === "done"
-            ? "text-kumo-subtle line-through"
-            : task.status === "rejected"
-              ? "text-kumo-subtle"
-              : isUntitled(task)
-                ? "text-kumo-subtle italic"
-                : "text-kumo-default"
-        }`}
-      >
-        {displayTitle(task)}
+      <span className="flex flex-1 min-w-0 items-center gap-2">
+        <span
+          className={`min-w-0 truncate ${
+            task.status === "done"
+              ? "text-kumo-subtle line-through"
+              : task.status === "rejected"
+                ? "text-kumo-subtle"
+                : isUntitled(task)
+                  ? "text-kumo-subtle italic"
+                  : "text-kumo-default"
+          }`}
+        >
+          {displayTitle(task)}
+        </span>
+        {!compact && task.subtasks && <SubtaskProgress counts={task.subtasks} />}
       </span>
 
       {/* Compact rows (inbox rail) give every pixel to the title. */}
+      {!compact && task.parent && <ParentChip parent={task.parent} className="hidden sm:inline-flex" />}
+
       {!compact &&
         task.tags.slice(0, 2).map((t) => (
           <TagChip key={t} tag={t} className="hidden md:inline-flex" />

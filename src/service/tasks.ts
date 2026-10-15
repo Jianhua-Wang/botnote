@@ -17,6 +17,7 @@ import {
 import type { Database } from "../db/client.js";
 import { entities, recurrenceExceptions, recurrenceRules, type Entity } from "../db/schema.js";
 import { blockersFor, type WithBlockers } from "./blockers.js";
+import { hierarchyFor, type WithHierarchy } from "./hierarchy.js";
 import { buildRRule, normalizeOccurrenceDueAt } from "./recurrence.js";
 import type { Scope } from "./scope.js";
 import type { TasksRangeInput } from "./types.js";
@@ -36,10 +37,12 @@ export interface VirtualOccurrence {
   rrule: string;
 }
 
+export type ListedTask = WithHierarchy<WithBlockers<Entity>>;
+
 export interface TasksRangeResult {
-  scheduled: WithBlockers<Entity>[];
-  overdue: WithBlockers<Entity>[];
-  backlog: WithBlockers<Entity>[];
+  scheduled: ListedTask[];
+  overdue: ListedTask[];
+  backlog: ListedTask[];
   virtualOccurrences: VirtualOccurrence[];
 }
 
@@ -235,17 +238,21 @@ export async function tasksRange(
   }
 
   const virtualOccurrences = await expandVirtualOccurrences(scope, db, input, scheduled);
-  const blockers = await blockersFor(
-    scope,
-    db,
-    [...scheduled, ...overdue, ...backlog].map((t) => t.id)
-  );
-  const withBlockers = (rows: Entity[]): WithBlockers<Entity>[] =>
-    rows.map((t) => ({ ...t, blockedBy: blockers.get(t.id) ?? [] }));
+  const taskIds = [...scheduled, ...overdue, ...backlog].map((t) => t.id);
+  const [blockers, hierarchy] = await Promise.all([
+    blockersFor(scope, db, taskIds),
+    hierarchyFor(scope, db, taskIds)
+  ]);
+  const decorate = (rows: Entity[]): ListedTask[] =>
+    rows.map((t) => ({
+      ...t,
+      blockedBy: blockers.get(t.id) ?? [],
+      ...(hierarchy.get(t.id) ?? { parent: null, subtasks: null })
+    }));
   return {
-    scheduled: withBlockers(scheduled),
-    overdue: withBlockers(overdue),
-    backlog: withBlockers(backlog),
+    scheduled: decorate(scheduled),
+    overdue: decorate(overdue),
+    backlog: decorate(backlog),
     virtualOccurrences
   };
 }

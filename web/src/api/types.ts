@@ -65,6 +65,10 @@ export interface Entity {
   updatedAt: string;
   /** Present on tasks from /v1/tasks/range: unfinished tasks that block this one. */
   blockedBy?: Blocker[];
+  /** Present on tasks from list endpoints: the entity this task hangs under. */
+  parent?: EntityRef | null;
+  /** Present on tasks from list endpoints; null when the task has no sub-tasks. */
+  subtasks?: SubtaskCounts | null;
 }
 
 /** Content of an entity as it was BEFORE update number `revision`. */
@@ -84,11 +88,21 @@ export interface EntityRevision {
   createdAt: string;
 }
 
-export interface Blocker {
+/** A compact pointer to another entity: KEY-SEQ (or kind/uuid-prefix) plus a display title. */
+export interface EntityRef {
   id: string;
   ref: string;
   title: string;
   status: string | null;
+}
+
+export type Blocker = EntityRef;
+
+/** Closed means done or rejected. */
+export interface SubtaskCounts {
+  total: number;
+  closed: number;
+  inProgress: number;
 }
 
 export interface VirtualOccurrence {
