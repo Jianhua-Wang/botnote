@@ -63,7 +63,8 @@ export function useUndoableDelete() {
       });
 
       show({
-        message: `Moved “${displayTitle(entity)}” to trash`,
+        message: "Moved to trash",
+        description: displayTitle(entity),
         action: {
           label: "Undo",
           onClick: () => {
