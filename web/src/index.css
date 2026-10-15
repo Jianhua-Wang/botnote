@@ -5,28 +5,33 @@
 @theme {
   --color-kumo-brand: light-dark(#0a7e83, #0a7e83);
   --color-kumo-brand-hover: light-dark(#00686c, #00686c);
+  --color-kumo-brand-tint: light-dark(#e3f6f7, #10302f);
   --text-color-kumo-brand: light-dark(#0a7e83, #3ebfc6);
   --text-color-kumo-link: light-dark(#00686c, #3ebfc6);
 }
 
+/*
+  Legacy app tokens, kept as aliases onto Kumo so existing markup picks up
+  the Kumo look before each view is migrated to Kumo classes directly.
+*/
 @theme {
-  --color-bg: #fcfcfd;
-  --color-surface: #ffffff;
-  --color-sidebar: #f7f8f9;
-  --color-sidebarHover: #eeeff1;
-  --color-line: #e6e6e9;
-  --color-lineSoft: #ececef;
-  --color-ink: #0c0c0d;
-  --color-ink2: #1f1f24;
-  --color-muted: #6f6f76;
-  --color-faint: #a8a8af;
-  --color-accent: #5e6ad2;
-  --color-accentHover: #4f5abd;
-  --color-accentSoft: #ebecf9;
-  --color-accentText: #3b46a3;
-  --color-success: #4cb782;
-  --color-warn: #f2994a;
-  --color-danger: #eb5757;
+  --color-bg: var(--color-kumo-canvas);
+  --color-surface: var(--color-kumo-base);
+  --color-sidebar: var(--color-kumo-tint);
+  --color-sidebarHover: light-dark(oklch(92.2% 0 0), oklch(37.1% 0 0));
+  --color-line: var(--color-kumo-line);
+  --color-lineSoft: var(--color-kumo-hairline);
+  --color-ink: var(--text-color-kumo-default);
+  --color-ink2: var(--text-color-kumo-default);
+  --color-muted: var(--text-color-kumo-subtle);
+  --color-faint: var(--text-color-kumo-placeholder);
+  --color-accent: var(--color-kumo-brand);
+  --color-accentHover: var(--color-kumo-brand-hover);
+  --color-accentSoft: var(--color-kumo-brand-tint);
+  --color-accentText: var(--text-color-kumo-link);
+  --color-success: var(--text-color-kumo-success);
+  --color-warn: var(--text-color-kumo-warning);
+  --color-danger: var(--text-color-kumo-danger);
   --color-prioUrgent: #eb5757;
   --color-prioHigh: #f2994a;
   --color-prioMedium: #5e6ad2;
@@ -36,163 +41,104 @@
   --color-statusDone: #4cb782;
   --color-statusRejected: #eb5757;
 
-  --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
-  --font-mono: JetBrains Mono, ui-monospace, SF Mono, Menlo, monospace;
-
   --text-xxs: 11px;
   --text-xxs--line-height: 15px;
-  --text-xs: 12px;
-  --text-xs--line-height: 16px;
-  --text-sm: 13.5px;
-  --text-sm--line-height: 18.5px;
-  --text-base: 14.5px;
-  --text-base--line-height: 20px;
-  --text-md: 15.5px;
-  --text-md--line-height: 22px;
-  --text-lg: 17px;
-  --text-lg--line-height: 24px;
 
-  --radius: 5px;
-  --radius-sm: 3px;
-  --radius-md: 5px;
-  --radius-lg: 7px;
-  --radius-xl: 10px;
-
-  --shadow-soft:
-    0 1px 2px rgba(15, 15, 20, 0.04), 0 0 0 1px rgba(15, 15, 20, 0.04);
-  --shadow-pop:
-    0 2px 6px rgba(15, 15, 20, 0.06), 0 0 0 1px rgba(15, 15, 20, 0.06);
   --shadow-modal:
     0 12px 32px rgba(15, 15, 20, 0.08), 0 0 0 1px rgba(15, 15, 20, 0.06);
 }
 
-/*
-  The default border color has changed to `currentcolor` in Tailwind CSS v4,
-  so we've added these compatibility styles to make sure everything still
-  looks the same as it did with Tailwind CSS v3.
-
-  If we ever want to remove these styles, we need to add an explicit border
-  color utility to any element that depends on these defaults.
-*/
 @layer base {
   *,
   ::after,
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
+    border-color: var(--color-kumo-line, currentcolor);
   }
 }
 
 @utility btn {
-  /* primary actions */
-  @apply inline-flex items-center justify-center gap-1.5 px-2.5 h-8 text-xs rounded-md border border-line bg-surface text-ink hover:bg-sidebar disabled:opacity-50 disabled:cursor-not-allowed transition-colors;
+  @apply inline-flex items-center justify-center gap-1.5 px-2.5 h-8 text-xs font-medium rounded-md border border-kumo-line bg-kumo-base text-kumo-default shadow-xs select-none transition-colors hover:bg-kumo-tint focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-kumo-brand disabled:opacity-50 disabled:cursor-not-allowed;
 }
 
 @utility btn-primary {
-  @apply bg-accent text-white border-accent hover:bg-accentHover;
+  @apply text-white border-[color-mix(in_oklch,var(--color-kumo-brand),black_10%)] bg-kumo-brand bg-linear-to-b from-[color-mix(in_oklch,var(--color-kumo-brand),white_15%)] to-kumo-brand shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--color-kumo-brand),white_30%)] hover:bg-kumo-brand hover:from-[color-mix(in_oklch,var(--color-kumo-brand),white_30%)];
 }
 
 @utility btn-ghost {
-  @apply border-transparent hover:bg-sidebarHover text-muted hover:text-ink;
-}
-
-@utility btn-danger {
-  @apply border-transparent text-danger hover:bg-danger/10;
-}
-
-@utility btn-sm {
-  @apply h-7 px-2 text-xxs;
+  @apply border-transparent bg-transparent shadow-none text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default;
 }
 
 @utility chip {
-  /* chips */
-  @apply inline-flex items-center gap-1 px-1.5 h-[20px] text-xxs rounded bg-sidebar text-muted border border-lineSoft;
+  @apply inline-flex items-center gap-1 px-1.5 h-5 text-xxs font-medium rounded-md bg-kumo-tint text-kumo-subtle border border-kumo-hairline;
 }
 
 @utility input {
-  /* inputs */
-  @apply w-full h-8 px-2 text-sm bg-surface border border-line rounded-md focus:outline-hidden focus:border-accent focus:ring-2 focus:ring-accentSoft transition-colors;
-}
-
-@utility input-sm {
-  @apply h-7 text-xs px-1.5;
+  @apply w-full h-8 px-2 text-sm bg-kumo-control text-kumo-default border border-kumo-line rounded-md transition-shadow focus:outline-hidden focus:border-kumo-focus/50 focus:ring-[0.5px] focus:ring-kumo-focus/50 disabled:bg-kumo-overlay disabled:text-kumo-inactive;
 }
 
 @utility row-hover {
-  /* row hover */
-  @apply hover:bg-sidebarHover/60 transition-colors;
+  @apply hover:bg-kumo-tint transition-colors;
 }
 
 @utility task-row {
-  /* task row */
-  @apply flex items-center gap-2 px-3 h-9 border-b border-lineSoft text-sm hover:bg-sidebarHover/50 cursor-pointer transition-colors;
+  @apply flex items-center gap-2 px-3 h-9 border-b border-kumo-hairline text-sm hover:bg-kumo-tint cursor-pointer transition-colors;
 }
 
 @utility seg {
-  /* segmented control */
-  @apply inline-flex border border-line rounded-md overflow-hidden bg-surface text-muted;
+  @apply inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-kumo-recessed text-kumo-subtle;
   & button {
-    @apply px-2.5 h-8 text-xs hover:text-ink hover:bg-sidebar transition-colors;
+    @apply px-2.5 h-7 text-xs rounded-md hover:text-kumo-default transition-colors;
   }
   & button[data-active='true'] {
-    @apply bg-ink text-white hover:bg-ink2 hover:text-white;
+    @apply bg-kumo-base text-kumo-default shadow-sm ring ring-kumo-line;
   }
 }
 
 @utility divider {
-  /* divider */
-  @apply border-t border-lineSoft;
+  @apply border-t border-kumo-hairline;
 }
 
 @utility scrollbar-thin {
-  /* scrollbar */
   scrollbar-width: thin;
-  scrollbar-color: var(--color-line) transparent;
+  scrollbar-color: var(--color-kumo-line) transparent;
   &::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
   &::-webkit-scrollbar-thumb {
-    background: var(--color-line);
+    background: var(--color-kumo-line);
     border-radius: 4px;
     border: 2px solid transparent;
     background-clip: padding-box;
   }
   &::-webkit-scrollbar-thumb:hover {
-    background: var(--color-muted);
+    background: var(--text-color-kumo-subtle);
     background-clip: padding-box;
   }
 }
 
 @utility popover {
-  /* popover */
-  @apply absolute z-40 bg-surface border border-line rounded-md shadow-pop py-1 min-w-[160px];
+  @apply absolute z-40 bg-kumo-control text-kumo-default rounded-lg shadow-lg ring ring-kumo-line p-1 min-w-[160px];
 }
 
 @utility popover-item {
-  @apply flex items-center gap-2 px-2 py-1 text-xs text-ink hover:bg-sidebarHover cursor-pointer w-full text-left;
+  @apply flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-kumo-default hover:bg-kumo-tint cursor-pointer w-full text-left;
 }
 
 @layer base {
-  :root {
-    --shadow-soft: 0 1px 2px rgba(15, 15, 20, 0.04), 0 0 0 1px rgba(15, 15, 20, 0.04);
-  }
   html,
   body,
   #root {
     height: 100%;
   }
   body {
-    @apply bg-bg text-ink font-sans antialiased text-base;
-    font-feature-settings: "cv11", "ss01", "ss03", "tnum";
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    @apply bg-kumo-canvas text-kumo-default font-sans antialiased text-base;
   }
   ::selection {
-    background: var(--color-accentSoft);
-    color: var(--color-accentText);
+    background: var(--color-kumo-brand-tint);
+    color: var(--text-color-kumo-link);
   }
   code,
   pre,
@@ -200,7 +146,7 @@
     @apply font-mono;
   }
   kbd {
-    @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xxs text-muted border border-line bg-surface rounded-sm;
+    @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xxs text-kumo-subtle border border-kumo-line bg-kumo-base rounded-sm;
     font-size: 11px;
     line-height: 1;
   }
@@ -216,6 +162,6 @@
   }
   input::placeholder,
   textarea::placeholder {
-    color: var(--color-faint);
+    color: var(--text-color-kumo-placeholder);
   }
 }
