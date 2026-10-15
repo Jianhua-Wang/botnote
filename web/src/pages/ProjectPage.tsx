@@ -1,6 +1,9 @@
-import { FileText, KanbanSquare, Settings2, SlidersHorizontal } from "lucide-react";
+import { Badge } from "@cloudflare/kumo/components/badge";
+import { Button, LinkButton } from "@cloudflare/kumo/components/button";
+import { Tabs } from "@cloudflare/kumo/components/tabs";
+import { FileTextIcon, KanbanIcon, RobotIcon, SlidersHorizontalIcon } from "@phosphor-icons/react";
 import { useMemo } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useEntityList, useProjectByKey } from "../api/hooks";
 import { KanbanBoard } from "../components/project/KanbanBoard";
 import { NotesList } from "../components/project/NotesList";
@@ -30,7 +33,7 @@ export function ProjectPage() {
   }, [tasks]);
 
   if (!project) {
-    return <div className="p-6 text-sm text-muted">Loading project…</div>;
+    return <div className="p-6 text-sm text-kumo-subtle">Loading project…</div>;
   }
 
   const setTab = (t: Tab) => {
@@ -44,40 +47,64 @@ export function ProjectPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="h-11 px-4 border-b border-line bg-surface flex items-center justify-between shrink-0">
+      <div className="h-11 px-4 border-b border-kumo-line bg-kumo-base flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <ProjectIcon color={project.color} icon={project.icon} size={14} />
           <span className="font-mono text-xs tabular-nums" style={{ color: project.color }}>
             {project.key}
           </span>
-          <span className="text-sm font-semibold text-ink truncate">{project.name}</span>
-          <span className="chip">{PROJECT_STATUS_LABEL[project.status]}</span>
-          <button
-            className="ml-1 p-1 -m-1 text-faint hover:text-ink rounded hover:bg-sidebar"
-            onClick={() => openModal({ kind: "edit-project", projectId: project.id })}
+          <span className="text-sm font-semibold text-kumo-default truncate">{project.name}</span>
+          <Badge variant="secondary" className="hidden sm:inline-flex">
+            {PROJECT_STATUS_LABEL[project.status]}
+          </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            shape="square"
+            icon={<SlidersHorizontalIcon size={14} />}
             title="Project settings"
-          >
-            <SlidersHorizontal size={11} />
-          </button>
+            className="text-kumo-subtle"
+            onClick={() => openModal({ kind: "edit-project", projectId: project.id })}
+          />
         </div>
-        <div className="flex items-center gap-1">
-          <div className="seg">
-            <button data-active={tab === "tasks"} onClick={() => setTab("tasks")}>
-              <KanbanSquare size={11} className="inline mr-1" />
-              Tasks <span className="text-faint ml-1">{counts.tasks}</span>
-            </button>
-            <button data-active={tab === "notes"} onClick={() => setTab("notes")}>
-              <FileText size={11} className="inline mr-1" />
-              Notes
-            </button>
-            <Link
-              to={`/p/${project.key}/agents-md`}
-              className="px-2 h-7 text-xs hover:text-ink hover:bg-sidebar transition-colors text-muted flex items-center"
-            >
-              <Settings2 size={11} className="inline mr-1" />
-              AGENTS.md
-            </Link>
-          </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Tabs
+            variant="segmented"
+            size="sm"
+            value={tab === "notes" ? "notes" : "tasks"}
+            onValueChange={(v) => setTab(v as Tab)}
+            tabs={[
+              {
+                value: "tasks",
+                label: (
+                  <span className="inline-flex items-center gap-1">
+                    <KanbanIcon size={12} />
+                    Tasks
+                    <span className="tabular-nums text-kumo-subtle">{counts.tasks}</span>
+                  </span>
+                )
+              },
+              {
+                value: "notes",
+                label: (
+                  <span className="inline-flex items-center gap-1">
+                    <FileTextIcon size={12} />
+                    Notes
+                  </span>
+                )
+              }
+            ]}
+          />
+          <LinkButton
+            href={`/p/${project.key}/agents-md`}
+            variant="ghost"
+            size="sm"
+            icon={<RobotIcon size={14} />}
+            aria-label="AGENTS.md"
+            className="text-kumo-subtle"
+          >
+            <span className="hidden sm:inline">AGENTS.md</span>
+          </LinkButton>
         </div>
       </div>
 

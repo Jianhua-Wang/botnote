@@ -35,7 +35,7 @@ export function StatusPickerButton({
           <button
             type="button"
             draggable={false}
-            className={`inline-flex shrink-0 items-center justify-center rounded p-0.5 -m-0.5 hover:bg-kumo-tint disabled:opacity-60 ${className}`}
+            className={`inline-flex shrink-0 items-center justify-center rounded p-0.5 -m-0.5 hover:bg-kumo-fill disabled:opacity-60 ${className}`}
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}

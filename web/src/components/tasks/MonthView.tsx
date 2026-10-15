@@ -1,3 +1,5 @@
+import { Button } from "@cloudflare/kumo/components/button";
+import { PlusIcon } from "@phosphor-icons/react";
 import { format, isSameMonth, isToday } from "date-fns";
 import { useMemo, useState } from "react";
 import { useProjects, useTasksRange, useUpdateEntity } from "../../api/hooks";
@@ -36,17 +38,17 @@ export function MonthView({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="grid grid-cols-7 border-b border-lineSoft bg-sidebar/50">
+      <div className="grid grid-cols-7 border-b border-kumo-line bg-kumo-tint">
         {WEEKDAYS.map((d) => (
           <div
             key={d}
-            className="px-2 py-1 text-xxs uppercase tracking-wider text-muted text-center"
+            className="px-2 py-1 text-xxs uppercase tracking-wider text-kumo-subtle text-center"
           >
             {d}
           </div>
         ))}
       </div>
-      <div className="flex-1 grid grid-cols-7 grid-rows-6 bg-line/30 gap-px overflow-y-auto scrollbar-thin">
+      <div className="flex-1 grid grid-cols-7 grid-rows-6 bg-kumo-hairline gap-px overflow-y-auto scrollbar-thin">
         {days.map((d) => {
           const tasks = byDay.get(dayKey(d)) ?? [];
           const virtuals = virtualsByDay.get(dayKey(d)) ?? [];
@@ -107,14 +109,14 @@ function DayCell({
 
   return (
     <div
-      className={`group bg-surface p-1 min-h-[112px] flex flex-col transition-colors ${
+      className={`group p-1 min-h-[112px] flex flex-col transition-colors ${
         outOfMonth ? "opacity-50" : ""
       } ${
         hovered
-          ? "ring-2 ring-accent ring-inset bg-accentSoft/40"
+          ? "ring-2 ring-kumo-brand ring-inset bg-kumo-brand-tint"
           : today
-            ? "ring-1 ring-accent ring-inset bg-accentSoft/30"
-            : ""
+            ? "ring-1 ring-kumo-brand ring-inset bg-kumo-brand-tint/40"
+            : "bg-kumo-base"
       }`}
       onDragOver={(e) => {
         e.preventDefault();
@@ -127,7 +129,7 @@ function DayCell({
         <div className="flex items-baseline gap-1.5 min-w-0">
           <span
             className={`text-xs tabular-nums ${
-              today ? "font-semibold text-accent" : "text-muted"
+              today ? "font-semibold text-kumo-brand" : "text-kumo-subtle"
             }`}
           >
             {format(day, "d")}
@@ -135,7 +137,7 @@ function DayCell({
           {totalCount > 0 && (
             <span
               className={`text-xxs tabular-nums ${
-                allDone ? "text-statusDone font-medium" : "text-faint"
+                allDone ? "text-kumo-success font-medium" : "text-kumo-placeholder"
               }`}
               title={`${doneCount} done · ${totalCount} total`}
             >
@@ -143,13 +145,15 @@ function DayCell({
             </span>
           )}
         </div>
-        <button
-          className="text-xs text-faint hover:text-accent opacity-0 group-hover:opacity-100 transition-opacity"
+        <Button
+          variant="ghost"
+          size="xs"
+          shape="square"
+          icon={<PlusIcon size={12} />}
+          aria-label="Add task"
+          className="size-5 text-kumo-subtle opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-kumo-brand"
           onClick={() => open({ kind: "quick-create" })}
-          title="Add task"
-        >
-          +
-        </button>
+        />
       </div>
       <div className="flex-1 space-y-0.5 min-h-0 overflow-hidden">
         {active.slice(0, 4).map((t) => (
@@ -160,7 +164,7 @@ function DayCell({
           />
         ))}
         {active.length > 4 && (
-          <div className="text-xxs text-muted pl-1">+{active.length - 4}</div>
+          <div className="text-xxs text-kumo-subtle pl-1">+{active.length - 4}</div>
         )}
         {/* Ghost chips for future virtual occurrences — rendered after real tasks,
             not counted in done/total or +N more, pointer-events-none */}

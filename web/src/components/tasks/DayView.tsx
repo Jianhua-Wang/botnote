@@ -1,3 +1,5 @@
+import { Button } from "@cloudflare/kumo/components/button";
+import { PlusIcon } from "@phosphor-icons/react";
 import { format, isToday } from "date-fns";
 import { useMemo } from "react";
 import { useProjects, useTasksRange } from "../../api/hooks";
@@ -40,7 +42,7 @@ export function DayView({
           <Section
             title={`Overdue`}
             count={overdue.length}
-            accent="text-danger"
+            accent="text-kumo-danger"
             tasks={overdue}
             projectMap={projectMap}
           />
@@ -49,16 +51,19 @@ export function DayView({
         <Section
           title={isCurrentDay ? "Today" : format(anchor, "EEEE")}
           count={today.length}
-          accent="text-ink"
+          accent="text-kumo-default"
           tasks={today}
           projectMap={projectMap}
           emptyAction={
-            <button
-              className="text-accent text-xs hover:underline"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<PlusIcon size={14} />}
+              className="text-kumo-link"
               onClick={() => open({ kind: "quick-create" })}
             >
-              + add a task for this day
-            </button>
+              Add a task for this day
+            </Button>
           }
         />
       </div>
@@ -83,14 +88,16 @@ function Section({
 }) {
   return (
     <section className="mb-6">
-      <div className="px-4 py-1.5 flex items-baseline gap-2 sticky top-0 bg-bg z-10">
+      <div className="px-4 py-1.5 flex items-baseline gap-2 sticky top-0 bg-kumo-canvas z-10">
         <h2 className={`text-xs font-semibold ${accent}`}>{title}</h2>
-        <span className="text-xxs text-faint tabular-nums">{count}</span>
+        <span className="text-xxs text-kumo-subtle tabular-nums">{count}</span>
       </div>
       {tasks.length === 0 ? (
-        <div className="px-4 py-2 text-xs text-muted">{emptyAction ?? "Nothing here."}</div>
+        <div className="mx-4 flex min-h-12 items-center justify-center rounded-lg border border-dashed border-kumo-line px-3 py-2 text-xs text-kumo-subtle">
+          {emptyAction ?? "Nothing here."}
+        </div>
       ) : (
-        <div className="bg-surface border-y border-lineSoft">
+        <div className="mx-4 overflow-hidden rounded-lg border border-kumo-line bg-kumo-base [&>*:last-child]:border-b-0">
           {tasks.map((t) => (
             <TaskRow
               key={t.id}

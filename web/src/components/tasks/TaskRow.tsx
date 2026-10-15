@@ -1,4 +1,6 @@
+import { Badge } from "@cloudflare/kumo/components/badge";
 import { DropdownMenu } from "@cloudflare/kumo/components/dropdown";
+import { TrashIcon } from "@phosphor-icons/react";
 import { format } from "date-fns";
 import { useUpdateEntity } from "../../api/hooks";
 import type { Entity, Priority, Project } from "../../api/types";
@@ -35,24 +37,26 @@ export function TaskRow({
 
   return (
     <div
-      className={`task-row group ${compact ? "h-7! text-xs" : ""}`}
+      className={`group flex cursor-pointer items-center gap-2 border-b border-kumo-hairline px-3 transition-colors hover:bg-kumo-tint ${
+        compact ? "h-7 text-xs" : "h-9 text-sm"
+      }`}
       onClick={() => drawer.open(task.id)}
     >
       <StatusPickerButton task={task} />
 
       {idLabel && !compact && (
-        <span className="font-mono text-xxs text-faint tabular-nums shrink-0">{idLabel}</span>
+        <span className="font-mono text-xxs text-kumo-subtle tabular-nums shrink-0">{idLabel}</span>
       )}
 
       <span
         className={`flex-1 min-w-0 truncate ${
           task.status === "done"
-            ? "text-muted line-through"
+            ? "text-kumo-subtle line-through"
             : task.status === "rejected"
-              ? "text-muted"
+              ? "text-kumo-subtle"
               : isUntitled(task)
-                ? "text-muted italic"
-                : "text-ink"
+                ? "text-kumo-subtle italic"
+                : "text-kumo-default"
         }`}
       >
         {displayTitle(task)}
@@ -65,27 +69,26 @@ export function TaskRow({
         ))}
 
       {showProject && project && compact && (
-        <span className="font-mono text-xxs text-faint shrink-0">{project.key}</span>
+        <span className="font-mono text-xxs text-kumo-subtle shrink-0">{project.key}</span>
       )}
 
       {task.blockedBy && task.blockedBy.length > 0 && task.status !== "done" && (
-        <span
-          className="shrink-0 px-1 rounded text-xxs font-medium uppercase tracking-wide bg-warn/15 text-warn"
-          title={`Blocked by ${task.blockedBy.map((b) => `${b.ref} ${b.title}`).join(", ")}`}
-        >
-          blocked
-        </span>
+        <Badge variant="warning" className="px-1.5 py-0 text-[10px] uppercase tracking-wide">
+          <span title={`Blocked by ${task.blockedBy.map((b) => `${b.ref} ${b.title}`).join(", ")}`}>
+            blocked
+          </span>
+        </Badge>
       )}
 
       {recurring && (
-        <span className="shrink-0 text-faint" title="Recurring task">
+        <span className="shrink-0 text-kumo-subtle" title="Recurring task">
           <RecurrenceIcon size={12} />
         </span>
       )}
 
       {visibleDate && (
         <span
-          className={`text-xxs tabular-nums shrink-0 ${overdue ? "text-danger font-medium" : "text-muted"}`}
+          className={`text-xxs tabular-nums shrink-0 ${overdue ? "text-kumo-danger font-medium" : "text-kumo-subtle"}`}
           title={`${visibleDateLabel} ${new Date(visibleDate).toLocaleString()}`}
         >
           {format(new Date(visibleDate), "MMM d")}
@@ -96,7 +99,7 @@ export function TaskRow({
         <DropdownMenu.Trigger
           render={
             <button
-              className="shrink-0 p-0.5 -m-0.5 rounded hover:bg-kumo-tint"
+              className="shrink-0 p-0.5 -m-0.5 rounded hover:bg-kumo-fill"
               onClick={(e) => e.stopPropagation()}
               title={PRIORITY_LABEL[task.priority]}
             >
@@ -124,21 +127,16 @@ export function TaskRow({
       </DropdownMenu>
 
       <button
-        className="shrink-0 p-1 -m-1 rounded text-faint opacity-0 group-hover:opacity-100 hover:bg-danger/10 hover:text-danger transition-opacity"
+        type="button"
+        className="shrink-0 p-1 -m-1 rounded text-kumo-subtle opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-kumo-danger-tint hover:text-kumo-danger"
         onClick={(e) => {
           e.stopPropagation();
           deleteWithUndo(task);
         }}
         title="Delete"
+        aria-label="Delete task"
       >
-        <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-          <path
-            d="M3 4h8M5.5 4V2.5h3V4M4.5 4l.5 8h4l.5-8M6 6.5v3.5M8 6.5v3.5"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-          />
-        </svg>
+        <TrashIcon size={12} />
       </button>
     </div>
   );
