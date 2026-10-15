@@ -71,7 +71,7 @@ export function InboxRail({
         </div>
         <button
           onClick={onToggle}
-          className="btn-ghost btn !h-6 !w-6 !p-0"
+          className="btn-ghost btn h-6! w-6! p-0!"
           title="Collapse"
         >
           →

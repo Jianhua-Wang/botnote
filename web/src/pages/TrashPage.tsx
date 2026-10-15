@@ -35,7 +35,7 @@ export function TrashPage() {
           </div>
           {trash && trash.length > 0 && (
             <button
-              className="btn btn-ghost !h-7 !px-2.5 text-xs gap-1 shrink-0 hover:!text-red-600"
+              className="btn btn-ghost h-7! px-2.5! text-xs gap-1 shrink-0 hover:text-red-600!"
               onClick={emptyTrash}
             >
               <X size={12} /> Empty trash
@@ -70,14 +70,14 @@ export function TrashPage() {
                   </div>
                   <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
-                      className="btn btn-ghost !h-6 !px-2 text-xxs gap-1"
+                      className="btn btn-ghost h-6! px-2! text-xxs gap-1"
                       title="Restore"
                       onClick={() => restore.mutate(e.id)}
                     >
                       <RotateCcw size={11} /> Restore
                     </button>
                     <button
-                      className="btn btn-ghost !h-6 !px-2 text-xxs gap-1 hover:!text-red-600"
+                      className="btn btn-ghost h-6! px-2! text-xxs gap-1 hover:text-red-600!"
                       title="Delete forever"
                       onClick={() => {
                         if (

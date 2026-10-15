@@ -159,7 +159,7 @@ function AccountSection() {
         <button
           onClick={onLogout}
           disabled={busy}
-          className="btn !text-red-500 !border-red-500/30 hover:!bg-red-500/10 gap-1.5"
+          className="btn text-red-500! border-red-500/30! hover:bg-red-500/10! gap-1.5"
         >
           <LogOut size={12} /> Log out
         </button>
@@ -1357,7 +1357,7 @@ function TokensSection() {
                   type="button"
                   onClick={() => copyToken({ id: t.id, plaintext: t.plaintext! })}
                   className={`btn gap-1.5 ${
-                    justCopied ? "!border-emerald-500/30 !text-emerald-600" : ""
+                    justCopied ? "border-emerald-500/30! text-emerald-600!" : ""
                   }`}
                   title="Copy full token"
                 >

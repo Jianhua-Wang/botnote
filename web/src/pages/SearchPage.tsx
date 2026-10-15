@@ -61,7 +61,7 @@ function Snippet({ body, query }: { body: string; query: string }) {
   }
 
   return (
-    <div className="text-xs text-muted mt-1 break-words">
+    <div className="text-xs text-muted mt-1 wrap-break-word">
       {start > 0 && "… "}
       {nodes}
       {end < text.length && " …"}
@@ -100,7 +100,7 @@ export function SearchPage() {
             }}
             placeholder="Search tasks, notes, comments…"
             autoFocus
-            className="w-full h-9 pl-9 pr-3 text-sm bg-surface border border-line rounded focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+            className="w-full h-9 pl-9 pr-3 text-sm bg-surface border border-line rounded focus:outline-hidden focus:ring-2 focus:ring-accent/30 focus:border-accent"
           />
         </div>
 

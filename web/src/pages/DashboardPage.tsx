@@ -231,14 +231,14 @@ function FeedbackSection() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
-                      className="btn btn-ghost !h-6 !px-2 text-xxs gap-1"
+                      className="btn btn-ghost h-6! px-2! text-xxs gap-1"
                       title="Mark done"
                       onClick={() => update.mutate({ id: f.id, fields: { status: "done" } })}
                     >
                       <Check size={11} /> Done
                     </button>
                     <button
-                      className="btn btn-ghost !h-6 !px-2 text-xxs gap-1 hover:!text-red-600"
+                      className="btn btn-ghost h-6! px-2! text-xxs gap-1 hover:text-red-600!"
                       title="Reject"
                       onClick={() => update.mutate({ id: f.id, fields: { status: "rejected" } })}
                     >

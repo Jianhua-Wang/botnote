@@ -39,7 +39,7 @@ export function LoginPage() {
     <div className="min-h-screen w-full flex items-center justify-center bg-bg px-4">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-sm bg-surface border border-line rounded-lg shadow-sm p-6 space-y-5"
+        className="w-full max-w-sm bg-surface border border-line rounded-lg shadow-xs p-6 space-y-5"
       >
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-md bg-accent flex items-center justify-center text-white text-sm font-bold">
@@ -59,7 +59,7 @@ export function LoginPage() {
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-3 py-2 text-sm rounded-md border border-line bg-bg focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent"
+            className="w-full px-3 py-2 text-sm rounded-md border border-line bg-bg focus:outline-hidden focus:ring-2 focus:ring-accent/40 focus:border-accent"
             disabled={busy}
           />
         </label>

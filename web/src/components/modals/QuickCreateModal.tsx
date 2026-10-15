@@ -141,7 +141,7 @@ export function QuickCreateModal({
           onChange={(e) => setTitle(e.target.value)}
         />
         <textarea
-          className="input !h-32 py-1.5 font-mono text-xs leading-snug resize-y"
+          className="input h-32! py-1.5 font-mono text-xs leading-snug resize-y"
           placeholder="Body (Markdown, optional)"
           value={body}
           onChange={(e) => setBody(e.target.value)}
@@ -234,7 +234,7 @@ export function QuickCreateModal({
               <div className="flex items-center gap-2 text-xs text-muted">
                 <span className="shrink-0">Link to task:</span>
                 <select
-                  className="input flex-1 !h-7 text-xs"
+                  className="input flex-1 h-7! text-xs"
                   value={parentId}
                   onChange={(e) => setParentId(e.target.value)}
                 >

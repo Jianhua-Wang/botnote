@@ -21,7 +21,7 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
     <header className="h-11 flex items-center justify-between px-3 border-b border-line bg-surface">
       <div className="flex items-center gap-1">
         <button
-          className="btn btn-ghost !h-7 !w-7 !p-0 md:hidden"
+          className="btn btn-ghost h-7! w-7! p-0! md:hidden"
           onClick={onMenuClick}
           title="Menu"
           aria-label="Toggle sidebar"
@@ -36,7 +36,7 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
 
       <div className="flex items-center gap-1.5">
         <button
-          className="btn !pl-2 !pr-1.5 gap-2 md:min-w-[220px] !justify-between text-muted"
+          className="btn pl-2! pr-1.5! gap-2 md:min-w-[220px] justify-between! text-muted"
           onClick={() => open({ kind: "search" })}
           title="Search (⌘K)"
         >
@@ -53,10 +53,10 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
         >
           <Plus size={12} />
           <span className="text-xs hidden sm:inline">New</span>
-          <kbd className="!bg-white/15 !border-white/25 !text-white hidden md:inline-block">c</kbd>
+          <kbd className="bg-white/15! border-white/25! text-white! hidden md:inline-block">c</kbd>
         </button>
         <button
-          className="btn !px-1.5 !py-1 text-muted hover:!text-red-500"
+          className="btn px-1.5! py-1! text-muted hover:text-red-500!"
           onClick={onLogout}
           title="Log out"
           aria-label="Log out"

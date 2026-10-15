@@ -388,7 +388,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
         <div className="px-6 py-5 space-y-4">
           {isEditing ? (
             <input
-              className={`w-full text-lg font-semibold bg-transparent border-none outline-none focus:outline-none px-0 py-1 ${
+              className={`w-full text-lg font-semibold bg-transparent border-none outline-hidden focus:outline-hidden px-0 py-1 ${
                 !title ? "placeholder:text-muted/60 placeholder:italic" : ""
               }`}
               value={title}
@@ -609,7 +609,7 @@ function RevisionRow({
         </ul>
       )}
       {bodyChanged && (
-        <pre className="mt-1.5 font-mono text-xxs leading-relaxed whitespace-pre-wrap break-words bg-sidebar/40 rounded p-2 overflow-x-auto">
+        <pre className="mt-1.5 font-mono text-xxs leading-relaxed whitespace-pre-wrap wrap-break-word bg-sidebar/40 rounded p-2 overflow-x-auto">
           {diff.map((op, i) =>
             op.type === "skip" ? (
               <div key={i} className="text-faint italic">
@@ -819,7 +819,7 @@ function RepeatMetaValue({
     <span className="min-w-0 flex flex-col gap-1">
       <span className="flex flex-wrap items-center gap-1.5">
         <select
-          className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+          className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
           value={form.preset}
           onChange={(e) => updateForm({ preset: e.target.value as RecurrencePreset | "none" })}
           title="Repeat"
@@ -837,13 +837,13 @@ function RepeatMetaValue({
               type="number"
               min={1}
               max={999}
-              className="w-14 bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-14 bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
               value={form.interval}
               onChange={(e) => updateForm({ interval: Math.max(1, Number(e.target.value) || 1) })}
               title="Interval"
             />
             <select
-              className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+              className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
               value={form.anchor}
               onChange={(e) => updateForm({ anchor: e.target.value as RecurrenceAnchor })}
               title="Anchor"
@@ -905,7 +905,7 @@ function RepeatMetaValue({
             type="number"
             min={1}
             max={10000}
-            className="w-20 bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 focus:outline-none focus:ring-1 focus:ring-accent"
+            className="w-20 bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
             value={form.count}
             onChange={(e) =>
               updateForm({
@@ -918,7 +918,7 @@ function RepeatMetaValue({
           />
           <input
             type="date"
-            className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+            className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
             value={form.until}
             onChange={(e) =>
               updateForm({
@@ -1004,7 +1004,7 @@ function MetaRow({
             )}
             {isEditing ? (
               <select
-                className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
               >
@@ -1025,7 +1025,7 @@ function MetaRow({
               <>
                 <input
                   type="date"
-                  className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                  className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
                 />
@@ -1069,7 +1069,7 @@ function MetaRow({
               <span className="text-faint">Apply to</span>
               <span className="flex items-center gap-1.5">
                 <select
-                  className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                  className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
                   value={occurrenceScope ?? "future"}
                   onChange={(e) =>
                     setOccurrenceScope?.(e.target.value as "this" | "future")
@@ -1088,7 +1088,7 @@ function MetaRow({
             <PriorityIcon priority={priority} size={12} />
             {isEditing ? (
               <select
-                className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as Priority)}
               >
@@ -1110,7 +1110,7 @@ function MetaRow({
                 <span className="flex items-center gap-1.5">
                   <input
                     type="datetime-local"
-                    className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+                    className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
                     value={completedAtStr}
                     onChange={(e) => setCompletedAtStr(e.target.value)}
                   />
@@ -1138,7 +1138,7 @@ function MetaRow({
       <span className="text-faint">Tags</span>
       {isEditing ? (
         <input
-          className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-none focus:ring-1 focus:ring-accent"
+          className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
           value={tagsStr}
           onChange={(e) => setTagsStr(e.target.value)}
           placeholder="comma, separated"

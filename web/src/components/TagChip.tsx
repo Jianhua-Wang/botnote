@@ -6,7 +6,7 @@
  */
 export function TagChip({ tag, className = "" }: { tag: string; className?: string }) {
   return (
-    <span className={`chip shrink min-w-0 max-w-[8rem] ${className}`} title={tag}>
+    <span className={`chip shrink min-w-0 max-w-32 ${className}`} title={tag}>
       <span className="truncate min-w-0">{tag}</span>
     </span>
   );
