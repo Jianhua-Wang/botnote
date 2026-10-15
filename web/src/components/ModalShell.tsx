@@ -1,45 +1,44 @@
-import { X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { Button } from "@cloudflare/kumo/components/button";
+import { Dialog } from "@cloudflare/kumo/components/dialog";
+import { X } from "@phosphor-icons/react";
+import type { ReactNode } from "react";
 import { useModals } from "../state/modals";
 
 export function ModalShell({
   title,
   children,
-  width = "max-w-2xl"
+  width = "sm:w-2xl"
 }: {
   title: string;
   children: ReactNode;
   width?: string;
 }) {
   const { close } = useModals();
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-ink/20"
-      onClick={close}
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
     >
-      <div
-        className={`w-full ${width} bg-surface border border-line rounded-lg shadow-2xl overflow-hidden`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="h-9 px-3 flex items-center justify-between border-b border-line">
-          <div className="text-xs font-semibold text-ink">{title}</div>
-          <button
-            onClick={close}
-            className="text-muted hover:text-ink p-0.5 rounded hover:bg-line/60"
-            title="Close (Esc)"
-          >
-            <X size={14} />
-          </button>
+      <Dialog className={width}>
+        <div className="h-11 pl-4 pr-2 flex items-center justify-between border-b border-kumo-hairline">
+          <Dialog.Title className="text-base font-semibold text-kumo-default">{title}</Dialog.Title>
+          <Dialog.Close
+            render={(props) => (
+              <Button
+                {...props}
+                variant="ghost"
+                size="sm"
+                shape="square"
+                icon={<X size={14} />}
+                aria-label="Close"
+              />
+            )}
+          />
         </div>
         {children}
-      </div>
-    </div>
+      </Dialog>
+    </Dialog.Root>
   );
 }

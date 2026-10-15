@@ -60,7 +60,7 @@ export function QuickCreateModal({
       : title.trim().length > 0 && (repeat === "none" || dueDate.length > 0));
 
   return (
-    <ModalShell title="Quick create" width="max-w-xl">
+    <ModalShell title="Quick create" width="sm:w-xl">
       <form
         onSubmit={async (e) => {
           e.preventDefault();

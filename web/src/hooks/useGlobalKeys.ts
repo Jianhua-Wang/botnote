@@ -13,7 +13,7 @@ function isEditableTarget(e: KeyboardEvent): boolean {
 }
 
 export function useGlobalKeys() {
-  const { active, open, close } = useModals();
+  const { open } = useModals();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -23,14 +23,6 @@ export function useGlobalKeys() {
       if (cmd && e.key.toLowerCase() === "k") {
         e.preventDefault();
         open({ kind: "search" });
-        return;
-      }
-
-      if (e.key === "Escape") {
-        if (active) {
-          e.preventDefault();
-          close();
-        }
         return;
       }
 
@@ -71,5 +63,5 @@ export function useGlobalKeys() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, open, close, navigate]);
+  }, [open, navigate]);
 }
