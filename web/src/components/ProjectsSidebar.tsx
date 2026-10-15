@@ -1,22 +1,26 @@
-import {
-  Calendar,
-  ChevronDown,
-  ChevronRight,
-  Cog,
-  Inbox,
-  LayoutDashboard,
-  Plus,
-  Sunrise,
-  Trash2
-} from "lucide-react";
+import { Button } from "@cloudflare/kumo/components/button";
 import { DropdownMenu } from "@cloudflare/kumo/components/dropdown";
-import { NavLink, useParams } from "react-router-dom";
-import { useMemo } from "react";
+import { Sidebar, useSidebar } from "@cloudflare/kumo/components/sidebar";
+import { cn } from "@cloudflare/kumo/utils";
+import {
+  CalendarBlankIcon,
+  GearSixIcon,
+  PlusIcon,
+  SortAscendingIcon,
+  SquaresFourIcon,
+  SunHorizonIcon,
+  TrashIcon,
+  TrayIcon,
+  type Icon
+} from "@phosphor-icons/react";
+import { useEffect, useMemo, type ReactNode } from "react";
+import { useLocation, useParams } from "react-router-dom";
 import { useProjects, useTrash } from "../api/hooks";
 import type { Project, ProjectStatus } from "../api/types";
 import { usePersistedState } from "../hooks/usePersistedState";
 import { PROJECT_STATUS_GROUPS, PROJECT_STATUS_LABEL } from "../lib/projectStatus";
 import { useModals } from "../state/modals";
+import { BrandLink } from "./BrandLink";
 import { ProjectIcon } from "./ProjectIcon";
 
 type ProjectSort = "key" | "name" | "recent";
@@ -29,6 +33,9 @@ const DEFAULT_COLLAPSED_GROUPS: Partial<Record<ProjectStatus, boolean>> = {
   archived: true
 };
 
+const ACTIVE_ITEM =
+  "data-[active]:bg-kumo-brand-tint data-[active]:text-kumo-link [&[data-active]_svg]:opacity-100";
+
 function sortProjects(projects: Project[], sort: ProjectSort): Project[] {
   const copy = [...projects];
   if (sort === "key") return copy.sort((a, b) => a.key.localeCompare(b.key));
@@ -39,6 +46,8 @@ function sortProjects(projects: Project[], sort: ProjectSort): Project[] {
 export function ProjectsSidebar() {
   const { open } = useModals();
   const { key: activeKey } = useParams<{ key: string }>();
+  const location = useLocation();
+  const { setOpenMobile } = useSidebar();
   const [sort, setSort] = usePersistedState<ProjectSort>("botnote.projectSort", "key");
   const [collapsedGroups, setCollapsedGroups] = usePersistedState<
     Partial<Record<ProjectStatus, boolean>>
@@ -46,6 +55,10 @@ export function ProjectsSidebar() {
   const { data: projects, isLoading } = useProjects({ includeArchived: true });
   const { data: trash } = useTrash(200);
   const trashCount = trash?.length ?? 0;
+
+  useEffect(() => {
+    setOpenMobile(false);
+  }, [location.pathname, location.search, setOpenMobile]);
 
   const groupedProjects = useMemo(() => {
     const all = projects ?? [];
@@ -62,194 +75,201 @@ export function ProjectsSidebar() {
   const projectCount = projects?.length ?? 0;
   const groupCollapsed = (status: ProjectStatus) =>
     collapsedGroups[status] ?? DEFAULT_COLLAPSED_GROUPS[status] ?? false;
-  const toggleGroup = (status: ProjectStatus) => {
-    const collapsed = groupCollapsed(status);
-    setCollapsedGroups({ ...collapsedGroups, [status]: !collapsed });
-  };
+  const isActive = (to: string, end = false) =>
+    end
+      ? location.pathname === to
+      : location.pathname === to || location.pathname.startsWith(`${to}/`);
 
   return (
-    <aside className="w-52 shrink-0 border-r border-line bg-sidebar flex flex-col scrollbar-thin overflow-y-auto text-sm">
-      <nav className="px-1.5 pt-2 space-y-px">
-        <SidebarLink
-          to="/"
-          end
-          icon={<Calendar size={12} className="opacity-70" />}
-          label="Tasks"
-          shortcut="g d"
-        />
-        <SidebarLink
-          to="/today"
-          icon={<Sunrise size={12} className="opacity-70" />}
-          label="Today"
-          shortcut="g t"
-        />
-        <SidebarLink
-          to="/inbox"
-          icon={<Inbox size={12} className="opacity-70" />}
-          label="Inbox"
-          shortcut="g i"
-        />
-        <SidebarLink
-          to="/dashboard"
-          icon={<LayoutDashboard size={12} className="opacity-70" />}
-          label="Workspace"
-          shortcut="g w"
-        />
-      </nav>
+    <Sidebar>
+      <Sidebar.Header className="h-12 px-6">
+        <BrandLink />
+      </Sidebar.Header>
 
-      <div className="mt-3 px-3 py-1.5 flex items-center justify-between">
-        <div className="text-xxs uppercase tracking-wider text-muted font-medium">Projects</div>
-        <div className="flex items-center gap-0.5">
-          <DropdownMenu>
-            <DropdownMenu.Trigger
-              render={
-                <button
-                  className="text-muted hover:text-ink p-0.5 rounded hover:bg-sidebarHover flex items-center gap-0.5"
-                  title={`Sort: ${SORT_LABEL[sort]}`}
-                >
-                  <ChevronDown size={11} />
-                </button>
-              }
+      <Sidebar.Content>
+        <Sidebar.Group>
+          <Sidebar.Menu>
+            <NavItem
+              to="/"
+              icon={CalendarBlankIcon}
+              label="Tasks"
+              shortcut="g d"
+              active={isActive("/", true)}
             />
-            <DropdownMenu.Content align="end">
-              <DropdownMenu.RadioGroup value={sort} onValueChange={(s) => setSort(s as ProjectSort)}>
-                {(Object.keys(SORT_LABEL) as ProjectSort[]).map((s) => (
-                  <DropdownMenu.RadioItem key={s} value={s} closeOnClick>
-                    <span>{SORT_LABEL[s]}</span>
-                    <DropdownMenu.RadioItemIndicator />
-                  </DropdownMenu.RadioItem>
-                ))}
-              </DropdownMenu.RadioGroup>
-            </DropdownMenu.Content>
-          </DropdownMenu>
-          <button
-            className="text-muted hover:text-ink p-0.5 rounded hover:bg-sidebarHover"
-            title="New project (n)"
-            onClick={() => open({ kind: "new-project" })}
-          >
-            <Plus size={11} />
-          </button>
-        </div>
-      </div>
-      <nav className="px-1.5 space-y-px flex-1">
-        {isLoading && <div className="px-2 py-1 text-xs text-faint">Loading…</div>}
-        {!isLoading && projectCount === 0 && (
-          <button
-            className="w-full text-left px-2 py-1 text-xs text-muted hover:bg-sidebarHover rounded"
-            onClick={() => open({ kind: "new-project" })}
-          >
-            No projects yet. <span className="text-accent">Create →</span>
-          </button>
-        )}
-        {PROJECT_STATUS_GROUPS.map((status) => {
-          const group = groupedProjects.get(status) ?? [];
-          if (isLoading || group.length === 0) return null;
-          const collapsed = groupCollapsed(status);
-          return (
-            <div key={status} className="pt-2 first:pt-0">
-              <button
-                type="button"
-                className="w-full px-1.5 pb-1 flex items-center gap-1 text-xxs uppercase tracking-wider text-muted font-medium hover:text-ink"
-                onClick={() => toggleGroup(status)}
-                title={`${collapsed ? "Expand" : "Collapse"} ${PROJECT_STATUS_LABEL[status]}`}
-              >
-                {collapsed ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
-                <span>{PROJECT_STATUS_LABEL[status]}</span>
-                <span className="ml-auto text-faint tabular-nums">{group.length}</span>
-              </button>
-              {!collapsed &&
-                group.map((p) => (
-                  <ProjectNavLink key={p.id} project={p} activeKey={activeKey} />
-                ))}
+            <NavItem
+              to="/today"
+              icon={SunHorizonIcon}
+              label="Today"
+              shortcut="g t"
+              active={isActive("/today")}
+            />
+            <NavItem
+              to="/inbox"
+              icon={TrayIcon}
+              label="Inbox"
+              shortcut="g i"
+              active={isActive("/inbox")}
+            />
+            <NavItem
+              to="/dashboard"
+              icon={SquaresFourIcon}
+              label="Workspace"
+              shortcut="g w"
+              active={isActive("/dashboard")}
+            />
+          </Sidebar.Menu>
+        </Sidebar.Group>
+
+        <Sidebar.Group>
+          <div className="mt-4 mb-1 flex items-center justify-between pl-3">
+            <span className="text-sm font-medium text-kumo-subtle">Projects</span>
+            <div className="flex items-center">
+              <DropdownMenu>
+                <DropdownMenu.Trigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      shape="square"
+                      icon={<SortAscendingIcon size={14} />}
+                      aria-label={`Sort projects: ${SORT_LABEL[sort]}`}
+                      className="text-kumo-subtle"
+                    />
+                  }
+                />
+                <DropdownMenu.Content align="end">
+                  <DropdownMenu.RadioGroup
+                    value={sort}
+                    onValueChange={(s) => setSort(s as ProjectSort)}
+                  >
+                    {(Object.keys(SORT_LABEL) as ProjectSort[]).map((s) => (
+                      <DropdownMenu.RadioItem key={s} value={s} closeOnClick>
+                        <span>{SORT_LABEL[s]}</span>
+                        <DropdownMenu.RadioItemIndicator />
+                      </DropdownMenu.RadioItem>
+                    ))}
+                  </DropdownMenu.RadioGroup>
+                </DropdownMenu.Content>
+              </DropdownMenu>
+              <Button
+                variant="ghost"
+                size="sm"
+                shape="square"
+                icon={<PlusIcon size={14} />}
+                title="New project (n)"
+                className="text-kumo-subtle"
+                onClick={() => open({ kind: "new-project" })}
+              />
             </div>
-          );
-        })}
-      </nav>
+          </div>
 
-      <div className="border-t border-line/60 px-1.5 py-1.5 space-y-px">
-        <SidebarLink
-          to="/trash"
-          icon={<Trash2 size={12} className="opacity-70" />}
-          label="Trash"
-          badge={trashCount > 0 ? trashCount : undefined}
-        />
-        <SidebarLink
-          to="/settings"
-          icon={<Cog size={12} className="opacity-70" />}
-          label="Settings"
-        />
+          <Sidebar.Menu>
+            {isLoading && <li className="px-3 py-1 text-sm text-kumo-placeholder">Loading…</li>}
+            {!isLoading && projectCount === 0 && (
+              <Sidebar.MenuButton
+                size="sm"
+                className="text-kumo-subtle"
+                onClick={() => open({ kind: "new-project" })}
+              >
+                No projects yet.
+                <span className="text-kumo-link">Create →</span>
+              </Sidebar.MenuButton>
+            )}
+            {!isLoading &&
+              PROJECT_STATUS_GROUPS.map((status) => {
+                const group = groupedProjects.get(status) ?? [];
+                if (group.length === 0) return null;
+                return (
+                  <Sidebar.MenuItem key={status}>
+                    <Sidebar.Collapsible
+                      open={!groupCollapsed(status)}
+                      onOpenChange={(isOpen) =>
+                        setCollapsedGroups({ ...collapsedGroups, [status]: !isOpen })
+                      }
+                    >
+                      <Sidebar.CollapsibleTrigger
+                        render={
+                          <Sidebar.MenuButton size="sm" className="text-xs font-medium text-kumo-subtle">
+                            {PROJECT_STATUS_LABEL[status]}
+                            <span className="ml-auto tabular-nums text-kumo-placeholder">{group.length}</span>
+                            <Sidebar.MenuChevron className="ml-0" />
+                          </Sidebar.MenuButton>
+                        }
+                      />
+                      <Sidebar.CollapsibleContent>
+                        <Sidebar.Menu>
+                          {group.map((p) => (
+                            <ProjectItem key={p.id} project={p} active={activeKey === p.key} />
+                          ))}
+                        </Sidebar.Menu>
+                      </Sidebar.CollapsibleContent>
+                    </Sidebar.Collapsible>
+                  </Sidebar.MenuItem>
+                );
+              })}
+          </Sidebar.Menu>
+        </Sidebar.Group>
+      </Sidebar.Content>
+
+      <div className="shrink-0 border-t border-kumo-line px-3.5 py-2">
+        <Sidebar.Menu>
+          <NavItem to="/trash" icon={TrashIcon} label="Trash" active={isActive("/trash")}>
+            {trashCount > 0 && (
+              <span className="ml-auto text-xs tabular-nums text-kumo-subtle">{trashCount}</span>
+            )}
+          </NavItem>
+          <NavItem to="/settings" icon={GearSixIcon} label="Settings" active={isActive("/settings")} />
+        </Sidebar.Menu>
       </div>
-    </aside>
+    </Sidebar>
   );
 }
 
-function ProjectNavLink({
-  project,
-  activeKey
-}: {
-  project: Project;
-  activeKey?: string;
-}) {
-  return (
-    <NavLink
-      to={`/p/${project.key}`}
-      title={project.status === "archived" ? `${project.name} (archived)` : project.name}
-      className={({ isActive }) =>
-        `flex items-center gap-2 px-2 py-1 text-xs rounded ${
-          isActive || activeKey === project.key
-            ? "bg-accentSoft text-accentText"
-            : "text-ink2 hover:bg-sidebarHover"
-        } ${project.status === "archived" ? "opacity-60" : ""}`
-      }
-    >
-      <ProjectIcon color={project.color} icon={project.icon} size={11} />
-      <span
-        className="font-mono text-xxs tabular-nums opacity-90 shrink-0"
-        style={{ color: project.color }}
-      >
-        {project.key}
-      </span>
-      <span className="truncate text-muted">{project.name}</span>
-    </NavLink>
-  );
-}
-
-function SidebarLink({
+function NavItem({
   to,
-  end,
   icon,
   label,
   shortcut,
-  badge
+  active,
+  children
 }: {
   to: string;
-  end?: boolean;
-  icon: React.ReactNode;
+  icon: Icon;
   label: string;
   shortcut?: string;
-  badge?: number;
+  active: boolean;
+  children?: ReactNode;
 }) {
   return (
-    <NavLink
-      to={to}
-      end={end}
-      className={({ isActive }) =>
-        `group flex items-center gap-2 px-2 py-1 rounded text-xs ${
-          isActive ? "bg-accentSoft text-accentText" : "text-ink2 hover:bg-sidebarHover"
-        }`
-      }
-      title={shortcut ? `${label} (${shortcut})` : label}
-    >
-      {icon}
-      <span>{label}</span>
-      {badge != null && (
-        <span className="ml-auto text-xxs text-faint tabular-nums">{badge}</span>
-      )}
+    <Sidebar.MenuButton href={to} icon={icon} active={active} className={ACTIVE_ITEM}>
+      {label}
+      {children}
       {shortcut && (
-        <kbd className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+        <kbd className="ml-auto opacity-0 transition-opacity group-hover/menu-button:opacity-100">
           {shortcut}
         </kbd>
       )}
-    </NavLink>
+    </Sidebar.MenuButton>
+  );
+}
+
+function ProjectItem({ project, active }: { project: Project; active: boolean }) {
+  const archived = project.status === "archived";
+  return (
+    <Sidebar.MenuItem>
+      <Sidebar.MenuButton
+        size="sm"
+        href={`/p/${project.key}`}
+        active={active}
+        icon={<ProjectIcon color={project.color} icon={project.icon} size={14} />}
+        title={archived ? `${project.name} (archived)` : project.name}
+        className={cn(ACTIVE_ITEM, archived && "opacity-60")}
+      >
+        <span className="shrink-0 font-mono text-xs tabular-nums" style={{ color: project.color }}>
+          {project.key}
+        </span>
+        <span className="truncate text-kumo-subtle">{project.name}</span>
+      </Sidebar.MenuButton>
+    </Sidebar.MenuItem>
   );
 }

@@ -1,4 +1,6 @@
+import { LinkProvider } from "@cloudflare/kumo/utils";
 import { Route, Routes } from "react-router-dom";
+import { AppLink } from "./components/AppLink";
 import { AppShell } from "./components/AppShell";
 import { ModalRoot } from "./components/ModalRoot";
 import { AgentsMdPage } from "./pages/AgentsMdPage";
@@ -17,27 +19,29 @@ import { ToastsProvider } from "./state/toasts";
 
 export default function App() {
   return (
-    <ToastsProvider>
-      <ModalsProvider>
-      <Routes>
-        {/* Login lives outside AppShell so the sidebar/topbar don't render
-            while unauthenticated. */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route element={<AppShell />}>
-          <Route path="/" element={<TasksPage />} />
-          <Route path="/today" element={<TodayPage />} />
-          <Route path="/inbox" element={<InboxPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/trash" element={<TrashPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/p/:key" element={<ProjectPage />} />
-          <Route path="/p/:key/e/:id" element={<EntityDetailPage />} />
-          <Route path="/p/:key/agents-md" element={<AgentsMdPage />} />
-          <Route path="/search" element={<SearchPage />} />
-        </Route>
-      </Routes>
-        <ModalRoot />
-      </ModalsProvider>
-    </ToastsProvider>
+    <LinkProvider component={AppLink}>
+      <ToastsProvider>
+        <ModalsProvider>
+          <Routes>
+            {/* Login lives outside AppShell so the sidebar/topbar don't render
+                while unauthenticated. */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route element={<AppShell />}>
+              <Route path="/" element={<TasksPage />} />
+              <Route path="/today" element={<TodayPage />} />
+              <Route path="/inbox" element={<InboxPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/trash" element={<TrashPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/p/:key" element={<ProjectPage />} />
+              <Route path="/p/:key/e/:id" element={<EntityDetailPage />} />
+              <Route path="/p/:key/agents-md" element={<AgentsMdPage />} />
+              <Route path="/search" element={<SearchPage />} />
+            </Route>
+          </Routes>
+          <ModalRoot />
+        </ModalsProvider>
+      </ToastsProvider>
+    </LinkProvider>
   );
 }
