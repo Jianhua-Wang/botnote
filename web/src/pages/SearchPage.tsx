@@ -6,6 +6,7 @@ import { useSearchParams } from "react-router-dom";
 import { useProjects, useSearch } from "../api/hooks";
 import type { EntityKind } from "../api/types";
 import { ENTITY_KINDS } from "../api/types";
+import { KIND_LABEL } from "../lib/kindLabel";
 import { KindBadge } from "../components/KindBadge";
 import { projectLookup } from "../components/tasks/utils";
 import { useDrawer } from "../hooks/useDrawer";
@@ -103,7 +104,7 @@ export function SearchPage() {
             onKeyDown={(e) => {
               if (e.key === "Enter") submit();
             }}
-            placeholder="Search tasks, notes, comments…"
+            placeholder="Search tasks, memory, worklogs…"
             autoFocus
             className="w-full pl-9"
           />
@@ -114,7 +115,7 @@ export function SearchPage() {
           {ENTITY_KINDS.map((k) => (
             <FilterChip
               key={k}
-              label={k}
+              label={KIND_LABEL[k]}
               active={kind === k}
               onClick={() => setKind(kind === k ? null : k)}
             />
@@ -131,7 +132,7 @@ export function SearchPage() {
             <MagnifyingGlassIcon size={24} className="mx-auto mb-3 text-kumo-placeholder" />
             <div className="text-sm">Search your workspace</div>
             <div className="text-xs text-kumo-placeholder mt-1">
-              Tasks, notes, comments and feedback — by keyword or meaning.
+              Tasks, memory, worklogs and feedback — by keyword or meaning.
             </div>
           </div>
         ) : data && data.hits.length === 0 ? (

@@ -60,16 +60,16 @@ export function NotesList({ project }: { project: Project }) {
           icon={<PlusIcon size={14} weight="bold" />}
           onClick={() => open({ kind: "quick-create", projectId: project.id, initialKind: "note" })}
         >
-          Note
+          Memory
         </Button>
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin bg-kumo-base">
         {filtered.length === 0 ? (
           <div className="p-8 text-center text-xs text-kumo-subtle">
-            {filter === "pinned" ? "No pinned notes yet." : "No notes yet."}
+            {filter === "pinned" ? "Nothing pinned yet." : "No memory yet."}
             <div className="text-kumo-placeholder mt-1">
               {filter === "pinned"
-                ? "Pin notes to surface them in opening brief for agents."
+                ? "Pin a memory to put it in every agent's opening brief."
                 : "Press c to create one."}
             </div>
           </div>

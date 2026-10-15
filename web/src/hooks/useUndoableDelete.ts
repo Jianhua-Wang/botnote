@@ -11,7 +11,8 @@ const LIST_KEYS = [
   ["recent"],
   ["entity-list"],
   ["feedback"],
-  ["trash"]
+  ["trash"],
+  ["children"]
 ] as const;
 
 function stripEntity<T>(data: T, id: string): T {

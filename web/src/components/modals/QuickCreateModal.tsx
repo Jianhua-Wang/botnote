@@ -19,6 +19,7 @@ import {
 } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle } from "../../lib/entityTitle";
+import { KIND_LABEL } from "../../lib/kindLabel";
 import { useModals } from "../../state/modals";
 import { ModalShell } from "../ModalShell";
 import { NativeSelect } from "../NativeSelect";
@@ -53,8 +54,11 @@ export function QuickCreateModal({
 
   const project = projects?.find((p) => p.id === projectId);
   const isNote = kind === "note";
+  // A new task only gets a parent picker when it was opened as a sub-task, so the
+  // plain create flow stays short.
+  const showParentPicker = isNote || Boolean(initialParentId);
   const { data: projectTasks } = useEntityList(
-    isNote && projectId ? projectId : undefined,
+    showParentPicker && projectId ? projectId : undefined,
     ["task"]
   );
 
@@ -82,7 +86,8 @@ export function QuickCreateModal({
                   tags,
                   actorKind: "human",
                   dueAt: dueDate ? new Date(dueDate).toISOString() : null,
-                  priority
+                  priority,
+                  parentId: parentId || null
                 })
               : await write.mutateAsync({
                   kind: "note",
@@ -116,7 +121,7 @@ export function QuickCreateModal({
             variant="segmented"
             tabs={CREATABLE_KINDS.map((k) => ({
               value: k,
-              label: <span className="capitalize">{k}</span>
+              label: <span className="capitalize">{KIND_LABEL[k]}</span>
             }))}
             value={kind}
             onValueChange={(v) => setKind(v as EntityKind)}
@@ -230,33 +235,31 @@ export function QuickCreateModal({
           </div>
         )}
         {isNote && (
-          <>
-            <Checkbox
-              label="📌 Pin to project — auto-include in agent opening brief"
-              checked={pinned}
-              onCheckedChange={setPinned}
-            />
-            {projectTasks && projectTasks.length > 0 && (
-              <div className="flex items-center gap-2 text-sm text-kumo-subtle">
-                <span className="shrink-0">Link to task:</span>
-                <NativeSelect
-                  size="sm"
-                  aria-label="Link to task"
-                  className="flex-1"
-                  value={parentId}
-                  onChange={(e) => setParentId(e.target.value)}
-                >
-                  <option value="">— none —</option>
-                  {projectTasks.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {project?.key && t.sequenceId ? `${project.key}-${t.sequenceId} · ` : ""}
-                      {displayTitle(t)}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </div>
-            )}
-          </>
+          <Checkbox
+            label="📌 Pin to project — auto-include in agent opening brief"
+            checked={pinned}
+            onCheckedChange={setPinned}
+          />
+        )}
+        {showParentPicker && projectTasks && projectTasks.length > 0 && (
+          <div className="flex items-center gap-2 text-sm text-kumo-subtle">
+            <span className="shrink-0">{isNote ? "Link to task:" : "Sub-task of:"}</span>
+            <NativeSelect
+              size="sm"
+              aria-label={isNote ? "Link to task" : "Parent task"}
+              className="flex-1"
+              value={parentId}
+              onChange={(e) => setParentId(e.target.value)}
+            >
+              <option value="">— none —</option>
+              {projectTasks.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {project?.key && t.sequenceId ? `${project.key}-${t.sequenceId} · ` : ""}
+                  {displayTitle(t)}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
         )}
         <div className="flex justify-end sm:justify-between items-center pt-1">
           <div className="hidden sm:block text-xxs text-kumo-subtle">
@@ -267,7 +270,7 @@ export function QuickCreateModal({
               Cancel
             </Button>
             <Button type="submit" variant="primary" disabled={!valid || write.isPending}>
-              {write.isPending ? "Creating…" : `Create ${kind}`}
+              {write.isPending ? "Creating…" : `Create ${KIND_LABEL[kind]}`}
             </Button>
           </div>
         </div>

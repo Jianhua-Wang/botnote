@@ -783,18 +783,24 @@ export async function registerRoutes(
     }
   );
 
+  const ListCommentsQuery = z.object({
+    limit: z.coerce.number().int().positive().max(500).default(50)
+  });
+
   app.get(
     "/v1/entities/:id/comments",
     {
       schema: {
         tags: ["entities"],
         summary: "List comments for an entity, oldest first",
-        params: EntityIdParams
+        params: EntityIdParams,
+        querystring: ListCommentsQuery
       }
     },
     async (req) => {
       const { id } = EntityIdParams.parse(req.params);
-      return serializeEntities(await listComments(req.scope, ctx.db, id));
+      const query = ListCommentsQuery.parse(req.query);
+      return serializeEntities(await listComments(req.scope, ctx.db, id, query.limit));
     }
   );
 
