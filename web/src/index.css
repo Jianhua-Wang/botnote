@@ -8,44 +8,9 @@
   --color-kumo-brand-tint: light-dark(#e3f6f7, #10302f);
   --text-color-kumo-brand: light-dark(#0a7e83, #3ebfc6);
   --text-color-kumo-link: light-dark(#00686c, #3ebfc6);
-}
-
-/*
-  Legacy app tokens, kept as aliases onto Kumo so existing markup picks up
-  the Kumo look before each view is migrated to Kumo classes directly.
-*/
-@theme {
-  --color-bg: var(--color-kumo-canvas);
-  --color-surface: var(--color-kumo-base);
-  --color-sidebar: var(--color-kumo-tint);
-  --color-sidebarHover: light-dark(oklch(92.2% 0 0), oklch(37.1% 0 0));
-  --color-line: var(--color-kumo-line);
-  --color-lineSoft: var(--color-kumo-hairline);
-  --color-ink: var(--text-color-kumo-default);
-  --color-ink2: var(--text-color-kumo-default);
-  --color-muted: var(--text-color-kumo-subtle);
-  --color-faint: var(--text-color-kumo-placeholder);
-  --color-accent: var(--color-kumo-brand);
-  --color-accentHover: var(--color-kumo-brand-hover);
-  --color-accentSoft: var(--color-kumo-brand-tint);
-  --color-accentText: var(--text-color-kumo-link);
-  --color-success: var(--text-color-kumo-success);
-  --color-warn: var(--text-color-kumo-warning);
-  --color-danger: var(--text-color-kumo-danger);
-  --color-prioUrgent: #eb5757;
-  --color-prioHigh: #f2994a;
-  --color-prioMedium: #5e6ad2;
-  --color-prioLow: #a8a8af;
-  --color-statusOpen: #a8a8af;
-  --color-statusInProgress: #f2994a;
-  --color-statusDone: #4cb782;
-  --color-statusRejected: #eb5757;
 
   --text-xxs: 11px;
   --text-xxs--line-height: 15px;
-
-  --shadow-modal:
-    0 12px 32px rgba(15, 15, 20, 0.08), 0 0 0 1px rgba(15, 15, 20, 0.06);
 }
 
 @layer base {
@@ -56,44 +21,6 @@
   ::file-selector-button {
     border-color: var(--color-kumo-line, currentcolor);
   }
-}
-
-@utility btn {
-  @apply inline-flex items-center justify-center gap-1.5 px-2.5 h-8 text-xs font-medium rounded-md border border-kumo-line bg-kumo-base text-kumo-default shadow-xs select-none transition-colors hover:bg-kumo-tint focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-kumo-brand disabled:opacity-50 disabled:cursor-not-allowed;
-}
-
-@utility btn-primary {
-  @apply text-white border-[color-mix(in_oklch,var(--color-kumo-brand),black_10%)] bg-kumo-brand bg-linear-to-b from-[color-mix(in_oklch,var(--color-kumo-brand),white_15%)] to-kumo-brand shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--color-kumo-brand),white_30%)] hover:bg-kumo-brand hover:from-[color-mix(in_oklch,var(--color-kumo-brand),white_30%)];
-}
-
-@utility btn-ghost {
-  @apply border-transparent bg-transparent shadow-none text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default;
-}
-
-@utility chip {
-  @apply inline-flex items-center gap-1 px-1.5 h-5 text-xxs font-medium rounded-md bg-kumo-tint text-kumo-subtle border border-kumo-hairline;
-}
-
-@utility input {
-  @apply w-full h-8 px-2 text-sm bg-kumo-control text-kumo-default border border-kumo-line rounded-md transition-shadow focus:outline-hidden focus:border-kumo-focus/50 focus:ring-[0.5px] focus:ring-kumo-focus/50 disabled:bg-kumo-overlay disabled:text-kumo-inactive;
-}
-
-@utility row-hover {
-  @apply hover:bg-kumo-tint transition-colors;
-}
-
-@utility seg {
-  @apply inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-kumo-recessed text-kumo-subtle;
-  & button {
-    @apply px-2.5 h-7 text-xs rounded-md hover:text-kumo-default transition-colors;
-  }
-  & button[data-active='true'] {
-    @apply bg-kumo-base text-kumo-default shadow-sm ring ring-kumo-line;
-  }
-}
-
-@utility divider {
-  @apply border-t border-kumo-hairline;
 }
 
 @utility scrollbar-thin {

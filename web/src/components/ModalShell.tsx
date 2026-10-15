@@ -1,6 +1,6 @@
 import { Button } from "@cloudflare/kumo/components/button";
 import { Dialog } from "@cloudflare/kumo/components/dialog";
-import { X } from "@phosphor-icons/react";
+import { XIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { useModals } from "../state/modals";
 
@@ -31,7 +31,7 @@ export function ModalShell({
                 variant="ghost"
                 size="sm"
                 shape="square"
-                icon={<X size={14} />}
+                icon={<XIcon size={14} />}
                 aria-label="Close"
               />
             )}

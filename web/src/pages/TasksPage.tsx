@@ -28,7 +28,7 @@ export function TasksPage() {
         setProjectIds={setProjectIds}
       />
       <div className="flex-1 min-h-0 flex">
-        <div className="flex-1 min-w-0 overflow-hidden bg-bg">
+        <div className="flex-1 min-w-0 overflow-hidden bg-kumo-canvas">
           {effectiveView === "day" && <DayView anchor={anchor} projectIds={projectIds} />}
           {effectiveView === "week" && <WeekView anchor={anchor} projectIds={projectIds} />}
           {effectiveView === "month" && <MonthView anchor={anchor} projectIds={projectIds} />}

@@ -46,6 +46,7 @@ import {
   type RecurrencePreset,
   type RecurrenceWeekday
 } from "../api/types";
+import { useEditorTheme } from "../hooks/useEditorTheme";
 import { useDrawer } from "../hooks/useDrawer";
 import { useUndoableDelete } from "../hooks/useUndoableDelete";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
@@ -108,7 +109,7 @@ export function EntityDrawer() {
         className="flex-1 cursor-pointer bg-kumo-recessed/60 backdrop-blur-[1px]"
         onClick={close}
       />
-      <aside className="flex w-[min(680px,92vw)] flex-col border-l border-kumo-line bg-kumo-base shadow-modal">
+      <aside className="flex w-[min(680px,92vw)] flex-col border-l border-kumo-line bg-kumo-base shadow-lg">
         <DrawerContent id={openId} onClose={close} />
       </aside>
     </div>
@@ -142,6 +143,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const editorTheme = useEditorTheme();
   const [tags, setTags] = useState<string[]>([]);
   const [status, setStatus] = useState("open");
   const [dueDate, setDueDate] = useState("");
@@ -496,7 +498,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
                   highlightActiveLine: false,
                   highlightActiveLineGutter: false
                 }}
-                theme="light"
+                theme={editorTheme}
                 minHeight="220px"
                 placeholder="Write in Markdown…"
               />

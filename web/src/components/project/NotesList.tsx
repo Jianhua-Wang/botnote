@@ -1,4 +1,6 @@
-import { Pin, PinOff } from "lucide-react";
+import { Button } from "@cloudflare/kumo/components/button";
+import { Tabs } from "@cloudflare/kumo/components/tabs";
+import { PlusIcon, PushPinIcon, PushPinSlashIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
@@ -24,26 +26,48 @@ export function NotesList({ project }: { project: Project }) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-3 h-9 flex items-center justify-between border-b border-line bg-surface">
-        <div className="flex items-center gap-2">
-          <div className="seg">
-            <button data-active={filter === "all"} onClick={() => setFilter("all")}>
-              All <span className="text-faint ml-1">{notes?.length ?? 0}</span>
-            </button>
-            <button data-active={filter === "pinned"} onClick={() => setFilter("pinned")}>
-              Pinned <span className="text-faint ml-1">{notes?.filter((n) => n.pinned).length ?? 0}</span>
-            </button>
-          </div>
-        </div>
-        <button className="btn btn-primary" onClick={() => open({ kind: "quick-create", projectId: project.id })}>
-          + Note
-        </button>
+      <div className="px-3 h-11 flex items-center justify-between gap-2 border-b border-kumo-line bg-kumo-base">
+        <Tabs
+          variant="segmented"
+          size="sm"
+          value={filter}
+          onValueChange={(v) => setFilter(v as "all" | "pinned")}
+          tabs={[
+            {
+              value: "all",
+              label: (
+                <span>
+                  All <span className="ml-1 text-kumo-placeholder">{notes?.length ?? 0}</span>
+                </span>
+              )
+            },
+            {
+              value: "pinned",
+              label: (
+                <span>
+                  Pinned{" "}
+                  <span className="ml-1 text-kumo-placeholder">
+                    {notes?.filter((n) => n.pinned).length ?? 0}
+                  </span>
+                </span>
+              )
+            }
+          ]}
+        />
+        <Button
+          variant="primary"
+          size="sm"
+          icon={<PlusIcon size={14} weight="bold" />}
+          onClick={() => open({ kind: "quick-create", projectId: project.id, initialKind: "note" })}
+        >
+          Note
+        </Button>
       </div>
-      <div className="flex-1 overflow-y-auto scrollbar-thin bg-surface">
+      <div className="flex-1 overflow-y-auto scrollbar-thin bg-kumo-base">
         {filtered.length === 0 ? (
-          <div className="p-8 text-center text-xs text-muted">
+          <div className="p-8 text-center text-xs text-kumo-subtle">
             {filter === "pinned" ? "No pinned notes yet." : "No notes yet."}
-            <div className="text-faint mt-1">
+            <div className="text-kumo-placeholder mt-1">
               {filter === "pinned"
                 ? "Pin notes to surface them in opening brief for agents."
                 : "Press c to create one."}
@@ -53,13 +77,15 @@ export function NotesList({ project }: { project: Project }) {
           filtered.map((n) => (
             <div
               key={n.id}
-              className="px-4 py-2.5 border-b border-lineSoft row-hover cursor-pointer group"
+              className="px-4 py-2.5 border-b border-kumo-hairline hover:bg-kumo-tint transition-colors cursor-pointer group"
               onClick={() => openDetail(n.id)}
             >
               <div className="flex items-start gap-2">
                 <button
-                  className={`shrink-0 mt-0.5 p-0.5 -m-0.5 rounded hover:bg-line/40 ${
-                    n.pinned ? "text-accent" : "text-faint hover:text-ink"
+                  type="button"
+                  aria-label={n.pinned ? "Unpin" : "Pin to opening brief"}
+                  className={`shrink-0 mt-0.5 p-0.5 -m-0.5 rounded hover:bg-kumo-fill ${
+                    n.pinned ? "text-kumo-brand" : "text-kumo-placeholder hover:text-kumo-default"
                   }`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -68,26 +94,26 @@ export function NotesList({ project }: { project: Project }) {
                   title={n.pinned ? "Unpin" : "Pin to opening brief"}
                 >
                   {n.pinned ? (
-                    <Pin size={12} fill="currentColor" />
+                    <PushPinIcon size={12} weight="fill" />
                   ) : (
-                    <PinOff size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <PushPinSlashIcon size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                   )}
                 </button>
                 <div className="flex-1 min-w-0">
                   <div
                     className={`text-sm truncate ${
-                      isUntitled(n) ? "text-muted italic" : "text-ink"
+                      isUntitled(n) ? "text-kumo-subtle italic" : "text-kumo-default"
                     }`}
                   >
                     {displayTitle(n)}
                   </div>
                   {!isUntitled(n) && n.body && (
-                    <div className="text-xs text-muted truncate mt-0.5">
+                    <div className="text-xs text-kumo-subtle truncate mt-0.5">
                       {n.body.replace(/\n/g, " ").slice(0, 200)}
                     </div>
                   )}
-                  <div className="text-xxs text-faint mt-1 flex items-center gap-2">
-                    <span>{formatDistanceToNow(new Date(n.updatedAt), { addSuffix: true })}</span>
+                  <div className="text-xxs text-kumo-placeholder mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="whitespace-nowrap">{formatDistanceToNow(new Date(n.updatedAt), { addSuffix: true })}</span>
                     <span>·</span>
                     <span>{n.actorKind}</span>
                     {n.tags.length > 0 && (

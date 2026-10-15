@@ -20,7 +20,7 @@ export function GhostChip({ virtual: v, project }: { virtual: VirtualOccurrence;
     >
       <span
         className="w-[2px] self-stretch rounded-sm shrink-0"
-        style={{ backgroundColor: project?.color ?? "#a8a8af" }}
+        style={{ backgroundColor: project?.color ?? "var(--text-color-kumo-placeholder)" }}
       />
       <span className="truncate flex-1 min-w-0 text-kumo-default italic">{title}</span>
       <RecurrenceIcon size={11} className="text-kumo-subtle" />
@@ -90,7 +90,7 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
     >
       <span
         className="w-[2px] self-stretch rounded-sm shrink-0"
-        style={{ backgroundColor: project?.color ?? "#a8a8af" }}
+        style={{ backgroundColor: project?.color ?? "var(--text-color-kumo-placeholder)" }}
       />
       <StatusPickerButton task={task} size={11} />
       <span

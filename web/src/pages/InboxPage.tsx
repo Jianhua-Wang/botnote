@@ -1,4 +1,4 @@
-import { Inbox } from "lucide-react";
+import { TrayIcon } from "@phosphor-icons/react";
 import { useMemo } from "react";
 import type { Entity, Project } from "../api/types";
 import { useProjects, useTasksRange } from "../api/hooks";
@@ -34,23 +34,23 @@ export function InboxPage() {
     <div className="h-full overflow-y-auto scrollbar-thin">
       <div className="max-w-3xl mx-auto px-6 py-6 space-y-4">
         <header className="flex items-baseline gap-3">
-          <Inbox size={18} className="text-accent" />
+          <TrayIcon size={18} className="text-kumo-brand" />
           <h1 className="text-lg font-semibold">Inbox</h1>
-          <span className="text-xs text-muted">Tasks without due date</span>
+          <span className="text-xs text-kumo-subtle">Tasks without due date</span>
         </header>
 
-        <p className="text-xs text-muted">
+        <p className="text-xs text-kumo-subtle">
           Tasks land here until they get a due date.
         </p>
 
         {isLoading ? (
-          <div className="text-sm text-muted">Loading…</div>
+          <div className="text-sm text-kumo-subtle">Loading…</div>
         ) : totalCount === 0 ? (
-          <div className="border border-dashed border-line rounded-md p-8 text-center">
-            <div className="text-sm text-muted">Inbox empty.</div>
+          <div className="border border-dashed border-kumo-line rounded-md p-8 text-center">
+            <div className="text-sm text-kumo-subtle">Inbox empty.</div>
             {projects && projects.length > 0 && (
               <button
-                className="mt-2 text-xs text-accent hover:underline"
+                className="mt-2 text-xs text-kumo-brand hover:underline"
                 onClick={() => openModal({ kind: "quick-create" })}
               >
                 + capture something
@@ -62,21 +62,21 @@ export function InboxPage() {
             {groups.map(({ projectId, project, tasks }) => (
               <section
                 key={projectId ?? "_none"}
-                className="border border-line rounded-md bg-surface overflow-hidden"
+                className="border border-kumo-line rounded-md bg-kumo-base overflow-hidden"
               >
-                <div className="px-3 py-1.5 border-b border-lineSoft bg-sidebar/40 flex items-center gap-1.5 text-xxs">
+                <div className="px-3 py-1.5 border-b border-kumo-hairline bg-kumo-tint/40 flex items-center gap-1.5 text-xxs">
                   {project ? (
                     <>
                       <ProjectIcon color={project.color} icon={project.icon} size={10} />
                       <span className="font-mono tabular-nums" style={{ color: project.color }}>
                         {project.key}
                       </span>
-                      <span className="text-muted truncate">{project.name}</span>
+                      <span className="text-kumo-subtle truncate">{project.name}</span>
                     </>
                   ) : (
-                    <span className="text-faint">no project</span>
+                    <span className="text-kumo-placeholder">no project</span>
                   )}
-                  <span className="text-faint ml-auto tabular-nums">{tasks.length}</span>
+                  <span className="text-kumo-placeholder ml-auto tabular-nums">{tasks.length}</span>
                 </div>
                 {tasks.map((task) => (
                   <TaskRow

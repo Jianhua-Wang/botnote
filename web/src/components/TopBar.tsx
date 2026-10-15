@@ -1,16 +1,29 @@
 import { Button } from "@cloudflare/kumo/components/button";
+import { DropdownMenu } from "@cloudflare/kumo/components/dropdown";
 import { useSidebar } from "@cloudflare/kumo/components/sidebar";
 import {
+  DesktopIcon,
   ListIcon,
   MagnifyingGlassIcon,
+  MoonIcon,
   PlusIcon,
   SidebarSimpleIcon,
-  SignOutIcon
+  SignOutIcon,
+  SunIcon,
+  type Icon
 } from "@phosphor-icons/react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useColorMode } from "../hooks/useColorMode";
+import { COLOR_MODES, type ColorMode } from "../lib/colorMode";
 import { useModals } from "../state/modals";
 import { BrandLink } from "./BrandLink";
+
+const COLOR_MODE_OPTIONS: Record<ColorMode, { label: string; icon: Icon }> = {
+  light: { label: "Light", icon: SunIcon },
+  dark: { label: "Dark", icon: MoonIcon },
+  system: { label: "System", icon: DesktopIcon }
+};
 
 export function TopBar() {
   const { open } = useModals();
@@ -74,6 +87,7 @@ export function TopBar() {
           <span className="sr-only sm:not-sr-only">New</span>
           <kbd className="hidden border-white/25 bg-white/15 text-white md:inline-flex">c</kbd>
         </Button>
+        <ColorModeMenu />
         <Button
           variant="ghost"
           size="sm"
@@ -85,5 +99,40 @@ export function TopBar() {
         />
       </div>
     </header>
+  );
+}
+
+function ColorModeMenu() {
+  const [mode, setMode] = useColorMode();
+  const CurrentIcon = COLOR_MODE_OPTIONS[mode].icon;
+  return (
+    <DropdownMenu>
+      <DropdownMenu.Trigger
+        render={
+          <Button
+            variant="ghost"
+            size="sm"
+            shape="square"
+            icon={<CurrentIcon size={16} />}
+            aria-label={`Theme: ${COLOR_MODE_OPTIONS[mode].label}`}
+            className="text-kumo-subtle"
+          />
+        }
+      />
+      <DropdownMenu.Content align="end" className="w-36">
+        <DropdownMenu.RadioGroup value={mode} onValueChange={(v) => setMode(v as ColorMode)}>
+          {COLOR_MODES.map((m) => {
+            const { label, icon: ModeIcon } = COLOR_MODE_OPTIONS[m];
+            return (
+              <DropdownMenu.RadioItem key={m} value={m} className="gap-2">
+                <ModeIcon size={14} className="text-kumo-subtle" />
+                {label}
+                <DropdownMenu.RadioItemIndicator />
+              </DropdownMenu.RadioItem>
+            );
+          })}
+        </DropdownMenu.RadioGroup>
+      </DropdownMenu.Content>
+    </DropdownMenu>
   );
 }

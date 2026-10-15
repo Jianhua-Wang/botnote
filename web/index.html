@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>botnote</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // Mirrors src/lib/colorMode.ts; runs before first paint so dark users never see a light flash.
+      try {
+        var mode = localStorage.getItem("botnote.colorMode");
+        var dark = mode === "dark" || (mode !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.mode = dark ? "dark" : "light";
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root" class="isolate"></div>

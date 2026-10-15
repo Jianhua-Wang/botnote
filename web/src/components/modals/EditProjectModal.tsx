@@ -1,3 +1,5 @@
+import { Button } from "@cloudflare/kumo/components/button";
+import { Input } from "@cloudflare/kumo/components/input";
 import { useEffect, useState } from "react";
 import { useProject, useUpdateProject } from "../../api/hooks";
 import { PROJECT_STATUSES, type ProjectStatus } from "../../api/types";
@@ -6,6 +8,7 @@ import { PROJECT_STATUS_HELP, PROJECT_STATUS_LABEL } from "../../lib/projectStat
 import { useModals } from "../../state/modals";
 import { IconColorPicker } from "../IconColorPicker";
 import { ModalShell } from "../ModalShell";
+import { NativeSelect } from "../NativeSelect";
 
 export function EditProjectModal({ projectId }: { projectId: string }) {
   const { data: project } = useProject(projectId);
@@ -29,7 +32,7 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
   if (!project) {
     return (
       <ModalShell title="Project settings" width="sm:w-md">
-        <div className="p-4 text-sm text-muted">Loading…</div>
+        <div className="p-4 text-sm text-kumo-subtle">Loading…</div>
       </ModalShell>
     );
   }
@@ -54,53 +57,43 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
           });
           close();
         }}
-        className="p-3 space-y-3"
+        className="p-4 space-y-4"
       >
-        <div>
-          <label className="block text-xxs text-muted uppercase tracking-wider mb-1">Name</label>
-          <input
-            autoFocus
-            className="input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
+        <Input
+          autoFocus
+          label="Name"
+          className="w-full"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
         <IconColorPicker
           icon={icon}
           color={color}
           onIconChange={setIcon}
           onColorChange={setColor}
         />
-        <div>
-          <label className="block text-xxs text-muted uppercase tracking-wider mb-1">Status</label>
-          <select
-            className="input"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as ProjectStatus)}
-          >
-            {PROJECT_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {PROJECT_STATUS_LABEL[s]} · {PROJECT_STATUS_HELP[s]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex justify-end items-center pt-1">
-          <div className="flex gap-2">
-            <button type="button" className="btn" onClick={close}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={!dirty || !valid || update.isPending}
-            >
-              {update.isPending ? "Saving…" : "Save"}
-            </button>
-          </div>
+        <NativeSelect
+          label="Status"
+          className="w-full"
+          value={status}
+          onChange={(e) => setStatus(e.target.value as ProjectStatus)}
+        >
+          {PROJECT_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {PROJECT_STATUS_LABEL[s]} · {PROJECT_STATUS_HELP[s]}
+            </option>
+          ))}
+        </NativeSelect>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" onClick={close}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={!dirty || !valid || update.isPending}>
+            {update.isPending ? "Saving…" : "Save"}
+          </Button>
         </div>
         {update.error && (
-          <div className="text-xs text-danger">{(update.error as Error).message}</div>
+          <div className="text-xs text-kumo-danger">{(update.error as Error).message}</div>
         )}
       </form>
     </ModalShell>
