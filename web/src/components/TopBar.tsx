@@ -1,11 +1,21 @@
-import { LogOut, Menu, Plus, Search } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Button } from "@cloudflare/kumo/components/button";
+import { useSidebar } from "@cloudflare/kumo/components/sidebar";
+import {
+  ListIcon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+  SidebarSimpleIcon,
+  SignOutIcon
+} from "@phosphor-icons/react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useModals } from "../state/modals";
+import { BrandLink } from "./BrandLink";
 
-export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
+export function TopBar() {
   const { open } = useModals();
   const navigate = useNavigate();
+  const { isMobile, open: sidebarOpen, toggleSidebar } = useSidebar();
   const mod = typeof navigator !== "undefined" && navigator.platform.includes("Mac") ? "⌘" : "Ctrl";
 
   async function onLogout() {
@@ -18,51 +28,61 @@ export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
   }
 
   return (
-    <header className="h-11 flex items-center justify-between px-3 border-b border-line bg-surface">
-      <div className="flex items-center gap-1">
-        <button
-          className="btn btn-ghost h-7! w-7! p-0! md:hidden"
-          onClick={onMenuClick}
-          title="Menu"
-          aria-label="Toggle sidebar"
-        >
-          <Menu size={14} />
-        </button>
-        <Link to="/" className="flex items-center gap-1.5 text-ink hover:opacity-90">
-          <img src="/favicon.svg" alt="" aria-hidden="true" className="w-[18px] h-[18px]" />
-          <span className="text-xs font-semibold tracking-tight">botnote</span>
-        </Link>
+    <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-kumo-line bg-kumo-base px-3">
+      <div className="flex min-w-0 items-center gap-2">
+        {isMobile ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            shape="square"
+            icon={<ListIcon size={18} />}
+            aria-label="Open navigation"
+            onClick={toggleSidebar}
+          />
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            shape="square"
+            icon={<SidebarSimpleIcon size={18} />}
+            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            className="text-kumo-subtle"
+            onClick={toggleSidebar}
+          />
+        )}
+        {(isMobile || !sidebarOpen) && <BrandLink />}
       </div>
 
-      <div className="flex items-center gap-1.5">
-        <button
-          className="btn pl-2! pr-1.5! gap-2 md:min-w-[220px] justify-between! text-muted"
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          icon={<MagnifyingGlassIcon size={14} className="text-kumo-subtle" />}
+          className="md:min-w-[220px]"
           onClick={() => open({ kind: "search" })}
-          title="Search (⌘K)"
         >
-          <div className="flex items-center gap-1.5">
-            <Search size={12} />
-            <span className="text-xs hidden sm:inline">Search…</span>
-          </div>
-          <kbd className="hidden md:inline-block">{mod}K</kbd>
-        </button>
-        <button
-          className="btn btn-primary"
+          <span className="sr-only sm:not-sr-only sm:flex-1 sm:text-left sm:text-kumo-subtle">
+            Search…
+          </span>
+          <kbd className="hidden md:inline-flex">{mod}K</kbd>
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          icon={<PlusIcon size={14} weight="bold" />}
           onClick={() => open({ kind: "quick-create" })}
-          title="Quick create (c)"
         >
-          <Plus size={12} />
-          <span className="text-xs hidden sm:inline">New</span>
-          <kbd className="bg-white/15! border-white/25! text-white! hidden md:inline-block">c</kbd>
-        </button>
-        <button
-          className="btn px-1.5! py-1! text-muted hover:text-red-500!"
-          onClick={onLogout}
+          <span className="sr-only sm:not-sr-only">New</span>
+          <kbd className="hidden border-white/25 bg-white/15 text-white md:inline-flex">c</kbd>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          shape="square"
+          icon={<SignOutIcon size={16} />}
           title="Log out"
-          aria-label="Log out"
-        >
-          <LogOut size={12} />
-        </button>
+          className="text-kumo-subtle hover:text-kumo-danger"
+          onClick={onLogout}
+        />
       </div>
     </header>
   );
