@@ -22,8 +22,8 @@ export function GhostChip({ virtual: v, project }: { virtual: VirtualOccurrence;
         className="w-[2px] self-stretch rounded-sm shrink-0"
         style={{ backgroundColor: project?.color ?? "#a8a8af" }}
       />
-      <span className="truncate flex-1 min-w-0 text-ink2 italic">{title}</span>
-      <RecurrenceIcon size={11} className="text-faint" />
+      <span className="truncate flex-1 min-w-0 text-kumo-default italic">{title}</span>
+      <RecurrenceIcon size={11} className="text-kumo-subtle" />
     </div>
   );
 }
@@ -54,8 +54,8 @@ export function GhostChips({
       aria-label={`${virtuals.length} upcoming recurring tasks: ${titles}`}
       className="w-full flex items-center gap-1.5 pl-1 pr-1.5 py-1 rounded text-xs opacity-40 border border-dashed border-current"
     >
-      <RecurrenceIcon size={11} className="text-faint shrink-0" />
-      <span className="truncate flex-1 min-w-0 text-ink2 italic">
+      <RecurrenceIcon size={11} className="text-kumo-subtle shrink-0" />
+      <span className="truncate flex-1 min-w-0 text-kumo-default italic">
         +{virtuals.length} recurring
       </span>
     </div>
@@ -83,8 +83,8 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
         e.preventDefault();
         drawer.open(task.id);
       }}
-      className={`group w-full text-left flex items-center gap-1.5 pl-1 pr-1.5 py-1 rounded text-xs hover:bg-sidebarHover transition-colors cursor-grab active:cursor-grabbing ${
-        overdue ? "bg-danger/5" : ""
+      className={`group w-full text-left flex items-center gap-1.5 pl-1 pr-1.5 py-1 rounded text-xs hover:bg-kumo-fill transition-colors cursor-grab active:cursor-grabbing ${
+        overdue ? "bg-kumo-danger-tint" : ""
       }`}
       title={project ? `${project.key} · ${displayTitle(task)}` : displayTitle(task)}
     >
@@ -96,17 +96,17 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
       <span
         className={`truncate flex-1 min-w-0 ${
           task.status === "done"
-            ? "line-through text-muted"
+            ? "line-through text-kumo-subtle"
             : task.status === "rejected"
-              ? "text-muted"
-            : isUntitled(task)
-              ? "italic text-muted"
-              : "text-ink2"
+              ? "text-kumo-subtle"
+              : isUntitled(task)
+                ? "italic text-kumo-subtle"
+                : "text-kumo-default"
         }`}
       >
         {displayTitle(task)}
       </span>
-      {isRecurring(task) && <RecurrenceIcon size={11} className="text-faint" />}
+      {isRecurring(task) && <RecurrenceIcon size={11} className="text-kumo-subtle" />}
       {task.priority !== "none" && <PriorityIcon priority={task.priority} size={11} />}
     </div>
   );

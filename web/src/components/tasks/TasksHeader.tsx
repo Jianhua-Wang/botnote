@@ -1,9 +1,17 @@
+import { Button } from "@cloudflare/kumo/components/button";
 import { DropdownMenu } from "@cloudflare/kumo/components/dropdown";
-import { ChevronLeft, ChevronRight, Filter, Plus } from "lucide-react";
+import { Tabs } from "@cloudflare/kumo/components/tabs";
+import { CaretLeftIcon, CaretRightIcon, FunnelIcon, PlusIcon } from "@phosphor-icons/react";
 import { useProjects } from "../../api/hooks";
 import type { Project } from "../../api/types";
 import { useModals } from "../../state/modals";
 import { moveAnchor, rangeLabel, type CalendarView } from "./utils";
+
+const VIEW_TABS = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" }
+];
 
 export function TasksHeader({
   view,
@@ -30,68 +38,63 @@ export function TasksHeader({
       : `${projectIds.length} projects`;
 
   return (
-    <div className="border-b border-line bg-surface">
-      <div className="flex items-center justify-between h-11 px-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xs font-semibold text-ink hidden sm:block">Tasks</h1>
-          <div className="seg hidden md:flex">
-            {(["day", "week", "month"] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                data-active={view === v}
-                className="capitalize"
-              >
-                {v}
-              </button>
-            ))}
-          </div>
+    <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-kumo-line bg-kumo-base px-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <h1 className="hidden text-sm font-semibold text-kumo-default sm:block">Tasks</h1>
+        <Tabs
+          variant="segmented"
+          size="sm"
+          tabs={VIEW_TABS}
+          value={view}
+          onValueChange={(v) => setView(v as CalendarView)}
+          className="hidden md:block"
+        />
 
-          <div className="flex items-center gap-1 ml-1">
-            <button
-              onClick={() => setAnchor(moveAnchor(view, anchor, -1))}
-              className="btn btn-ghost h-6! w-6! p-0!"
-              title="Previous"
-            >
-              <ChevronLeft size={12} />
-            </button>
-            <button
-              onClick={() => setAnchor(moveAnchor(view, anchor, 0))}
-              className="btn h-6! px-2 text-xxs"
-              title="Today"
-            >
-              Today
-            </button>
-            <button
-              onClick={() => setAnchor(moveAnchor(view, anchor, 1))}
-              className="btn btn-ghost h-6! w-6! p-0!"
-              title="Next"
-            >
-              <ChevronRight size={12} />
-            </button>
-            <div className="ml-2 text-xs font-medium text-ink2 tabular-nums">
-              {rangeLabel(view, anchor)}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <ProjectFilter
-            projects={projects ?? []}
-            projectIds={projectIds}
-            setProjectIds={setProjectIds}
-            label={projectLabel}
+        <div className="flex min-w-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            shape="square"
+            icon={<CaretLeftIcon size={14} />}
+            aria-label="Previous"
+            className="text-kumo-subtle"
+            onClick={() => setAnchor(moveAnchor(view, anchor, -1))}
           />
-          <button
-            className="btn btn-primary"
-            onClick={() => open({ kind: "quick-create" })}
-            title="New task (c)"
-          >
-            <Plus size={11} />
-            <span className="text-xs hidden sm:inline">Task</span>
-            <kbd className="bg-white/15! border-white/25! text-white! hidden md:inline-block">c</kbd>
-          </button>
+          <Button size="sm" onClick={() => setAnchor(moveAnchor(view, anchor, 0))}>
+            Today
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            shape="square"
+            icon={<CaretRightIcon size={14} />}
+            aria-label="Next"
+            className="text-kumo-subtle"
+            onClick={() => setAnchor(moveAnchor(view, anchor, 1))}
+          />
+          <div className="ml-2 truncate text-sm font-medium tabular-nums text-kumo-default">
+            {rangeLabel(view, anchor)}
+          </div>
         </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        <ProjectFilter
+          projects={projects ?? []}
+          projectIds={projectIds}
+          setProjectIds={setProjectIds}
+          label={projectLabel}
+        />
+        <Button
+          variant="primary"
+          size="sm"
+          icon={<PlusIcon size={14} weight="bold" />}
+          aria-label="New task"
+          onClick={() => open({ kind: "quick-create" })}
+        >
+          <span className="hidden sm:inline">Task</span>
+          <kbd className="hidden border-white/25 bg-white/15 text-white md:inline-flex">c</kbd>
+        </Button>
       </div>
     </div>
   );
@@ -112,10 +115,13 @@ function ProjectFilter({
     <DropdownMenu>
       <DropdownMenu.Trigger
         render={
-          <button className="btn">
-            <Filter size={11} />
-            <span className="text-xs">{label}</span>
-          </button>
+          <Button
+            size="sm"
+            icon={<FunnelIcon size={14} className="text-kumo-subtle" />}
+            aria-label={`Filter projects: ${label}`}
+          >
+            <span className="hidden sm:inline">{label}</span>
+          </Button>
         }
       />
       <DropdownMenu.Content align="end" className="w-56">

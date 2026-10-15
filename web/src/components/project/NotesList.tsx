@@ -94,7 +94,7 @@ export function NotesList({ project }: { project: Project }) {
                       <>
                         <span>·</span>
                         {n.tags.slice(0, 3).map((t) => (
-                          <TagChip key={t} tag={t} className="h-4! text-[10px]!" />
+                          <TagChip key={t} tag={t} className="py-0 text-[10px]" />
                         ))}
                       </>
                     )}

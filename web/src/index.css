@@ -82,10 +82,6 @@
   @apply hover:bg-kumo-tint transition-colors;
 }
 
-@utility task-row {
-  @apply flex items-center gap-2 px-3 h-9 border-b border-kumo-hairline text-sm hover:bg-kumo-tint cursor-pointer transition-colors;
-}
-
 @utility seg {
   @apply inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-kumo-recessed text-kumo-subtle;
   & button {

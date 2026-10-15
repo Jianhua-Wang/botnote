@@ -1,3 +1,5 @@
+import { Button } from "@cloudflare/kumo/components/button";
+import { PlusIcon } from "@phosphor-icons/react";
 import { addDays, format, isSameWeek, isToday } from "date-fns";
 import { useMemo } from "react";
 import { useProjects, useTasksRange, useUpdateEntity } from "../../api/hooks";
@@ -46,7 +48,7 @@ export function WeekView({
   const bottomRow = days.slice(4);
 
   return (
-    <div className="h-full flex flex-col bg-bg">
+    <div className="h-full flex flex-col bg-kumo-canvas">
       <DayRow days={topRow} byDay={byDay} virtualsByDay={virtualsByDay} projectMap={projectMap} anchor={anchor} />
       <DayRow days={bottomRow} byDay={byDay} virtualsByDay={virtualsByDay} projectMap={projectMap} anchor={anchor} />
     </div>
@@ -67,7 +69,7 @@ function DayRow({
   anchor: Date;
 }) {
   return (
-    <div className="flex-1 min-h-0 flex border-b border-line last:border-b-0">
+    <div className="flex-1 min-h-0 flex border-b border-kumo-line last:border-b-0">
       {days.map((d) => {
         const tasks = byDay.get(dayKey(d)) ?? [];
         const virtuals = virtualsByDay.get(dayKey(d)) ?? [];
@@ -122,20 +124,20 @@ function DayCell({
 
   return (
     <div
-      className={`flex-1 min-w-0 border-r border-lineSoft last:border-r-0 flex flex-col group/col ${
-        today ? "bg-accentSoft/30" : outOfWeek ? "bg-sidebar/40" : "bg-surface"
+      className={`flex-1 min-w-0 border-r border-kumo-hairline last:border-r-0 flex flex-col group/col ${
+        today ? "bg-kumo-brand-tint/40" : outOfWeek ? "bg-kumo-recessed" : "bg-kumo-base"
       }`}
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
     >
-      <div className="px-3 py-1.5 flex items-baseline justify-between border-b border-lineSoft">
+      <div className="px-3 py-1.5 flex items-center justify-between border-b border-kumo-hairline">
         <div className="flex items-baseline gap-2 min-w-0">
-          <span className="text-xxs uppercase tracking-wider text-muted">
+          <span className="text-xxs uppercase tracking-wider text-kumo-subtle">
             {format(day, "EEE")}
           </span>
           <span
             className={`text-sm tabular-nums font-semibold ${
-              today ? "text-accent" : outOfWeek ? "text-muted" : "text-ink2"
+              today ? "text-kumo-brand" : outOfWeek ? "text-kumo-subtle" : "text-kumo-default"
             }`}
           >
             {format(day, "d")}
@@ -143,7 +145,7 @@ function DayCell({
           {totalCount > 0 && (
             <span
               className={`text-xxs tabular-nums ${
-                allDone ? "text-statusDone font-medium" : "text-faint"
+                allDone ? "text-kumo-success font-medium" : "text-kumo-placeholder"
               }`}
               title={`${doneCount} done · ${totalCount} total`}
             >
@@ -151,20 +153,22 @@ function DayCell({
             </span>
           )}
           {outOfWeek && (
-            <span className="text-xxs text-faint italic">next</span>
+            <span className="text-xxs text-kumo-placeholder italic">next</span>
           )}
         </div>
-        <button
-          className="text-faint hover:text-accent text-xs opacity-0 group-hover/col:opacity-100"
-          title="Add task"
+        <Button
+          variant="ghost"
+          size="xs"
+          shape="square"
+          icon={<PlusIcon size={12} />}
+          aria-label="Add task"
+          className="size-5 text-kumo-subtle opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100 hover:text-kumo-brand"
           onClick={() => open({ kind: "quick-create" })}
-        >
-          +
-        </button>
+        />
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin p-1.5 space-y-1">
         {active.length === 0 && virtuals.length === 0 ? (
-          <div className="text-xxs text-faint px-1 py-0.5">—</div>
+          <div className="text-xxs text-kumo-placeholder px-1 py-0.5">—</div>
         ) : (
           <>
             {active.map((t) => (

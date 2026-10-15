@@ -1,4 +1,6 @@
-import { Inbox } from "lucide-react";
+import { Badge } from "@cloudflare/kumo/components/badge";
+import { Button } from "@cloudflare/kumo/components/button";
+import { ArrowLineRightIcon, TrayIcon } from "@phosphor-icons/react";
 import { useMemo } from "react";
 import { useProjects, useTasksRange } from "../../api/hooks";
 import type { Entity, Project } from "../../api/types";
@@ -47,53 +49,60 @@ export function InboxRail({
   if (collapsed) {
     return (
       <button
-        className="shrink-0 w-8 border-l border-line bg-sidebar/50 hover:bg-sidebar flex flex-col items-center pt-2 gap-2 group"
+        type="button"
+        className="group flex w-9 shrink-0 flex-col items-center gap-2 border-l border-kumo-line bg-kumo-tint pt-2.5 transition-colors hover:bg-kumo-fill"
         onClick={onToggle}
         title="Expand Inbox"
+        aria-label={`Expand Inbox (${inboxTasks.length})`}
       >
-        <Inbox size={14} className="text-muted group-hover:text-ink" />
+        <TrayIcon size={16} className="text-kumo-subtle group-hover:text-kumo-default" />
         {inboxTasks.length > 0 && (
-          <div className="text-xxs text-muted bg-surface border border-line rounded-full w-5 h-5 flex items-center justify-center">
+          <Badge variant="outline" className="px-1.5 py-0 text-[10px] tabular-nums">
             {inboxTasks.length}
-          </div>
+          </Badge>
         )}
       </button>
     );
   }
 
   return (
-    <aside className="shrink-0 w-72 border-l border-line bg-surface flex flex-col">
-      <div className="px-3 h-9 flex items-center justify-between border-b border-lineSoft">
-        <div className="flex items-center gap-2 text-muted">
-          <Inbox size={12} />
-          <h2 className="text-xs font-medium text-ink2">Inbox</h2>
-          <span className="text-xxs text-faint tabular-nums">{inboxTasks.length}</span>
+    <aside className="shrink-0 w-72 border-l border-kumo-line bg-kumo-base flex flex-col">
+      <div className="px-3 h-9 flex items-center justify-between border-b border-kumo-hairline">
+        <div className="flex items-center gap-2 text-kumo-subtle">
+          <TrayIcon size={14} />
+          <h2 className="text-xs font-semibold text-kumo-default">Inbox</h2>
+          <span className="text-xxs text-kumo-subtle tabular-nums">{inboxTasks.length}</span>
         </div>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
+          shape="square"
+          icon={<ArrowLineRightIcon size={14} />}
+          aria-label="Collapse Inbox"
+          className="text-kumo-subtle"
           onClick={onToggle}
-          className="btn-ghost btn h-6! w-6! p-0!"
-          title="Collapse"
-        >
-          →
-        </button>
+        />
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         {inboxTasks.length === 0 ? (
-          <div className="text-xs text-muted text-center py-8 px-4">
+          <div className="text-xs text-kumo-subtle text-center py-8 px-4">
             No tasks without due date.
-            <div className="text-faint mt-1">Tasks without due date appear here.</div>
+            <div className="text-kumo-placeholder mt-1">Tasks without due date appear here.</div>
           </div>
         ) : (
           groups.map(({ project, tasks }) => (
             <div key={project?.id ?? "none"}>
-              <div className="sticky top-0 z-10 flex items-center gap-1.5 px-3 py-1 bg-surface border-b border-lineSoft">
-                <span className="font-mono text-xxs text-faint tabular-nums">
+              <div className="sticky top-0 z-10 flex items-center gap-1.5 px-3 py-1 bg-kumo-tint border-b border-kumo-hairline">
+                <span
+                  className="font-mono text-xxs font-medium tabular-nums"
+                  style={project ? { color: project.color } : undefined}
+                >
                   {project?.key ?? "—"}
                 </span>
-                <span className="text-xxs text-muted truncate">
+                <span className="text-xxs text-kumo-subtle truncate">
                   {project?.name ?? "No project"}
                 </span>
-                <span className="ml-auto text-xxs text-faint tabular-nums">{tasks.length}</span>
+                <span className="ml-auto text-xxs text-kumo-placeholder tabular-nums">{tasks.length}</span>
               </div>
               {tasks.map((t) => (
                 <TaskRow key={t.id} task={t} project={project} showProject={false} compact />

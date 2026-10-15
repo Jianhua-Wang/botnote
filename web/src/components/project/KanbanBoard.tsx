@@ -1,3 +1,5 @@
+import { Button } from "@cloudflare/kumo/components/button";
+import { PlusIcon } from "@phosphor-icons/react";
 import { format } from "date-fns";
 import { useState } from "react";
 import { useUpdateEntity } from "../../api/hooks";
@@ -5,16 +7,16 @@ import type { Entity, Project } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { TagChip } from "../TagChip";
-import { PriorityIcon, RecurrenceIcon } from "../tasks/icons";
+import { PriorityIcon, RecurrenceIcon, StatusCircle } from "../tasks/icons";
 import { isRecurring, isTaskOverdue } from "../tasks/utils";
 import { StatusPickerButton } from "../tasks/StatusPickerButton";
 import { useModals } from "../../state/modals";
 
-const COLUMNS: Array<{ status: string; label: string; intent: string }> = [
-  { status: "open", label: "Todo", intent: "text-statusOpen" },
-  { status: "in_progress", label: "In Progress", intent: "text-statusInProgress" },
-  { status: "done", label: "Done", intent: "text-statusDone" },
-  { status: "rejected", label: "Cancelled", intent: "text-statusRejected" }
+const COLUMNS: Array<{ status: string; label: string }> = [
+  { status: "open", label: "Todo" },
+  { status: "in_progress", label: "In Progress" },
+  { status: "done", label: "Done" },
+  { status: "rejected", label: "Cancelled" }
 ];
 
 export function KanbanBoard({
@@ -48,8 +50,8 @@ export function KanbanBoard({
         {COLUMNS.map((col) => (
           <KanbanColumn
             key={col.status}
+            status={col.status}
             label={col.label}
-            intent={col.intent}
             tasks={byStatus[col.status] ?? []}
             project={project}
             onDropTask={(id) => handleDrop(col.status, id)}
@@ -63,16 +65,16 @@ export function KanbanBoard({
 }
 
 function KanbanColumn({
+  status,
   label,
-  intent,
   tasks,
   project,
   onDropTask,
   onAdd,
   initialLimit
 }: {
+  status: string;
   label: string;
-  intent: string;
   tasks: Entity[];
   project: Project;
   onDropTask: (id: string) => void;
@@ -85,8 +87,8 @@ function KanbanColumn({
   const hiddenCount = tasks.length - limited.length;
   return (
     <div
-      className={`w-72 shrink-0 flex flex-col rounded-md border ${
-        over ? "border-accent bg-accentSoft/30" : "border-line bg-sidebar/40"
+      className={`w-72 shrink-0 flex flex-col rounded-lg border ${
+        over ? "border-kumo-brand bg-kumo-brand-tint/40" : "border-kumo-line bg-kumo-recessed"
       } transition-colors`}
       onDragOver={(e) => {
         e.preventDefault();
@@ -100,42 +102,49 @@ function KanbanColumn({
         if (id) onDropTask(id);
       }}
     >
-      <div className="px-3 h-9 flex items-center justify-between border-b border-line">
+      <div className="px-3 h-9 flex items-center justify-between border-b border-kumo-line">
         <div className="flex items-center gap-2">
-          <span className={`text-xs font-semibold ${intent}`}>{label}</span>
-          <span className="text-xxs text-faint tabular-nums">{tasks.length}</span>
+          <StatusCircle status={status} size={12} />
+          <span className="text-xs font-semibold text-kumo-default">{label}</span>
+          <span className="text-xxs text-kumo-subtle tabular-nums">{tasks.length}</span>
         </div>
-        <button
-          className="text-faint hover:text-accent text-xs"
+        <Button
+          variant="ghost"
+          size="xs"
+          shape="square"
+          icon={<PlusIcon size={12} />}
+          aria-label={`Add ${label} task`}
+          className="size-5 text-kumo-subtle hover:text-kumo-brand"
           onClick={onAdd}
-          title="Add task"
-        >
-          +
-        </button>
+        />
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-1.5">
         {tasks.length === 0 ? (
-          <div className="text-xxs text-faint text-center py-4">No tasks</div>
+          <div className="text-xxs text-kumo-placeholder text-center py-4">No tasks</div>
         ) : (
           <>
             {limited.map((t) => (
               <KanbanCard key={t.id} task={t} project={project} />
             ))}
             {hiddenCount > 0 && (
-              <button
-                className="w-full text-xxs text-muted hover:text-ink py-1.5"
+              <Button
+                variant="ghost"
+                size="xs"
+                className="w-full justify-center text-kumo-subtle"
                 onClick={() => setShowAll(true)}
               >
                 Show all {tasks.length}
-              </button>
+              </Button>
             )}
             {showAll && initialLimit != null && tasks.length > initialLimit && (
-              <button
-                className="w-full text-xxs text-muted hover:text-ink py-1.5"
+              <Button
+                variant="ghost"
+                size="xs"
+                className="w-full justify-center text-kumo-subtle"
                 onClick={() => setShowAll(false)}
               >
                 Show latest {initialLimit}
-              </button>
+              </Button>
             )}
           </>
         )}
@@ -159,7 +168,7 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
         e.dataTransfer.effectAllowed = "move";
       }}
       onClick={() => drawer.open(task.id)}
-      className="group bg-surface border border-line rounded p-2 cursor-grab active:cursor-grabbing hover:border-accent transition-colors"
+      className="group bg-kumo-base border border-kumo-line rounded-lg p-2.5 shadow-xs cursor-grab active:cursor-grabbing hover:border-kumo-brand transition-colors"
     >
       <div className="flex items-start gap-1.5">
         <StatusPickerButton task={task} size={13} className="mt-0.5" />
@@ -168,28 +177,28 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
             // No strikethrough here: the Done column already says it, and a
             // whole column of struck text is unreadable.
             task.status === "done" || task.status === "rejected"
-              ? "text-muted"
+              ? "text-kumo-subtle"
               : isUntitled(task)
-                ? "italic text-muted"
-                : "text-ink"
+                ? "italic text-kumo-subtle"
+                : "text-kumo-default"
           }`}
         >
           {displayTitle(task)}
         </span>
         {isRecurring(task) && (
-          <RecurrenceIcon size={11} className="text-faint mt-0.5" />
+          <RecurrenceIcon size={11} className="text-kumo-subtle mt-0.5" />
         )}
         <PriorityIcon priority={task.priority} size={11} />
       </div>
       {/* Key and date never wrap or shrink; long tags ellipsize instead. */}
-      <div className="mt-1.5 flex items-center gap-2 overflow-hidden text-xxs text-muted">
+      <div className="mt-1.5 flex items-center gap-2 overflow-hidden text-xxs text-kumo-subtle">
         {idLabel && (
           <span className="font-mono tabular-nums shrink-0 whitespace-nowrap">{idLabel}</span>
         )}
         {visibleDate && (
           <span
             className={`tabular-nums shrink-0 whitespace-nowrap ${
-              overdue ? "text-danger font-medium" : ""
+              overdue ? "text-kumo-danger font-medium" : ""
             }`}
             title={`${visibleDateLabel} ${new Date(visibleDate).toLocaleString()}`}
           >
@@ -197,7 +206,7 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
           </span>
         )}
         {task.tags.slice(0, 2).map((t) => (
-          <TagChip key={t} tag={t} className="h-4! text-[10px]!" />
+          <TagChip key={t} tag={t} className="py-0 text-[10px]" />
         ))}
       </div>
     </div>
