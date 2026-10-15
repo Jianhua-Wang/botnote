@@ -1,4 +1,13 @@
-@import 'tailwindcss';
+@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@import "@cloudflare/kumo/styles/tailwind";
+@import "tailwindcss";
+
+@theme {
+  --color-kumo-brand: light-dark(#0a7e83, #0a7e83);
+  --color-kumo-brand-hover: light-dark(#00686c, #00686c);
+  --text-color-kumo-brand: light-dark(#0a7e83, #3ebfc6);
+  --text-color-kumo-link: light-dark(#00686c, #3ebfc6);
+}
 
 @theme {
   --color-bg: #fcfcfd;
@@ -168,7 +177,6 @@
 
 @layer base {
   :root {
-    color-scheme: light;
     --shadow-soft: 0 1px 2px rgba(15, 15, 20, 0.04), 0 0 0 1px rgba(15, 15, 20, 0.04);
   }
   html,
