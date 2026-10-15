@@ -1,3 +1,4 @@
+import { DropdownMenu } from "@cloudflare/kumo/components/dropdown";
 import { ChevronLeft, ChevronRight, Filter, Plus } from "lucide-react";
 import { useProjects } from "../../api/hooks";
 import type { Project } from "../../api/types";
@@ -108,48 +109,44 @@ function ProjectFilter({
   label: string;
 }) {
   return (
-    <details className="relative">
-      <summary className="btn list-none cursor-pointer">
-        <Filter size={11} />
-        <span className="text-xs">{label}</span>
-      </summary>
-      <div className="popover top-9 right-0 w-56 px-1 py-1.5">
-        <button
-          className={`popover-item ${!projectIds ? "bg-accentSoft text-accentText" : ""}`}
-          onClick={() => setProjectIds(null)}
-        >
-          <span>All projects</span>
-          {!projectIds && <span className="ml-auto text-faint">✓</span>}
-        </button>
-        <div className="divider my-1" />
+    <DropdownMenu>
+      <DropdownMenu.Trigger
+        render={
+          <button className="btn">
+            <Filter size={11} />
+            <span className="text-xs">{label}</span>
+          </button>
+        }
+      />
+      <DropdownMenu.Content align="end" className="w-56">
+        <DropdownMenu.CheckboxItem checked={!projectIds} onCheckedChange={() => setProjectIds(null)}>
+          All projects
+        </DropdownMenu.CheckboxItem>
+        <DropdownMenu.Separator />
         {projects.map((p) => {
           const isOn = projectIds?.includes(p.id) ?? false;
           return (
-            <label
+            <DropdownMenu.CheckboxItem
               key={p.id}
-              className="popover-item gap-2 cursor-pointer"
+              checked={isOn}
+              onCheckedChange={() => {
+                if (!projectIds) {
+                  setProjectIds([p.id]);
+                } else if (isOn) {
+                  const rest = projectIds.filter((id) => id !== p.id);
+                  setProjectIds(rest.length ? rest : null);
+                } else {
+                  setProjectIds([...projectIds, p.id]);
+                }
+              }}
+              className="gap-2"
             >
-              <input
-                type="checkbox"
-                className="cursor-pointer"
-                checked={isOn}
-                onChange={() => {
-                  if (!projectIds) {
-                    setProjectIds([p.id]);
-                  } else if (isOn) {
-                    const rest = projectIds.filter((id) => id !== p.id);
-                    setProjectIds(rest.length ? rest : null);
-                  } else {
-                    setProjectIds([...projectIds, p.id]);
-                  }
-                }}
-              />
-              <span className="font-mono text-xxs text-faint tabular-nums">{p.key}</span>
-              <span className="text-ink2 truncate">{p.name}</span>
-            </label>
+              <span className="font-mono text-xxs text-kumo-subtle tabular-nums">{p.key}</span>
+              <span className="truncate">{p.name}</span>
+            </DropdownMenu.CheckboxItem>
           );
         })}
-      </div>
-    </details>
+      </DropdownMenu.Content>
+    </DropdownMenu>
   );
 }

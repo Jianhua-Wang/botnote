@@ -9,6 +9,7 @@ import {
   Sunrise,
   Trash2
 } from "lucide-react";
+import { DropdownMenu } from "@cloudflare/kumo/components/dropdown";
 import { NavLink, useParams } from "react-router-dom";
 import { useMemo } from "react";
 import { useProjects, useTrash } from "../api/hooks";
@@ -17,7 +18,6 @@ import { usePersistedState } from "../hooks/usePersistedState";
 import { PROJECT_STATUS_GROUPS, PROJECT_STATUS_LABEL } from "../lib/projectStatus";
 import { useModals } from "../state/modals";
 import { ProjectIcon } from "./ProjectIcon";
-import { PopoverMenu } from "./tasks/PopoverMenu";
 
 type ProjectSort = "key" | "name" | "recent";
 const SORT_LABEL: Record<ProjectSort, string> = {
@@ -100,35 +100,28 @@ export function ProjectsSidebar() {
       <div className="mt-3 px-3 py-1.5 flex items-center justify-between">
         <div className="text-xxs uppercase tracking-wider text-muted font-medium">Projects</div>
         <div className="flex items-center gap-0.5">
-          <PopoverMenu
-            trigger={
-              <button
-                className="text-muted hover:text-ink p-0.5 rounded hover:bg-sidebarHover flex items-center gap-0.5"
-                title={`Sort: ${SORT_LABEL[sort]}`}
-              >
-                <ChevronDown size={11} />
-              </button>
-            }
-            align="end"
-          >
-            {(close) => (
-              <>
+          <DropdownMenu>
+            <DropdownMenu.Trigger
+              render={
+                <button
+                  className="text-muted hover:text-ink p-0.5 rounded hover:bg-sidebarHover flex items-center gap-0.5"
+                  title={`Sort: ${SORT_LABEL[sort]}`}
+                >
+                  <ChevronDown size={11} />
+                </button>
+              }
+            />
+            <DropdownMenu.Content align="end">
+              <DropdownMenu.RadioGroup value={sort} onValueChange={(s) => setSort(s as ProjectSort)}>
                 {(Object.keys(SORT_LABEL) as ProjectSort[]).map((s) => (
-                  <button
-                    key={s}
-                    className="popover-item"
-                    onClick={() => {
-                      setSort(s);
-                      close();
-                    }}
-                  >
+                  <DropdownMenu.RadioItem key={s} value={s} closeOnClick>
                     <span>{SORT_LABEL[s]}</span>
-                    {sort === s && <span className="ml-auto text-faint">✓</span>}
-                  </button>
+                    <DropdownMenu.RadioItemIndicator />
+                  </DropdownMenu.RadioItem>
                 ))}
-              </>
-            )}
-          </PopoverMenu>
+              </DropdownMenu.RadioGroup>
+            </DropdownMenu.Content>
+          </DropdownMenu>
           <button
             className="text-muted hover:text-ink p-0.5 rounded hover:bg-sidebarHover"
             title="New project (n)"

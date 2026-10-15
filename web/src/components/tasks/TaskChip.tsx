@@ -78,6 +78,7 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
       }}
       onClick={() => drawer.open(task.id)}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
         if (e.key !== "Enter" && e.key !== " ") return;
         e.preventDefault();
         drawer.open(task.id);
