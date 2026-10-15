@@ -1,21 +1,38 @@
+import { Badge } from "@cloudflare/kumo/components/badge";
+import { cn } from "@cloudflare/kumo/utils";
+import {
+  ChatCircleIcon,
+  CheckSquareIcon,
+  MegaphoneIcon,
+  NotePencilIcon,
+  type Icon
+} from "@phosphor-icons/react";
+import type { ComponentProps } from "react";
 import type { EntityKind } from "../api/types";
 
-const KIND_STYLE: Record<EntityKind, { glyph: string; color: string }> = {
-  task: { glyph: "☑", color: "text-blue-600 bg-blue-50 border-blue-100" },
-  note: { glyph: "✎", color: "text-slate-700 bg-slate-50 border-slate-200" },
-  comment: { glyph: "💬", color: "text-amber-700 bg-amber-50 border-amber-100" },
-  feedback: { glyph: "📣", color: "text-purple-700 bg-purple-50 border-purple-100" }
+const KIND_STYLE: Record<
+  EntityKind,
+  { icon: Icon; variant: ComponentProps<typeof Badge>["variant"] }
+> = {
+  task: { icon: CheckSquareIcon, variant: "info" },
+  note: { icon: NotePencilIcon, variant: "secondary" },
+  comment: { icon: ChatCircleIcon, variant: "warning" },
+  feedback: { icon: MegaphoneIcon, variant: "outline" }
 };
 
 export function KindBadge({ kind, compact = false }: { kind: EntityKind; compact?: boolean }) {
-  const s = KIND_STYLE[kind];
+  const { icon: KindIcon, variant } = KIND_STYLE[kind];
   return (
-    <span
-      className={`inline-flex items-center gap-1 px-1.5 h-5 text-xxs rounded border ${s.color}`}
-      title={kind}
+    <Badge
+      variant={variant}
+      icon={
+        <span title={kind} className="flex">
+          <KindIcon size={12} weight="bold" />
+        </span>
+      }
+      className={cn("h-5 py-0 text-[11px]", compact ? "px-1.5" : "uppercase tracking-wider")}
     >
-      <span>{s.glyph}</span>
-      {!compact && <span className="uppercase tracking-wider">{kind}</span>}
-    </span>
+      {compact ? <span className="sr-only">{kind}</span> : kind}
+    </Badge>
   );
 }

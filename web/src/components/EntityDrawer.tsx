@@ -1,18 +1,24 @@
 import { markdown } from "@codemirror/lang-markdown";
-import CodeMirror from "@uiw/react-codemirror";
+import { Button } from "@cloudflare/kumo/components/button";
+import { Input } from "@cloudflare/kumo/components/input";
+import { Loader } from "@cloudflare/kumo/components/loader";
+import { Select } from "@cloudflare/kumo/components/select";
+import { TagInput } from "@cloudflare/kumo/components/tag-input";
+import { cn } from "@cloudflare/kumo/utils";
 import {
-  Check,
-  ChevronRight,
-  Cloud,
-  CloudUpload,
-  Link2,
-  Loader2,
-  Pencil,
-  Pin,
-  Trash2,
-  X
-} from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+  CaretRightIcon,
+  CheckIcon,
+  CloudArrowUpIcon,
+  CloudCheckIcon,
+  LinkSimpleIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  PushPinIcon,
+  TrashIcon,
+  XIcon
+} from "@phosphor-icons/react";
+import CodeMirror from "@uiw/react-codemirror";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -56,6 +62,7 @@ import {
   TASK_STATUS_OPTIONS
 } from "./tasks/icons";
 import { StatusPickerButton } from "./tasks/StatusPickerButton";
+import { TagChip } from "./TagChip";
 
 const AUTOSAVE_DELAY_MS = 600;
 const RECURRENCE_LABEL: Record<RecurrencePreset, string> = {
@@ -98,10 +105,10 @@ export function EntityDrawer() {
   return (
     <div className="fixed inset-0 z-30 flex">
       <div
-        className="flex-1 bg-ink/10 backdrop-blur-[1px] cursor-pointer"
+        className="flex-1 cursor-pointer bg-kumo-recessed/60 backdrop-blur-[1px]"
         onClick={close}
       />
-      <aside className="w-[min(680px,92vw)] bg-surface border-l border-line shadow-modal flex flex-col">
+      <aside className="flex w-[min(680px,92vw)] flex-col border-l border-kumo-line bg-kumo-base shadow-modal">
         <DrawerContent id={openId} onClose={close} />
       </aside>
     </div>
@@ -135,7 +142,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [tagsStr, setTagsStr] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   const [status, setStatus] = useState("open");
   const [dueDate, setDueDate] = useState("");
   const [completedAtStr, setCompletedAtStr] = useState("");
@@ -156,7 +163,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     if (initializedFor.current === entity.id) return;
     setTitle(entity.title ?? "");
     setBody(entity.body);
-    setTagsStr(entity.tags.join(", "));
+    setTags(entity.tags);
     setStatus(entity.status);
     setDueDate(entity.dueAt ? entity.dueAt.slice(0, 10) : "");
     setCompletedAtStr(toDatetimeLocalValue(entity.completedAt));
@@ -180,7 +187,6 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
     const isNote = entity.kind === "note";
     const trimmedTitle = title.trim();
     const draftTitle = trimmedTitle ? trimmedTitle : isNote ? null : trimmedTitle;
-    const draftTags = tagsStr.split(",").map((t) => t.trim()).filter(Boolean);
 
     const out: Record<string, unknown> = {};
     if (draftTitle !== (entity.title ?? "")) {
@@ -190,7 +196,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
       }
     }
     if (body !== entity.body) out.body = body;
-    if (JSON.stringify(draftTags) !== JSON.stringify(entity.tags)) out.tags = draftTags;
+    if (JSON.stringify(tags) !== JSON.stringify(entity.tags)) out.tags = tags;
     if (status !== entity.status) out.status = status;
     if (priority !== entity.priority) out.priority = priority;
     const currentDueDate = entity.dueAt ? entity.dueAt.slice(0, 10) : "";
@@ -205,7 +211,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
       }
     }
     return out;
-  }, [isEditing, entity, title, body, tagsStr, status, priority, dueDate, completedAtStr]);
+  }, [isEditing, entity, title, body, tags, status, priority, dueDate, completedAtStr]);
 
   // Whether the entity is a recurring occurrence
   const isRecurringOccurrence =
@@ -236,11 +242,20 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
 
   if (isLoading || !entity) {
     return (
-      <div className="p-6 text-sm text-muted flex items-center justify-between">
-        <span>Loading…</span>
-        <button onClick={onClose} className="text-faint hover:text-ink">
-          <X size={14} />
-        </button>
+      <div className="flex items-center justify-between p-6 text-sm text-kumo-subtle">
+        <span className="flex items-center gap-2">
+          <Loader size={14} />
+          Loading…
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          shape="square"
+          icon={<XIcon size={14} />}
+          title="Close (Esc)"
+          className="text-kumo-subtle"
+          onClick={onClose}
+        />
       </div>
     );
   }
@@ -254,7 +269,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
   function startEditing() {
     setTitle(loadedEntity.title ?? "");
     setBody(loadedEntity.body);
-    setTagsStr(loadedEntity.tags.join(", "));
+    setTags(loadedEntity.tags);
     setStatus(loadedEntity.status);
     setDueDate(loadedEntity.dueAt ? loadedEntity.dueAt.slice(0, 10) : "");
     setPriority(loadedEntity.priority);
@@ -316,15 +331,17 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
 
   return (
     <>
-      <header className="h-12 px-3 border-b border-line flex items-center gap-2 shrink-0">
-        <button
-          onClick={onClose}
-          className="p-1 -m-1 text-faint hover:text-ink rounded hover:bg-sidebar"
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-kumo-line px-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          shape="square"
+          icon={<XIcon size={16} />}
           title="Close (Esc)"
-        >
-          <X size={16} />
-        </button>
-        <div className="flex items-center gap-1.5 text-xs text-muted min-w-0">
+          className="text-kumo-subtle"
+          onClick={onClose}
+        />
+        <div className="flex min-w-0 items-center gap-1.5 text-xs text-kumo-subtle">
           {project && (
             <>
               <Link to={linkPrefix} className="flex items-center gap-1 hover:opacity-80">
@@ -333,55 +350,56 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
                   {project.key}
                 </span>
               </Link>
-              <ChevronRight size={11} className="text-faint shrink-0" />
+              <CaretRightIcon size={11} className="shrink-0 text-kumo-placeholder" />
             </>
           )}
           <KindBadge kind={entity.kind as EntityKind} compact />
           {entity.sequenceId && project && (
-            <span className="font-mono text-faint tabular-nums">
+            <span className="font-mono tabular-nums">
               {project.key}-{entity.sequenceId}
             </span>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-1">
           {isEditing && <SaveIndicator state={saveState} dirty={isDirty} />}
           {isNote && (
-            <button
-              className={`p-1 -m-1 rounded hover:bg-sidebar ${
-                entity.pinned ? "text-accent" : "text-faint hover:text-ink"
-              }`}
+            <Button
+              variant="ghost"
+              size="sm"
+              shape="square"
+              icon={<PushPinIcon size={14} weight={entity.pinned ? "fill" : "regular"} />}
+              title={entity.pinned ? "Unpin from opening brief" : "Pin to opening brief"}
+              aria-pressed={entity.pinned}
+              className={entity.pinned ? "text-kumo-brand" : "text-kumo-subtle"}
               onClick={() =>
                 update.mutate({ id: entity.id, fields: { pinned: !entity.pinned } })
               }
-              title={entity.pinned ? "Unpin from opening brief" : "Pin to opening brief"}
-            >
-              <Pin size={13} fill={entity.pinned ? "currentColor" : "none"} />
-            </button>
+            />
           )}
           {isEditing ? (
-            <button
-              className="p-1 -m-1 text-faint hover:text-ink rounded hover:bg-sidebar"
-              onClick={finishEditing}
-              title="Finish editing"
-            >
-              <Check size={13} />
-            </button>
+            <Button size="sm" icon={<CheckIcon size={14} />} onClick={finishEditing}>
+              Done
+            </Button>
           ) : (
-            <button
-              className="p-1 -m-1 text-faint hover:text-ink rounded hover:bg-sidebar"
-              onClick={startEditing}
+            <Button
+              variant="ghost"
+              size="sm"
+              shape="square"
+              icon={<PencilSimpleIcon size={14} />}
               title="Edit"
-            >
-              <Pencil size={13} />
-            </button>
+              className="text-kumo-subtle"
+              onClick={startEditing}
+            />
           )}
-          <button
-            className="p-1 -m-1 text-faint hover:text-danger rounded hover:bg-danger/10"
-            onClick={remove}
+          <Button
+            variant="ghost"
+            size="sm"
+            shape="square"
+            icon={<TrashIcon size={14} />}
             title="Delete"
-          >
-            <Trash2 size={13} />
-          </button>
+            className="text-kumo-subtle hover:bg-kumo-danger-tint hover:text-kumo-danger"
+            onClick={remove}
+          />
         </div>
       </header>
 
@@ -389,19 +407,22 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
         <div className="px-6 py-5 space-y-4">
           {isEditing ? (
             <input
-              className={`w-full text-lg font-semibold bg-transparent border-none outline-hidden focus:outline-hidden px-0 py-1 ${
-                !title ? "placeholder:text-muted/60 placeholder:italic" : ""
-              }`}
+              className={cn(
+                "w-full bg-transparent px-0 py-1 text-lg font-semibold text-kumo-default outline-hidden placeholder:text-kumo-placeholder",
+                !title && "placeholder:italic"
+              )}
               value={title}
               placeholder={isNote ? "Untitled" : "Title"}
+              aria-label="Title"
               onChange={(e) => setTitle(e.target.value)}
               autoFocus
             />
           ) : (
             <h2
-              className={`text-lg font-semibold py-1 ${
-                isUntitled(entity) ? "italic text-muted" : "text-ink"
-              }`}
+              className={cn(
+                "py-1 text-lg font-semibold",
+                isUntitled(entity) ? "italic text-kumo-subtle" : "text-kumo-default"
+              )}
             >
               {displayTitle(entity)}
             </h2>
@@ -416,8 +437,8 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
             setDueDate={setDueDate}
             priority={priority}
             setPriority={setPriority}
-            tagsStr={tagsStr}
-            setTagsStr={setTagsStr}
+            tags={tags}
+            setTags={setTags}
             completedAt={entity.completedAt}
             completedAtStr={completedAtStr}
             setCompletedAtStr={(v) => {
@@ -447,22 +468,23 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
 
           {isNote && parentEntity && (
             <button
-              className="w-full text-left flex items-center gap-2 text-xs px-3 py-2 rounded border border-line bg-sidebar/50 hover:border-accent hover:bg-accentSoft/40 transition-colors"
+              type="button"
+              className="flex w-full items-center gap-2 rounded-lg border border-kumo-line bg-kumo-recessed px-3 py-2 text-left text-xs transition-colors hover:border-kumo-brand hover:bg-kumo-brand-tint/40"
               onClick={() => openDrawer(parentEntity.id)}
               title="Open linked task"
             >
-              <Link2 size={12} className="text-faint" />
-              <span className="text-faint">Linked to task:</span>
+              <LinkSimpleIcon size={12} className="text-kumo-subtle" />
+              <span className="text-kumo-subtle">Linked to task:</span>
               {parentEntity.sequenceId && project && (
-                <span className="font-mono text-faint tabular-nums">
+                <span className="font-mono tabular-nums text-kumo-subtle">
                   {project.key}-{parentEntity.sequenceId}
                 </span>
               )}
-              <span className="text-ink truncate">{displayTitle(parentEntity)}</span>
+              <span className="truncate text-kumo-default">{displayTitle(parentEntity)}</span>
             </button>
           )}
 
-          <div className="border border-line rounded-md overflow-hidden bg-surface">
+          <div className="overflow-hidden rounded-lg border border-kumo-line bg-kumo-base">
             {isEditing ? (
               <CodeMirror
                 value={body}
@@ -483,14 +505,14 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
                 <MarkdownView body={body} />
               </div>
             ) : (
-              <div className="min-h-[120px] p-3 text-xs text-faint">No description.</div>
+              <div className="min-h-[120px] p-3 text-xs text-kumo-placeholder">No description.</div>
             )}
           </div>
 
           {isEditing && body && (
-            <details className="text-xxs text-muted">
-              <summary className="cursor-pointer hover:text-ink">Preview rendered Markdown</summary>
-              <div className="mt-2 p-3 border border-line rounded bg-sidebar/30">
+            <details className="text-xxs text-kumo-subtle">
+              <summary className="cursor-pointer hover:text-kumo-default">Preview rendered Markdown</summary>
+              <div className="mt-2 rounded-lg border border-kumo-line bg-kumo-recessed p-3">
                 <MarkdownView body={body} />
               </div>
             </details>
@@ -532,23 +554,31 @@ function HistorySection({ entity }: { entity: import("../api/types").Entity }) {
   return (
     <div>
       <button
-        className="flex items-center gap-1.5 text-xxs uppercase tracking-wider text-muted font-semibold hover:text-ink"
+        type="button"
+        aria-expanded={open}
+        className="flex items-center gap-1.5 text-xxs font-semibold uppercase tracking-wider text-kumo-subtle hover:text-kumo-default"
         onClick={() => setOpen((v) => !v)}
       >
-        <ChevronRight size={12} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        <CaretRightIcon size={12} className={cn("transition-transform", open && "rotate-90")} />
         History
-        {open && revisions.data && <span className="text-faint normal-case tracking-normal">{rows.length} edit{rows.length === 1 ? "" : "s"}</span>}
+        {open && revisions.data && (
+          <span className="font-normal normal-case tracking-normal text-kumo-placeholder">
+            {rows.length} edit{rows.length === 1 ? "" : "s"}
+          </span>
+        )}
       </button>
       {open && (
         <div className="mt-1.5">
           {revisions.isLoading ? (
-            <div className="text-xs text-faint p-3 text-center">Loading…</div>
+            <div className="flex justify-center p-3 text-kumo-subtle">
+              <Loader size={14} />
+            </div>
           ) : rows.length === 0 ? (
-            <div className="text-xs text-faint border border-dashed border-line rounded p-3 text-center">
+            <div className="rounded-lg border border-dashed border-kumo-line p-3 text-center text-xs text-kumo-subtle">
               Never edited since it was written.
             </div>
           ) : (
-            <div className="border border-line rounded-md divide-y divide-lineSoft overflow-hidden">
+            <div className="divide-y divide-kumo-hairline overflow-hidden rounded-lg border border-kumo-line">
               {rows.map((rev, idx) => {
                 const after = idx === 0 ? entity : rows[idx - 1]!;
                 return <RevisionRow key={rev.id} before={rev} after={after} />;
@@ -591,29 +621,30 @@ function RevisionRow({
 
   return (
     <div className="px-3 py-2 text-xs">
-      <div className="flex items-baseline gap-2 text-xxs text-muted">
-        <span className="font-mono tabular-nums text-faint">#{before.revision}</span>
+      <div className="flex items-baseline gap-2 text-xxs text-kumo-subtle">
+        <span className="font-mono tabular-nums text-kumo-placeholder">#{before.revision}</span>
         <span>{new Date(before.createdAt).toLocaleString()}</span>
         <span>
-          · by <span className="text-ink">{who}</span>
+          · by <span className="text-kumo-default">{who}</span>
         </span>
       </div>
       {fieldChanges.length > 0 && (
         <ul className="mt-1 space-y-0.5">
           {fieldChanges.map(([field, from, to]) => (
             <li key={field} className="text-xxs">
-              <span className="text-muted">{field}:</span>{" "}
-              <span className="line-through text-danger/80">{from}</span>{" "}
-              <span className="text-faint">→</span> <span className="text-ink">{to}</span>
+              <span className="text-kumo-subtle">{field}:</span>{" "}
+              <span className="text-kumo-danger line-through">{from}</span>{" "}
+              <span className="text-kumo-placeholder">→</span>{" "}
+              <span className="text-kumo-default">{to}</span>
             </li>
           ))}
         </ul>
       )}
       {bodyChanged && (
-        <pre className="mt-1.5 font-mono text-xxs leading-relaxed whitespace-pre-wrap wrap-break-word bg-sidebar/40 rounded p-2 overflow-x-auto">
+        <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap wrap-break-word rounded-md bg-kumo-recessed p-2 font-mono text-xxs leading-relaxed">
           {diff.map((op, i) =>
             op.type === "skip" ? (
-              <div key={i} className="text-faint italic">
+              <div key={i} className="italic text-kumo-placeholder">
                 … {op.count} unchanged line{op.count === 1 ? "" : "s"}
               </div>
             ) : (
@@ -621,13 +652,13 @@ function RevisionRow({
                 key={i}
                 className={
                   op.type === "add"
-                    ? "bg-success/10 text-ink"
+                    ? "bg-kumo-success-tint text-kumo-default"
                     : op.type === "del"
-                      ? "bg-danger/10 text-muted line-through"
-                      : "text-muted"
+                      ? "bg-kumo-danger-tint text-kumo-subtle line-through"
+                      : "text-kumo-subtle"
                 }
               >
-                <span className="select-none text-faint mr-1">
+                <span className="mr-1 select-none text-kumo-placeholder">
                   {op.type === "add" ? "+" : op.type === "del" ? "−" : " "}
                 </span>
                 {op.text || " "}
@@ -637,7 +668,7 @@ function RevisionRow({
         </pre>
       )}
       {!bodyChanged && fieldChanges.length === 0 && (
-        <div className="mt-1 text-xxs text-faint">No visible difference.</div>
+        <div className="mt-1 text-xxs text-kumo-placeholder">No visible difference.</div>
       )}
     </div>
   );
@@ -798,115 +829,99 @@ function RepeatMetaValue({
 
   if (!isEditing || terminal) {
     return (
-      <span className="min-w-0 flex items-center gap-2">
-        <span className={recurrence ? "text-muted truncate" : "text-faint"}>
+      <span className="flex min-w-0 items-center gap-2">
+        <span className={recurrence ? "truncate text-kumo-subtle" : "text-kumo-placeholder"}>
           {recurrence ? recurrenceSummary(recurrence) : "None"}
         </span>
         {canSkip && onSkip && (
-          <button
-            className="text-faint hover:text-ink disabled:opacity-40 shrink-0"
-            onClick={onSkip}
+          <Button
+            variant="ghost"
+            size="xs"
+            className="shrink-0 text-kumo-subtle"
             disabled={busy}
-            title="Skip occurrence"
+            onClick={onSkip}
           >
-            Skip
-          </button>
+            Skip occurrence
+          </Button>
         )}
       </span>
     );
   }
 
   return (
-    <span className="min-w-0 flex flex-col gap-1">
+    <span className="flex min-w-0 flex-col gap-1.5">
       <span className="flex flex-wrap items-center gap-1.5">
-        <select
-          className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
+        <MetaSelect
+          label="Repeat"
           value={form.preset}
-          onChange={(e) => updateForm({ preset: e.target.value as RecurrencePreset | "none" })}
-          title="Repeat"
-        >
-          <option value="none">None</option>
-          {RECURRENCE_PRESETS.map((preset) => (
-            <option key={preset} value={preset}>
-              {RECURRENCE_LABEL[preset]}
-            </option>
-          ))}
-        </select>
+          onChange={(preset) => updateForm({ preset })}
+          options={[
+            { value: "none", label: "None" },
+            ...RECURRENCE_PRESETS.map((preset) => ({
+              value: preset,
+              label: RECURRENCE_LABEL[preset]
+            }))
+          ]}
+        />
         {repeatEnabled && (
           <>
-            <input
+            <span className="text-kumo-subtle">every</span>
+            <Input
               type="number"
+              size="sm"
               min={1}
               max={999}
-              className="w-14 bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
+              aria-label="Interval"
+              className="w-14"
               value={form.interval}
               onChange={(e) => updateForm({ interval: Math.max(1, Number(e.target.value) || 1) })}
-              title="Interval"
             />
-            <select
-              className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
+            <span className="text-kumo-subtle">
+              {RECURRENCE_UNIT[form.preset as RecurrencePreset]}
+              {form.interval === 1 ? "" : "s"} from
+            </span>
+            <MetaSelect
+              label="Anchor"
               value={form.anchor}
-              onChange={(e) => updateForm({ anchor: e.target.value as RecurrenceAnchor })}
-              title="Anchor"
-          >
-              <option value="scheduled">Scheduled</option>
-              <option value="completion">Completion</option>
-            </select>
-            <button
-              className="text-accent hover:underline disabled:opacity-40"
-              onClick={save}
-              disabled={busy || !canSave}
-            >
-              Save
-            </button>
-            {canSplit && (
-              <button
-                className="text-faint hover:text-ink disabled:opacity-40"
-                onClick={splitSeries}
-                disabled={busy}
-                title="Keep past occurrences on the old cadence; apply this cadence going forward"
-              >
-                Split
-              </button>
-            )}
+              onChange={(anchor) => updateForm({ anchor })}
+              options={[
+                { value: "scheduled", label: "Schedule" },
+                { value: "completion", label: "Completion" }
+              ]}
+            />
           </>
-        )}
-        {canStop && onStop && (
-          <button
-            className="text-faint hover:text-danger disabled:opacity-40"
-            onClick={onStop}
-            disabled={busy}
-            title="Stop series"
-          >
-            Stop
-          </button>
         )}
       </span>
       {repeatEnabled && form.preset === "weekly" && (
-        <span className="flex flex-wrap gap-1">
-          {RECURRENCE_WEEKDAYS.map((day) => (
-            <button
-              key={day}
-              type="button"
-              className={`px-1.5 py-0.5 rounded border text-[10px] ${
-                form.byWeekday.includes(day)
-                  ? "border-accent bg-accentSoft text-accent"
-                  : "border-line bg-surface text-muted hover:text-ink"
-              }`}
-              onClick={() => toggleWeekday(day)}
-            >
-              {day}
-            </button>
-          ))}
+        <span className="flex flex-wrap gap-1" role="group" aria-label="Weekdays">
+          {RECURRENCE_WEEKDAYS.map((day) => {
+            const on = form.byWeekday.includes(day);
+            return (
+              <Button
+                key={day}
+                size="xs"
+                variant={on ? "primary" : "secondary"}
+                aria-pressed={on}
+                className="w-8 justify-center"
+                onClick={() => toggleWeekday(day)}
+              >
+                {day}
+              </Button>
+            );
+          })}
         </span>
       )}
       {repeatEnabled && (
         <span className="flex flex-wrap items-center gap-1.5">
-          <input
+          <span className="text-kumo-subtle">Ends after</span>
+          <Input
             type="number"
+            size="sm"
             min={1}
             max={10000}
-            className="w-20 bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
+            aria-label="Count"
+            placeholder="∞"
+            className="w-16"
             value={form.count}
             onChange={(e) =>
               updateForm({
@@ -914,12 +929,13 @@ function RepeatMetaValue({
                 until: e.target.value ? "" : form.until
               })
             }
-            placeholder="Count"
-            title="Count"
           />
-          <input
+          <span className="text-kumo-subtle">times, or on</span>
+          <Input
             type="date"
-            className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
+            size="sm"
+            aria-label="Until"
+            className="w-36"
             value={form.until}
             onChange={(e) =>
               updateForm({
@@ -927,12 +943,86 @@ function RepeatMetaValue({
                 count: e.target.value ? "" : form.count
               })
             }
-            title="Until"
           />
-          {!dueDate && <span className="text-faint text-xxs">Set due date first</span>}
-          {error && <span className="text-danger text-xxs truncate">{error}</span>}
         </span>
       )}
+      {(repeatEnabled || (canStop && onStop)) && (
+        <span className="flex flex-wrap items-center gap-1.5">
+          {repeatEnabled && (
+            <Button size="xs" variant="primary" disabled={busy || !canSave} onClick={save}>
+              {recurrence ? "Update repeat" : "Save repeat"}
+            </Button>
+          )}
+          {canSplit && (
+            <Button
+              size="xs"
+              disabled={busy}
+              title="Keep past occurrences on the old cadence; apply this cadence going forward"
+              onClick={splitSeries}
+            >
+              Split series
+            </Button>
+          )}
+          {canStop && onStop && (
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={busy}
+              className="text-kumo-subtle hover:bg-kumo-danger-tint hover:text-kumo-danger"
+              onClick={onStop}
+            >
+              Stop series
+            </Button>
+          )}
+          {repeatEnabled && !dueDate && (
+            <span className="text-xxs text-kumo-placeholder">Set due date first</span>
+          )}
+          {error && <span className="truncate text-xxs text-kumo-danger">{error}</span>}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function MetaSelect<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+  className
+}: {
+  label: string;
+  value: T;
+  onChange: (value: T) => void;
+  options: Array<{ value: T; label: string; icon?: ReactNode }>;
+  className?: string;
+}) {
+  const byValue = new Map(options.map((o) => [o.value, o]));
+  return (
+    <Select<T>
+      size="sm"
+      aria-label={label}
+      value={value}
+      onValueChange={(v) => {
+        if (v !== null) onChange(v);
+      }}
+      renderValue={(v) => <OptionLabel icon={byValue.get(v)?.icon} label={byValue.get(v)?.label ?? v} />}
+      className={cn("min-w-28", className)}
+    >
+      {options.map((o) => (
+        <Select.Option key={o.value} value={o.value} className="py-1 text-sm">
+          <OptionLabel icon={o.icon} label={o.label} />
+        </Select.Option>
+      ))}
+    </Select>
+  );
+}
+
+function OptionLabel({ icon, label }: { icon?: ReactNode; label: string }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      {icon}
+      <span className="truncate">{label}</span>
     </span>
   );
 }
@@ -946,8 +1036,8 @@ function MetaRow({
   setDueDate,
   priority,
   setPriority,
-  tagsStr,
-  setTagsStr,
+  tags,
+  setTags,
   completedAt,
   completedAtStr,
   setCompletedAtStr,
@@ -973,8 +1063,8 @@ function MetaRow({
   setDueDate: (d: string) => void;
   priority: Priority;
   setPriority: (p: Priority) => void;
-  tagsStr: string;
-  setTagsStr: (s: string) => void;
+  tags: string[];
+  setTags: (tags: string[]) => void;
   completedAt: string | null;
   completedAtStr: string;
   setCompletedAtStr: (v: string) => void;
@@ -993,56 +1083,54 @@ function MetaRow({
   setOccurrenceScope?: (scope: "this" | "future") => void;
 }) {
   return (
-    <div className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 items-center text-xs">
+    <div className="grid auto-rows-[minmax(26px,auto)] grid-cols-[80px_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
       {isTask && (
         <>
-          <span className="text-faint">Status</span>
-          <span className="flex items-center gap-1.5">
-            {isEditing || !task ? (
-              <StatusCircle status={status} size={12} />
-            ) : (
-              <StatusPickerButton task={task} size={12} onStatusChange={onStatusChange} />
-            )}
+          <MetaLabel>Status</MetaLabel>
+          <span className="flex min-w-0 items-center gap-1.5">
             {isEditing ? (
-              <select
-                className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
+              <MetaSelect
+                label="Status"
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
-              >
-                {TASK_STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABEL[s] ?? s}
-                  </option>
-                ))}
-              </select>
+                onChange={setStatus}
+                options={TASK_STATUS_OPTIONS.map((s) => ({
+                  value: s,
+                  label: STATUS_LABEL[s] ?? s,
+                  icon: <StatusCircle status={s} size={12} />
+                }))}
+              />
             ) : (
-              <span className="text-ink">{STATUS_LABEL[status] ?? status}</span>
+              <>
+                {task ? (
+                  <StatusPickerButton task={task} size={12} onStatusChange={onStatusChange} />
+                ) : (
+                  <StatusCircle status={status} size={12} />
+                )}
+                <span className="text-kumo-default">{STATUS_LABEL[status] ?? status}</span>
+              </>
             )}
           </span>
 
-          <span className="text-faint">Due</span>
-          <span className="flex items-center gap-1.5">
+          <MetaLabel>Due</MetaLabel>
+          <span className="flex min-w-0 items-center gap-1.5">
             {isEditing ? (
               <>
-                <input
+                <Input
                   type="date"
-                  className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
+                  size="sm"
+                  aria-label="Due date"
+                  className="w-36"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
                 />
-                {!dueDate && <span className="text-faint text-xxs">inbox</span>}
-                {dueDate && (
-                  <button
-                    className="text-faint hover:text-danger text-xxs"
-                    onClick={() => setDueDate("")}
-                    title="Clear"
-                  >
-                    ✕
-                  </button>
+                {dueDate ? (
+                  <ClearButton label="Clear due date" onClick={() => setDueDate("")} />
+                ) : (
+                  <MetaHint>inbox</MetaHint>
                 )}
               </>
             ) : (
-              <span className={dueDate ? "text-ink" : "text-faint text-xxs"}>
+              <span className={dueDate ? "tabular-nums text-kumo-default" : "text-kumo-placeholder"}>
                 {dueDate || "inbox"}
               </span>
             )}
@@ -1050,7 +1138,7 @@ function MetaRow({
 
           {(recurrence || (isEditing && task && !["done", "rejected"].includes(status))) && (
             <>
-              <span className="text-faint">Repeat</span>
+              <MetaLabel top={isEditing}>Repeat</MetaLabel>
               <RepeatMetaValue
                 isEditing={isEditing}
                 task={task}
@@ -1067,67 +1155,64 @@ function MetaRow({
 
           {isEditing && isRecurringOccurrence && (
             <>
-              <span className="text-faint">Apply to</span>
-              <span className="flex items-center gap-1.5">
-                <select
-                  className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
+              <MetaLabel>Apply to</MetaLabel>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <MetaSelect
+                  label="Recurrence edit scope"
                   value={occurrenceScope ?? "future"}
-                  onChange={(e) =>
-                    setOccurrenceScope?.(e.target.value as "this" | "future")
-                  }
-                  title="Recurrence edit scope"
-                >
-                  <option value="future">This and future</option>
-                  <option value="this">This occurrence only</option>
-                </select>
+                  onChange={(scope) => setOccurrenceScope?.(scope)}
+                  className="min-w-40"
+                  options={[
+                    { value: "future", label: "This and future" },
+                    { value: "this", label: "This occurrence only" }
+                  ]}
+                />
               </span>
             </>
           )}
 
-          <span className="text-faint">Priority</span>
-          <span className="flex items-center gap-1.5">
-            <PriorityIcon priority={priority} size={12} />
+          <MetaLabel>Priority</MetaLabel>
+          <span className="flex min-w-0 items-center gap-1.5">
             {isEditing ? (
-              <select
-                className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
+              <MetaSelect
+                label="Priority"
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as Priority)}
-              >
-                {PRIORITY_LEVELS.map((p) => (
-                  <option key={p} value={p}>
-                    {PRIORITY_LABEL[p]}
-                  </option>
-                ))}
-              </select>
+                onChange={setPriority}
+                options={PRIORITY_LEVELS.map((p) => ({
+                  value: p,
+                  label: PRIORITY_LABEL[p],
+                  icon: <PriorityIcon priority={p} size={12} />
+                }))}
+              />
             ) : (
-              <span className="text-ink">{PRIORITY_LABEL[priority]}</span>
+              <>
+                <PriorityIcon priority={priority} size={12} />
+                <span className="text-kumo-default">{PRIORITY_LABEL[priority]}</span>
+              </>
             )}
           </span>
 
           {status === "done" && (
             <>
-              <span className="text-faint">Completed</span>
+              <MetaLabel>Completed</MetaLabel>
               {isEditing ? (
-                <span className="flex items-center gap-1.5">
-                  <input
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Input
                     type="datetime-local"
-                    className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
+                    size="sm"
+                    aria-label="Completed at"
+                    className="w-48"
                     value={completedAtStr}
                     onChange={(e) => setCompletedAtStr(e.target.value)}
                   />
-                  {!completedAtStr && <span className="text-faint text-xxs">auto</span>}
-                  {completedAtStr && (
-                    <button
-                      className="text-faint hover:text-danger text-xxs"
-                      onClick={() => setCompletedAtStr("")}
-                      title="Clear"
-                    >
-                      ✕
-                    </button>
+                  {completedAtStr ? (
+                    <ClearButton label="Clear completed time" onClick={() => setCompletedAtStr("")} />
+                  ) : (
+                    <MetaHint>auto</MetaHint>
                   )}
                 </span>
               ) : (
-                <span className="text-muted">
+                <span className="text-kumo-subtle">
                   {completedAt ? new Date(completedAt).toLocaleString() : "Not recorded"}
                 </span>
               )}
@@ -1136,52 +1221,82 @@ function MetaRow({
         </>
       )}
 
-      <span className="text-faint">Tags</span>
+      <MetaLabel>Tags</MetaLabel>
       {isEditing ? (
-        <input
-          className="bg-transparent border-none text-xs text-ink hover:bg-sidebar rounded px-1 -mx-1 focus:outline-hidden focus:ring-1 focus:ring-accent"
-          value={tagsStr}
-          onChange={(e) => setTagsStr(e.target.value)}
-          placeholder="comma, separated"
+        <TagInput
+          aria-label="Tags"
+          value={tags}
+          onValueChange={setTags}
+          placeholder={tags.length ? "" : "Add tag…"}
+          className="min-h-6.5 gap-x-1 gap-y-1 px-1 py-0.5 text-xs [&>span]:h-5 [&>span]:text-xs"
         />
-      ) : (
-        <span className={tagsStr ? "text-muted" : "text-faint"}>
-          {tagsStr || "none"}
+      ) : tags.length ? (
+        <span className="flex min-w-0 flex-wrap gap-1">
+          {tags.map((tag) => (
+            <TagChip key={tag} tag={tag} />
+          ))}
         </span>
+      ) : (
+        <span className="text-kumo-placeholder">none</span>
       )}
 
-      <span className="text-faint">Created</span>
-      <span className="text-muted">
-        {new Date(createdAt).toLocaleString()} · by <span className="text-ink">{actorKind}</span>
+      <MetaLabel>Created</MetaLabel>
+      <span className="text-kumo-subtle">
+        {new Date(createdAt).toLocaleString()} · by{" "}
+        <span className="text-kumo-default">{actorKind}</span>
       </span>
     </div>
+  );
+}
+
+function MetaLabel({ children, top = false }: { children: ReactNode; top?: boolean }) {
+  return (
+    <span className={cn("text-kumo-subtle", top && "self-start leading-6.5")}>{children}</span>
+  );
+}
+
+function MetaHint({ children }: { children: ReactNode }) {
+  return <span className="text-[11px] text-kumo-placeholder">{children}</span>;
+}
+
+function ClearButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="xs"
+      shape="square"
+      icon={<XIcon size={12} />}
+      aria-label={label}
+      className="size-5 text-kumo-subtle hover:text-kumo-danger"
+      onClick={onClick}
+    />
   );
 }
 
 function SaveIndicator({ state, dirty }: { state: SaveState; dirty: boolean }) {
   if (state === "saving") {
     return (
-      <span className="flex items-center gap-1 text-xxs text-muted">
-        <Loader2 size={11} className="animate-spin" />
+      <span className="flex items-center gap-1 text-xxs text-kumo-subtle">
+        <Loader size={11} />
         Saving…
       </span>
     );
   }
   if (state === "saved" && !dirty) {
     return (
-      <span className="flex items-center gap-1 text-xxs text-faint">
-        <Cloud size={11} />
+      <span className="flex items-center gap-1 text-xxs text-kumo-placeholder">
+        <CloudCheckIcon size={12} />
         Saved
       </span>
     );
   }
   if (state === "error") {
-    return <span className="text-xxs text-danger">Save failed</span>;
+    return <span className="text-xxs text-kumo-danger">Save failed</span>;
   }
   if (dirty) {
     return (
-      <span className="flex items-center gap-1 text-xxs text-faint">
-        <CloudUpload size={11} />
+      <span className="flex items-center gap-1 text-xxs text-kumo-placeholder">
+        <CloudArrowUpIcon size={12} />
         Unsaved
       </span>
     );
@@ -1203,43 +1318,59 @@ function RelatedNotesSection({
   const notes = related.filter((r) => r.kind === "note");
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-1.5">
-        <h3 className="text-xxs uppercase tracking-wider text-muted font-semibold">
-          Related notes <span className="text-faint">{notes.length}</span>
+      <div className="mb-1.5 flex items-center justify-between">
+        <h3 className="text-xxs font-semibold uppercase tracking-wider text-kumo-subtle">
+          Related notes <span className="text-kumo-placeholder">{notes.length}</span>
         </h3>
-        <button onClick={onAdd} className="text-xs text-accent hover:underline">
-          + Add note
-        </button>
+        <Button
+          variant="ghost"
+          size="xs"
+          icon={<PlusIcon size={12} />}
+          className="text-kumo-link"
+          onClick={onAdd}
+        >
+          Add note
+        </Button>
       </div>
       {notes.length === 0 ? (
-        <div className="text-xs text-faint border border-dashed border-line rounded p-3 text-center">
+        <div className="rounded-lg border border-dashed border-kumo-line p-3 text-center text-xs text-kumo-placeholder">
           No linked notes yet.
         </div>
       ) : (
-        <div className="border border-line rounded-md divide-y divide-lineSoft overflow-hidden">
+        <div className="divide-y divide-kumo-hairline overflow-hidden rounded-lg border border-kumo-line">
           {notes.map((n) => (
             <button
               key={n.id}
-              className="w-full text-left px-3 py-2 hover:bg-sidebar flex items-start gap-2"
+              type="button"
+              className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-kumo-tint"
               onClick={() => onOpen(n.id)}
             >
-              <div className="flex-1 min-w-0">
-                <div className={`text-sm truncate ${isUntitled(n) ? "italic text-muted" : "text-ink"}`}>
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    "truncate text-sm",
+                    isUntitled(n) ? "italic text-kumo-subtle" : "text-kumo-default"
+                  )}
+                >
                   {displayTitle(n)}
                 </div>
                 {!isUntitled(n) && n.body && (
-                  <div className="text-xxs text-muted truncate mt-0.5">
+                  <div className="mt-0.5 truncate text-xxs text-kumo-subtle">
                     {n.body.replace(/\n/g, " ").slice(0, 140)}
                   </div>
                 )}
               </div>
-              {n.pinned && <Pin size={11} className="text-accent shrink-0 mt-1" fill="currentColor" />}
+              {n.pinned && (
+                <PushPinIcon size={12} weight="fill" className="mt-1 shrink-0 text-kumo-brand" />
+              )}
             </button>
           ))}
         </div>
       )}
       {!project && (
-        <div className="text-xxs text-faint mt-1">No project context — link picker unavailable.</div>
+        <div className="mt-1 text-xxs text-kumo-placeholder">
+          No project context — link picker unavailable.
+        </div>
       )}
     </div>
   );
@@ -1247,7 +1378,7 @@ function RelatedNotesSection({
 
 function MarkdownView({ body }: { body: string }) {
   return (
-    <div className="text-sm leading-relaxed text-ink space-y-2 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1.5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:font-semibold [&_h3]:mt-2 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_code]:bg-sidebar [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_pre]:bg-sidebar [&_pre]:p-2 [&_pre]:rounded [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_a]:text-accent [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-line [&_blockquote]:pl-3 [&_blockquote]:text-muted [&_table]:border-collapse [&_th]:border [&_th]:border-line [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-line [&_td]:px-2 [&_td]:py-1">
+    <div className="space-y-2 text-sm leading-relaxed text-kumo-default [&_a]:text-kumo-link [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-kumo-line [&_blockquote]:pl-3 [&_blockquote]:text-kumo-subtle [&_code]:rounded [&_code]:bg-kumo-fill [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_h1]:mb-1.5 [&_h1]:mt-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-1 [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:font-semibold [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-kumo-recessed [&_pre]:p-2 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:border-collapse [&_td]:border [&_td]:border-kumo-line [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-kumo-line [&_th]:px-2 [&_th]:py-1 [&_ul]:list-disc [&_ul]:pl-5">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
     </div>
   );
