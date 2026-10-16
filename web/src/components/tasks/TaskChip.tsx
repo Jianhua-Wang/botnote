@@ -1,6 +1,8 @@
+import { CaretDownIcon, CheckCircleIcon } from "@phosphor-icons/react";
 import type { Entity, Project, VirtualOccurrence } from "../../api/types";
 import { useDrawer } from "../../hooks/useDrawer";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
+import { ParentChip, SubtaskProgress } from "./hierarchy";
 import { PriorityIcon, RecurrenceIcon } from "./icons";
 import { StatusPickerButton } from "./StatusPickerButton";
 import { isRecurring, isTaskOverdue } from "./utils";
@@ -62,9 +64,47 @@ export function GhostChips({
   );
 }
 
-export function TaskChip({ task, project }: { task: Entity; project?: Project }) {
+/** Tooltip lines for a chip: its ref and title, then where it sits in the hierarchy. */
+function chipTooltip(task: Entity, project?: Project): string {
+  const ref = project && task.sequenceId ? `${project.key}-${task.sequenceId}` : project?.key;
+  const lines = [ref ? `${ref} · ${displayTitle(task)}` : displayTitle(task)];
+  if (task.parent) lines.push(`Sub-task of ${task.parent.ref} · ${task.parent.title}`);
+  if (task.subtasks) lines.push(`${task.subtasks.closed} of ${task.subtasks.total} sub-tasks closed`);
+  return lines.join("\n");
+}
+
+/**
+ * A calendar task chip. The default chip carries status, priority and the
+ * parent line for sub-tasks; `compact` keeps only the project bar, the title
+ * and a sub-task ring, for month cells.
+ */
+export function TaskChip({
+  task,
+  project,
+  compact = false
+}: {
+  task: Entity;
+  project?: Project;
+  compact?: boolean;
+}) {
   const drawer = useDrawer();
   const overdue = isTaskOverdue(task);
+
+  const title = (
+    <span
+      className={`truncate flex-1 min-w-0 ${
+        task.status === "done"
+          ? "line-through text-kumo-subtle"
+          : task.status === "rejected"
+            ? "text-kumo-subtle"
+            : isUntitled(task)
+              ? "italic text-kumo-subtle"
+              : "text-kumo-default"
+      }`}
+    >
+      {displayTitle(task)}
+    </span>
+  );
 
   return (
     <div
@@ -83,31 +123,65 @@ export function TaskChip({ task, project }: { task: Entity; project?: Project })
         e.preventDefault();
         drawer.open(task.id);
       }}
-      className={`group w-full text-left flex items-center gap-1.5 pl-1 pr-1.5 py-1 rounded text-xs hover:bg-kumo-fill transition-colors cursor-grab active:cursor-grabbing ${
-        overdue ? "bg-kumo-danger-tint" : ""
-      }`}
-      title={project ? `${project.key} · ${displayTitle(task)}` : displayTitle(task)}
+      className={`group w-full text-left flex gap-1.5 pl-1 pr-1.5 rounded text-xs hover:bg-kumo-fill transition-colors cursor-grab active:cursor-grabbing ${
+        compact ? "h-5 items-center" : "py-1"
+      } ${overdue ? "bg-kumo-danger-tint" : ""}`}
+      title={chipTooltip(task, project)}
     >
       <span
         className="w-[2px] self-stretch rounded-sm shrink-0"
         style={{ backgroundColor: project?.color ?? "var(--text-color-kumo-placeholder)" }}
       />
-      <StatusPickerButton task={task} size={11} />
-      <span
-        className={`truncate flex-1 min-w-0 ${
-          task.status === "done"
-            ? "line-through text-kumo-subtle"
-            : task.status === "rejected"
-              ? "text-kumo-subtle"
-              : isUntitled(task)
-                ? "italic text-kumo-subtle"
-                : "text-kumo-default"
-        }`}
-      >
-        {displayTitle(task)}
-      </span>
-      {isRecurring(task) && <RecurrenceIcon size={11} className="text-kumo-subtle" />}
-      {task.priority !== "none" && <PriorityIcon priority={task.priority} size={11} />}
+      {compact ? (
+        <>
+          {title}
+          {task.subtasks && <SubtaskProgress counts={task.subtasks} ringOnly />}
+        </>
+      ) : (
+        <div className="flex-1 min-w-0">
+          {task.parent && <ParentChip parent={task.parent} variant="line" className="mb-0.5" />}
+          <div className="flex items-center gap-1.5">
+            <StatusPickerButton task={task} size={11} />
+            {title}
+            {task.subtasks && <SubtaskProgress counts={task.subtasks} />}
+            {isRecurring(task) && <RecurrenceIcon size={11} className="text-kumo-subtle" />}
+            {task.priority !== "none" && <PriorityIcon priority={task.priority} size={11} />}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * Folds a day's closed tasks into one "N done" row; expanding it lists them
+ * under the open ones.
+ */
+export function ClosedTasksToggle({
+  tasks,
+  expanded,
+  onToggle
+}: {
+  tasks: Entity[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const rejected = tasks.filter((t) => t.status === "rejected").length;
+  const done = tasks.length - rejected;
+  const detail = [`${done} done`, rejected > 0 && `${rejected} cancelled`].filter(Boolean).join(" · ");
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      title={detail}
+      className="w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-xxs text-kumo-subtle hover:bg-kumo-fill hover:text-kumo-default transition-colors"
+    >
+      <CheckCircleIcon size={12} weight="fill" className="shrink-0 text-kumo-success" />
+      <span className="flex-1 text-left tabular-nums">
+        {rejected > 0 ? `${tasks.length} closed` : `${done} done`}
+      </span>
+      <CaretDownIcon size={10} className={`shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`} />
+    </button>
   );
 }

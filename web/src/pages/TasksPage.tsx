@@ -6,16 +6,40 @@ import { TasksHeader } from "../components/tasks/TasksHeader";
 import { WeekView } from "../components/tasks/WeekView";
 import type { CalendarView } from "../components/tasks/utils";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { usePersistedState } from "../hooks/usePersistedState";
+
+// Month cells need the width more than the Inbox does, so its rail starts
+// collapsed there; each view then remembers the last choice.
+const RAIL_COLLAPSED_DEFAULT: Record<CalendarView, boolean> = {
+  day: false,
+  week: false,
+  month: true
+};
 
 export function TasksPage() {
   const isMobile = useIsMobile();
   const [view, setView] = useState<CalendarView>("week");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [projectIds, setProjectIds] = useState<string[] | null>(null);
-  const [inboxCollapsed, setInboxCollapsed] = useState(isMobile);
+  const [railCollapsed, setRailCollapsed] = usePersistedState<Partial<Record<CalendarView, boolean>>>(
+    "botnote.tasks.inboxCollapsed",
+    {}
+  );
+  const [mobileRailCollapsed, setMobileRailCollapsed] = useState(true);
 
   // Multi-column calendars don't fit narrow screens; force the day view there.
   const effectiveView: CalendarView = isMobile ? "day" : view;
+  const inboxCollapsed = isMobile
+    ? mobileRailCollapsed
+    : (railCollapsed[effectiveView] ?? RAIL_COLLAPSED_DEFAULT[effectiveView]);
+  const toggleInbox = () => {
+    if (isMobile) setMobileRailCollapsed(!mobileRailCollapsed);
+    else setRailCollapsed({ ...railCollapsed, [effectiveView]: !inboxCollapsed });
+  };
+  const openDay = (day: Date) => {
+    setAnchor(day);
+    setView("day");
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -30,13 +54,13 @@ export function TasksPage() {
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-w-0 overflow-hidden bg-kumo-canvas">
           {effectiveView === "day" && <DayView anchor={anchor} projectIds={projectIds} />}
-          {effectiveView === "week" && <WeekView anchor={anchor} projectIds={projectIds} />}
-          {effectiveView === "month" && <MonthView anchor={anchor} projectIds={projectIds} />}
+          {effectiveView === "week" && <WeekView anchor={anchor} projectIds={projectIds} onOpenDay={openDay} />}
+          {effectiveView === "month" && <MonthView anchor={anchor} projectIds={projectIds} onOpenDay={openDay} />}
         </div>
         <InboxRail
           projectIds={projectIds}
           collapsed={inboxCollapsed}
-          onToggle={() => setInboxCollapsed((v) => !v)}
+          onToggle={toggleInbox}
         />
       </div>
     </div>

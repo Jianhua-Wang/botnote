@@ -1,5 +1,5 @@
 import { LinkProvider } from "@cloudflare/kumo/utils";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLink } from "./components/AppLink";
 import { AppShell } from "./components/AppShell";
 import { ModalRoot } from "./components/ModalRoot";
@@ -38,6 +38,9 @@ export default function App() {
               <Route path="/p/:key/agents-md" element={<AgentsMdPage />} />
               <Route path="/search" element={<SearchPage />} />
             </Route>
+            {/* Tasks lives at "/"; send stale or mistyped paths there instead
+                of rendering an empty shell. */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <ModalRoot />
         </ModalsProvider>
