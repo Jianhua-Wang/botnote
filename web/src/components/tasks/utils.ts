@@ -165,4 +165,23 @@ export function compareByStatus(a: Entity, b: Entity): number {
   return ra - rb;
 }
 
+export function isClosed(t: Entity): boolean {
+  return t.status === "done" || t.status === "rejected";
+}
+
+/** A day's tasks split into actionable ones (in progress first) and closed ones. */
+export function partitionByStatus(tasks: Entity[]): { open: Entity[]; closed: Entity[] } {
+  const sorted = tasks.slice().sort(compareByStatus);
+  return { open: sorted.filter((t) => !isClosed(t)), closed: sorted.filter(isClosed) };
+}
+
+/**
+ * How many of `count` chips to show in `slots` rows. When they don't all fit,
+ * one row is given up for the "+N more" link so it never gets clipped.
+ */
+export function visibleChipCount(count: number, slots: number): number {
+  if (count <= slots) return count;
+  return Math.max(slots - 1, 0);
+}
+
 export { format, isSameDay, isToday };

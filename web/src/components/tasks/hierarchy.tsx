@@ -51,12 +51,17 @@ export function ParentChip({
   );
 }
 
-/** A small ring plus "closed/total": green for closed sub-tasks, amber for in-progress ones. */
+/**
+ * A small ring plus "closed/total": green for closed sub-tasks, amber for
+ * in-progress ones. `ringOnly` drops the numbers for tight spots.
+ */
 export function SubtaskProgress({
   counts,
+  ringOnly = false,
   className = ""
 }: {
   counts: SubtaskCounts;
+  ringOnly?: boolean;
   className?: string;
 }) {
   const { total, closed, inProgress } = counts;
@@ -105,7 +110,7 @@ export function SubtaskProgress({
           />
         )}
       </svg>
-      {closed}/{total}
+      {!ringOnly && `${closed}/${total}`}
     </span>
   );
 }

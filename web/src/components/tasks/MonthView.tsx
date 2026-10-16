@@ -1,21 +1,38 @@
 import { Button } from "@cloudflare/kumo/components/button";
-import { PlusIcon } from "@phosphor-icons/react";
+import { CheckCircleIcon, PlusIcon } from "@phosphor-icons/react";
 import { format, isSameMonth, isToday } from "date-fns";
 import { useMemo, useState } from "react";
 import { useProjects, useTasksRange, useUpdateEntity } from "../../api/hooks";
 import type { Entity, Project, VirtualOccurrence } from "../../api/types";
+import { useElementSize } from "../../hooks/useElementSize";
 import { useModals } from "../../state/modals";
-import { GhostChips, TaskChip } from "./TaskChip";
-import { compareByStatus, dayKey, daysBetween, groupTasksByDay, groupVirtualsByDay, projectLookup, viewRange } from "./utils";
+import { RecurrenceIcon } from "./icons";
+import { TaskChip } from "./TaskChip";
+import {
+  dayKey,
+  daysBetween,
+  groupTasksByDay,
+  groupVirtualsByDay,
+  partitionByStatus,
+  projectLookup,
+  viewRange,
+  visibleChipCount
+} from "./utils";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+// Compact chips are h-5 with a 2px gap; the cell body fits whole rows only.
+const CHIP_ROW = 20;
+const CHIP_GAP = 2;
+
 export function MonthView({
   anchor,
-  projectIds
+  projectIds,
+  onOpenDay
 }: {
   anchor: Date;
   projectIds: string[] | null;
+  onOpenDay: (day: Date) => void;
 }) {
   const range = viewRange("month", anchor);
   const days = daysBetween(range.from, range.to);
@@ -24,7 +41,7 @@ export function MonthView({
     to: range.to.toISOString(),
     projectIds: projectIds ?? null,
     includeBacklog: false,
-    // includeDone=true so each cell can show its done/total count.
+    // includeDone=true so each cell can show its closed/total progress.
     includeDone: true,
     includeVirtualRecurrences: true
   });
@@ -48,24 +65,22 @@ export function MonthView({
           </div>
         ))}
       </div>
-      <div className="flex-1 grid grid-cols-7 grid-rows-6 bg-kumo-hairline gap-px overflow-y-auto scrollbar-thin">
-        {days.map((d) => {
-          const tasks = byDay.get(dayKey(d)) ?? [];
-          const virtuals = virtualsByDay.get(dayKey(d)) ?? [];
-          const outOfMonth = !isSameMonth(d, anchor);
-          const today = isToday(d);
-          return (
-            <DayCell
-              key={d.toISOString()}
-              day={d}
-              tasks={tasks}
-              virtuals={virtuals}
-              projectMap={projectMap}
-              outOfMonth={outOfMonth}
-              today={today}
-            />
-          );
-        })}
+      <div
+        className="flex-1 grid grid-cols-7 bg-kumo-hairline gap-px overflow-y-auto scrollbar-thin"
+        style={{ gridTemplateRows: `repeat(${days.length / 7}, minmax(104px, 1fr))` }}
+      >
+        {days.map((d) => (
+          <DayCell
+            key={d.toISOString()}
+            day={d}
+            tasks={byDay.get(dayKey(d)) ?? []}
+            virtuals={virtualsByDay.get(dayKey(d)) ?? []}
+            projectMap={projectMap}
+            outOfMonth={!isSameMonth(d, anchor)}
+            today={isToday(d)}
+            onOpenDay={onOpenDay}
+          />
+        ))}
       </div>
     </div>
   );
@@ -77,7 +92,8 @@ function DayCell({
   virtuals,
   projectMap,
   outOfMonth,
-  today
+  today,
+  onOpenDay
 }: {
   day: Date;
   tasks: Entity[];
@@ -85,17 +101,20 @@ function DayCell({
   projectMap: Map<string, Project>;
   outOfMonth: boolean;
   today: boolean;
+  onOpenDay: (day: Date) => void;
 }) {
-  const { open } = useModals();
+  const { open: openModal } = useModals();
   const update = useUpdateEntity();
   const [hovered, setHovered] = useState(false);
+  const [bodyRef, { height }] = useElementSize<HTMLDivElement>();
 
-  // Sort in_progress -> open ("todo") -> done so the cell's top chips are the
-  // most actionable. Cancelled tasks still render in calendar history.
-  const active = tasks.slice().sort(compareByStatus);
-  const doneCount = active.filter((t) => t.status === "done").length;
-  const totalCount = active.length;
-  const allDone = totalCount > 0 && doneCount === totalCount;
+  // Closed tasks only count toward the progress bar; the chips are the work
+  // still left on that day.
+  const { open, closed } = partitionByStatus(tasks);
+  const inProgress = open.filter((t) => t.status === "in_progress").length;
+  const slots = Math.floor((height + CHIP_GAP) / (CHIP_ROW + CHIP_GAP));
+  const shown = visibleChipCount(open.length, slots);
+  const hidden = open.length - shown;
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -109,7 +128,7 @@ function DayCell({
 
   return (
     <div
-      className={`group p-1 min-h-[112px] flex flex-col transition-colors ${
+      className={`group min-h-0 p-1 flex flex-col transition-colors ${
         outOfMonth ? "opacity-50" : ""
       } ${
         hovered
@@ -125,51 +144,116 @@ function DayCell({
       onDragLeave={() => setHovered(false)}
       onDrop={onDrop}
     >
-      <div className="flex items-center justify-between mb-1 px-1">
-        <div className="flex items-baseline gap-1.5 min-w-0">
+      <div className="flex items-center gap-1.5 px-1 h-5">
+        <button
+          type="button"
+          onClick={() => onOpenDay(day)}
+          title="Open in Day view"
+          className={`text-xs tabular-nums hover:text-kumo-link ${
+            today ? "font-semibold text-kumo-brand" : "text-kumo-subtle"
+          }`}
+        >
+          {format(day, "d")}
+        </button>
+        {tasks.length > 0 && (
           <span
-            className={`text-xs tabular-nums ${
-              today ? "font-semibold text-kumo-brand" : "text-kumo-subtle"
+            className={`text-xxs tabular-nums ${
+              closed.length === tasks.length ? "text-kumo-success font-medium" : "text-kumo-placeholder"
             }`}
+            title={`${closed.length} closed · ${tasks.length} total`}
           >
-            {format(day, "d")}
+            {closed.length}/{tasks.length}
           </span>
-          {totalCount > 0 && (
-            <span
-              className={`text-xxs tabular-nums ${
-                allDone ? "text-kumo-success font-medium" : "text-kumo-placeholder"
-              }`}
-              title={`${doneCount} done · ${totalCount} total`}
-            >
-              {doneCount}/{totalCount}
-            </span>
-          )}
-        </div>
+        )}
+        {virtuals.length > 0 && <RecurringBadge virtuals={virtuals} />}
         <Button
           variant="ghost"
           size="xs"
           shape="square"
           icon={<PlusIcon size={12} />}
           aria-label="Add task"
-          className="size-5 text-kumo-subtle opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-kumo-brand"
-          onClick={() => open({ kind: "quick-create" })}
+          className="ml-auto size-5 text-kumo-subtle opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-kumo-brand"
+          onClick={() => openModal({ kind: "quick-create" })}
         />
       </div>
-      <div className="flex-1 space-y-0.5 min-h-0 overflow-hidden">
-        {active.slice(0, 4).map((t) => (
+      <DayProgress
+        total={tasks.length}
+        closed={closed.length}
+        inProgress={inProgress}
+        className="mx-1 mt-0.5 mb-1"
+      />
+      <div ref={bodyRef} className="flex-1 min-h-0 overflow-hidden space-y-0.5">
+        {open.slice(0, shown).map((t) => (
           <TaskChip
             key={t.id}
             task={t}
             project={t.projectId ? projectMap.get(t.projectId) : undefined}
+            compact
           />
         ))}
-        {active.length > 4 && (
-          <div className="text-xxs text-kumo-subtle pl-1">+{active.length - 4}</div>
+        {hidden > 0 && (
+          <button
+            type="button"
+            onClick={() => onOpenDay(day)}
+            className="w-full h-5 px-1.5 rounded text-left text-xxs text-kumo-subtle hover:bg-kumo-fill hover:text-kumo-link transition-colors"
+          >
+            +{hidden} more
+          </button>
         )}
-        {/* Ghost chips for future virtual occurrences — rendered after real tasks,
-            not counted in done/total or +N more, pointer-events-none */}
-        <GhostChips virtuals={virtuals} projectMap={projectMap} />
+        {open.length === 0 && closed.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onOpenDay(day)}
+            className="w-full h-5 px-1.5 flex items-center gap-1 rounded text-xxs text-kumo-subtle hover:bg-kumo-fill hover:text-kumo-default transition-colors"
+          >
+            <CheckCircleIcon size={11} weight="fill" className="shrink-0 text-kumo-success" />
+            <span className="tabular-nums">{closed.length} done</span>
+          </button>
+        )}
       </div>
     </div>
+  );
+}
+
+/** Thin closed/in-progress bar under the day header; an empty day keeps the space. */
+function DayProgress({
+  total,
+  closed,
+  inProgress,
+  className = ""
+}: {
+  total: number;
+  closed: number;
+  inProgress: number;
+  className?: string;
+}) {
+  const pct = (n: number) => `${(n / total) * 100}%`;
+  return (
+    <div
+      className={`flex h-[3px] shrink-0 overflow-hidden rounded-full ${total > 0 ? "bg-kumo-fill" : ""} ${className}`}
+      aria-hidden
+    >
+      {total > 0 && (
+        <>
+          <span className="h-full bg-(--color-kumo-success)" style={{ width: pct(closed) }} />
+          <span className="h-full bg-(--color-kumo-warning)" style={{ width: pct(inProgress) }} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Upcoming recurring occurrences, folded into a "↻N" badge with their titles on hover. */
+function RecurringBadge({ virtuals }: { virtuals: VirtualOccurrence[] }) {
+  const titles = virtuals.map((v) => (v.title && v.title.trim() ? v.title : "Untitled"));
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-xxs tabular-nums text-kumo-placeholder"
+      title={`Upcoming recurring:\n${titles.join("\n")}`}
+      aria-label={`${virtuals.length} upcoming recurring: ${titles.join(", ")}`}
+    >
+      <RecurrenceIcon size={10} />
+      {virtuals.length}
+    </span>
   );
 }

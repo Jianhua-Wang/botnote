@@ -1,23 +1,30 @@
 import { Button } from "@cloudflare/kumo/components/button";
 import { PlusIcon } from "@phosphor-icons/react";
 import { addDays, format, isSameWeek, isToday } from "date-fns";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useProjects, useTasksRange, useUpdateEntity } from "../../api/hooks";
 import type { Entity, Project, VirtualOccurrence } from "../../api/types";
+import { useElementSize } from "../../hooks/useElementSize";
 import { useModals } from "../../state/modals";
-import { GhostChips, TaskChip } from "./TaskChip";
-import { compareByStatus, dayKey, daysBetween, groupTasksByDay, groupVirtualsByDay, projectLookup, viewRange } from "./utils";
+import { ClosedTasksToggle, GhostChips, TaskChip } from "./TaskChip";
+import { dayKey, daysBetween, groupTasksByDay, groupVirtualsByDay, partitionByStatus, projectLookup, viewRange } from "./utils";
+
+// Below this width a single Mon–Sun row squeezes chips too far, so the week
+// wraps into two rows of four.
+const SINGLE_ROW_MIN_WIDTH = 7 * 160;
 
 export function WeekView({
   anchor,
-  projectIds
+  projectIds,
+  onOpenDay
 }: {
   anchor: Date;
   projectIds: string[] | null;
+  onOpenDay: (day: Date) => void;
 }) {
   const range = viewRange("week", anchor);
-  // 8-day window: Mon-Sun of the anchor week + next Monday as a "peek" cell
-  // so the bottom row also has 4 columns (matches the top row visually).
+  // The two-row layout shows Mon-Sun plus next Monday as a "peek" cell so the
+  // bottom row also has 4 columns (matches the top row visually).
   const weekDays = daysBetween(range.from, range.to);
   const nextMonday = addDays(weekDays[weekDays.length - 1]!, 1);
   const days = [...weekDays, nextMonday];
@@ -44,13 +51,22 @@ export function WeekView({
     [tasksData]
   );
 
-  const topRow = days.slice(0, 4);
-  const bottomRow = days.slice(4);
+  const [rootRef, { width }] = useElementSize<HTMLDivElement>();
+  const rows = width >= SINGLE_ROW_MIN_WIDTH ? [weekDays] : [days.slice(0, 4), days.slice(4)];
 
   return (
-    <div className="h-full flex flex-col bg-kumo-canvas">
-      <DayRow days={topRow} byDay={byDay} virtualsByDay={virtualsByDay} projectMap={projectMap} anchor={anchor} />
-      <DayRow days={bottomRow} byDay={byDay} virtualsByDay={virtualsByDay} projectMap={projectMap} anchor={anchor} />
+    <div ref={rootRef} className="h-full flex flex-col bg-kumo-canvas">
+      {rows.map((row) => (
+        <DayRow
+          key={row[0]!.toISOString()}
+          days={row}
+          byDay={byDay}
+          virtualsByDay={virtualsByDay}
+          projectMap={projectMap}
+          anchor={anchor}
+          onOpenDay={onOpenDay}
+        />
+      ))}
     </div>
   );
 }
@@ -60,13 +76,15 @@ function DayRow({
   byDay,
   virtualsByDay,
   projectMap,
-  anchor
+  anchor,
+  onOpenDay
 }: {
   days: Date[];
   byDay: Map<string, Entity[]>;
   virtualsByDay: Map<string, VirtualOccurrence[]>;
   projectMap: Map<string, Project>;
   anchor: Date;
+  onOpenDay: (day: Date) => void;
 }) {
   return (
     <div className="flex-1 min-h-0 flex border-b border-kumo-line last:border-b-0">
@@ -82,6 +100,7 @@ function DayRow({
             virtuals={virtuals}
             projectMap={projectMap}
             outOfWeek={outOfWeek}
+            onOpenDay={onOpenDay}
           />
         );
       })}
@@ -94,24 +113,26 @@ function DayCell({
   tasks,
   virtuals,
   projectMap,
-  outOfWeek
+  outOfWeek,
+  onOpenDay
 }: {
   day: Date;
   tasks: Entity[];
   virtuals: VirtualOccurrence[];
   projectMap: Map<string, Project>;
   outOfWeek: boolean;
+  onOpenDay: (day: Date) => void;
 }) {
   const today = isToday(day);
-  const { open } = useModals();
+  const { open: openModal } = useModals();
   const update = useUpdateEntity();
+  const [showClosed, setShowClosed] = useState(false);
 
-  // Sort in_progress -> open ("todo") -> done so the most actionable rows
-  // surface first. Cancelled tasks still render in calendar history.
-  const active = tasks.slice().sort(compareByStatus);
-  const doneCount = active.filter((t) => t.status === "done").length;
-  const totalCount = active.length;
-  const allDone = totalCount > 0 && doneCount === totalCount;
+  // In progress first, then todo; closed tasks fold into one row so the
+  // remaining work stays visible.
+  const { open, closed } = partitionByStatus(tasks);
+  const totalCount = tasks.length;
+  const allClosed = totalCount > 0 && closed.length === totalCount;
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -135,21 +156,24 @@ function DayCell({
           <span className="text-xxs uppercase tracking-wider text-kumo-subtle">
             {format(day, "EEE")}
           </span>
-          <span
-            className={`text-sm tabular-nums font-semibold ${
+          <button
+            type="button"
+            onClick={() => onOpenDay(day)}
+            title="Open in Day view"
+            className={`text-sm tabular-nums font-semibold hover:text-kumo-link ${
               today ? "text-kumo-brand" : outOfWeek ? "text-kumo-subtle" : "text-kumo-default"
             }`}
           >
             {format(day, "d")}
-          </span>
+          </button>
           {totalCount > 0 && (
             <span
               className={`text-xxs tabular-nums ${
-                allDone ? "text-kumo-success font-medium" : "text-kumo-placeholder"
+                allClosed ? "text-kumo-success font-medium" : "text-kumo-placeholder"
               }`}
-              title={`${doneCount} done · ${totalCount} total`}
+              title={`${closed.length} closed · ${totalCount} total`}
             >
-              {doneCount}/{totalCount}
+              {closed.length}/{totalCount}
             </span>
           )}
           {outOfWeek && (
@@ -163,15 +187,15 @@ function DayCell({
           icon={<PlusIcon size={12} />}
           aria-label="Add task"
           className="size-5 text-kumo-subtle opacity-0 group-hover/col:opacity-100 focus-visible:opacity-100 hover:text-kumo-brand"
-          onClick={() => open({ kind: "quick-create" })}
+          onClick={() => openModal({ kind: "quick-create" })}
         />
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin p-1.5 space-y-1">
-        {active.length === 0 && virtuals.length === 0 ? (
+        {totalCount === 0 && virtuals.length === 0 ? (
           <div className="text-xxs text-kumo-placeholder px-1 py-0.5">—</div>
         ) : (
           <>
-            {active.map((t) => (
+            {open.map((t) => (
               <TaskChip
                 key={t.id}
                 task={t}
@@ -179,6 +203,21 @@ function DayCell({
               />
             ))}
             <GhostChips virtuals={virtuals} projectMap={projectMap} />
+            {closed.length > 0 && (
+              <ClosedTasksToggle
+                tasks={closed}
+                expanded={showClosed}
+                onToggle={() => setShowClosed(!showClosed)}
+              />
+            )}
+            {showClosed &&
+              closed.map((t) => (
+                <TaskChip
+                  key={t.id}
+                  task={t}
+                  project={t.projectId ? projectMap.get(t.projectId) : undefined}
+                />
+              ))}
           </>
         )}
       </div>

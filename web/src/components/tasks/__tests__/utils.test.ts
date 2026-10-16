@@ -7,12 +7,15 @@ import {
   daysBetween,
   displayDate,
   groupTasksByDay,
+  isClosed,
   isRecurring,
   isTaskOverdue,
   moveAnchor,
+  partitionByStatus,
   projectLookup,
   rangeLabel,
-  viewRange
+  viewRange,
+  visibleChipCount
 } from "../utils";
 
 // Helper: local date string (yyyy-MM-dd) for a Date without UTC conversion
@@ -409,5 +412,61 @@ describe("compareByStatus", () => {
     const a = makeTask({ status: "open" });
     const b = makeTask({ status: "open" });
     expect(compareByStatus(a, b)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isClosed / partitionByStatus
+// ---------------------------------------------------------------------------
+
+describe("isClosed", () => {
+  it("treats done and rejected as closed", () => {
+    expect(isClosed(makeTask({ status: "done" }))).toBe(true);
+    expect(isClosed(makeTask({ status: "rejected" }))).toBe(true);
+  });
+
+  it("treats open and in_progress as not closed", () => {
+    expect(isClosed(makeTask({ status: "open" }))).toBe(false);
+    expect(isClosed(makeTask({ status: "in_progress" }))).toBe(false);
+  });
+});
+
+describe("partitionByStatus", () => {
+  it("splits open from closed and puts in_progress first", () => {
+    const tasks = [
+      makeTask({ id: "a", status: "open" }),
+      makeTask({ id: "b", status: "done" }),
+      makeTask({ id: "c", status: "in_progress" }),
+      makeTask({ id: "d", status: "rejected" })
+    ];
+    const { open, closed } = partitionByStatus(tasks);
+    expect(open.map((t) => t.id)).toEqual(["c", "a"]);
+    expect(closed.map((t) => t.id)).toEqual(["b", "d"]);
+  });
+
+  it("does not reorder the input array", () => {
+    const tasks = [makeTask({ id: "a", status: "done" }), makeTask({ id: "b", status: "open" })];
+    partitionByStatus(tasks);
+    expect(tasks.map((t) => t.id)).toEqual(["a", "b"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// visibleChipCount
+// ---------------------------------------------------------------------------
+
+describe("visibleChipCount", () => {
+  it("shows every chip when they all fit", () => {
+    expect(visibleChipCount(3, 3)).toBe(3);
+    expect(visibleChipCount(2, 5)).toBe(2);
+  });
+
+  it("gives up one row for the +N more link when they don't fit", () => {
+    expect(visibleChipCount(6, 4)).toBe(3);
+  });
+
+  it("never goes negative before the cell is measured", () => {
+    expect(visibleChipCount(4, 0)).toBe(0);
+    expect(visibleChipCount(0, 0)).toBe(0);
   });
 });
